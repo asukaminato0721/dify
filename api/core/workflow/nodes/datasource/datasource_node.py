@@ -275,6 +275,7 @@ class DatasourceNode(Node[DatasourceNodeData]):
                     for selector in selectors:
                         result[selector.variable] = selector.value_selector
                 elif input.type == "variable":
+                    assert isinstance(input.value, list)
                     result[parameter_name] = input.value
                 elif input.type == "constant":
                     pass
