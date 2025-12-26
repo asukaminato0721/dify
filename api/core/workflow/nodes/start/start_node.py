@@ -22,12 +22,7 @@ class StartNode(Node[StartNodeData]):
     def _run(self) -> NodeRunResult:
         node_inputs = dict(self.graph_runtime_state.variable_pool.user_inputs)
         self._validate_and_normalize_json_object_inputs(node_inputs)
-        system_inputs = self.graph_runtime_state.variable_pool.system_variables.to_dict()
 
-        # TODO: System variables should be directly accessible, no need for special handling
-        # Set system variables as node outputs.
-        for var in system_inputs:
-            node_inputs[SYSTEM_VARIABLE_NODE_ID + "." + var] = system_inputs[var]
         outputs = dict(node_inputs)
 
         return NodeRunResult(status=WorkflowNodeExecutionStatus.SUCCEEDED, inputs=node_inputs, outputs=outputs)
