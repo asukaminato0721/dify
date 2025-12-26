@@ -56,12 +56,7 @@ class TriggerWebhookNode(Node[WebhookData]):
 
         # Extract webhook-specific outputs based on node configuration
         outputs = self._extract_configured_outputs(webhook_inputs)
-        system_inputs = self.graph_runtime_state.variable_pool.system_variables.to_dict()
 
-        # TODO: System variables should be directly accessible, no need for special handling
-        # Set system variables as node outputs.
-        for var in system_inputs:
-            outputs[SYSTEM_VARIABLE_NODE_ID + "." + var] = system_inputs[var]
         return NodeRunResult(
             status=WorkflowNodeExecutionStatus.SUCCEEDED,
             inputs=webhook_inputs,
