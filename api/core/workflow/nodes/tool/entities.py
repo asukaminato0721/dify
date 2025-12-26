@@ -33,8 +33,7 @@ class ToolEntity(BaseModel):
 
 class ToolNodeData(BaseNodeData, ToolEntity):
     class ToolInput(BaseModel):
-        # TODO: check this type
-        value: Union[Any, list[str]]
+        value: Union[str, int, float, bool, dict[str, Any], list[str], None]
         type: Literal["mixed", "variable", "constant"]
 
         @field_validator("type", mode="before")
