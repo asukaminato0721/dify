@@ -17,8 +17,7 @@ class DatasourceEntity(BaseModel):
 
 class DatasourceNodeData(BaseNodeData, DatasourceEntity):
     class DatasourceInput(BaseModel):
-        # TODO: check this type
-        value: Union[Any, list[str]]
+        value: Union[str, int, float, bool, list[str], None]
         type: Literal["mixed", "variable", "constant"] | None = None
 
         @field_validator("type", mode="before")
