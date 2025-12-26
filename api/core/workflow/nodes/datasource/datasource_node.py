@@ -230,6 +230,7 @@ class DatasourceNode(Node[DatasourceNodeData]):
                     continue
                 datasource_input = node_data.datasource_parameters[parameter_name]
                 if datasource_input.type == "variable":
+                    assert isinstance(datasource_input.value, list)
                     variable = variable_pool.get(datasource_input.value)
                     if variable is None:
                         raise DatasourceParameterError(f"Variable {datasource_input.value} does not exist")
@@ -274,6 +275,7 @@ class DatasourceNode(Node[DatasourceNodeData]):
                     for selector in selectors:
                         result[selector.variable] = selector.value_selector
                 elif input.type == "variable":
+                    assert isinstance(input.value, list)
                     result[parameter_name] = input.value
                 elif input.type == "constant":
                     pass
