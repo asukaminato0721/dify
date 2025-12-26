@@ -67,43 +67,48 @@ def test_execute_if_else_result_true():
         "data": {
             "title": "123",
             "type": "if-else",
-            "logical_operator": "and",
-            "conditions": [
+            "cases": [
                 {
-                    "comparison_operator": "contains",
-                    "variable_selector": ["start", "array_contains"],
-                    "value": "ab",
-                },
-                {
-                    "comparison_operator": "not contains",
-                    "variable_selector": ["start", "array_not_contains"],
-                    "value": "ab",
-                },
-                {"comparison_operator": "contains", "variable_selector": ["start", "contains"], "value": "ab"},
-                {
-                    "comparison_operator": "not contains",
-                    "variable_selector": ["start", "not_contains"],
-                    "value": "ab",
-                },
-                {"comparison_operator": "start with", "variable_selector": ["start", "start_with"], "value": "ab"},
-                {"comparison_operator": "end with", "variable_selector": ["start", "end_with"], "value": "ab"},
-                {"comparison_operator": "is", "variable_selector": ["start", "is"], "value": "ab"},
-                {"comparison_operator": "is not", "variable_selector": ["start", "is_not"], "value": "ab"},
-                {"comparison_operator": "empty", "variable_selector": ["start", "empty"], "value": "ab"},
-                {"comparison_operator": "not empty", "variable_selector": ["start", "not_empty"], "value": "ab"},
-                {"comparison_operator": "=", "variable_selector": ["start", "equals"], "value": "22"},
-                {"comparison_operator": "≠", "variable_selector": ["start", "not_equals"], "value": "22"},
-                {"comparison_operator": ">", "variable_selector": ["start", "greater_than"], "value": "22"},
-                {"comparison_operator": "<", "variable_selector": ["start", "less_than"], "value": "22"},
-                {
-                    "comparison_operator": "≥",
-                    "variable_selector": ["start", "greater_than_or_equal"],
-                    "value": "22",
-                },
-                {"comparison_operator": "≤", "variable_selector": ["start", "less_than_or_equal"], "value": "22"},
-                {"comparison_operator": "null", "variable_selector": ["start", "null"]},
-                {"comparison_operator": "not null", "variable_selector": ["start", "not_null"]},
-            ],
+                    "case_id": "true",
+                    "logical_operator": "and",
+                    "conditions": [
+                        {
+                            "comparison_operator": "contains",
+                            "variable_selector": ["start", "array_contains"],
+                            "value": "ab",
+                        },
+                        {
+                            "comparison_operator": "not contains",
+                            "variable_selector": ["start", "array_not_contains"],
+                            "value": "ab",
+                        },
+                        {"comparison_operator": "contains", "variable_selector": ["start", "contains"], "value": "ab"},
+                        {
+                            "comparison_operator": "not contains",
+                            "variable_selector": ["start", "not_contains"],
+                            "value": "ab",
+                        },
+                        {"comparison_operator": "start with", "variable_selector": ["start", "start_with"], "value": "ab"},
+                        {"comparison_operator": "end with", "variable_selector": ["start", "end_with"], "value": "ab"},
+                        {"comparison_operator": "is", "variable_selector": ["start", "is"], "value": "ab"},
+                        {"comparison_operator": "is not", "variable_selector": ["start", "is_not"], "value": "ab"},
+                        {"comparison_operator": "empty", "variable_selector": ["start", "empty"], "value": "ab"},
+                        {"comparison_operator": "not empty", "variable_selector": ["start", "not_empty"], "value": "ab"},
+                        {"comparison_operator": "=", "variable_selector": ["start", "equals"], "value": "22"},
+                        {"comparison_operator": "≠", "variable_selector": ["start", "not_equals"], "value": "22"},
+                        {"comparison_operator": ">", "variable_selector": ["start", "greater_than"], "value": "22"},
+                        {"comparison_operator": "<", "variable_selector": ["start", "less_than"], "value": "22"},
+                        {
+                            "comparison_operator": "≥",
+                            "variable_selector": ["start", "greater_than_or_equal"],
+                            "value": "22",
+                        },
+                        {"comparison_operator": "≤", "variable_selector": ["start", "less_than_or_equal"], "value": "22"},
+                        {"comparison_operator": "null", "variable_selector": ["start", "null"]},
+                        {"comparison_operator": "not null", "variable_selector": ["start", "not_null"]},
+                    ],
+                }
+            ]
         },
     }
 
@@ -123,6 +128,7 @@ def test_execute_if_else_result_true():
     assert result.status == WorkflowNodeExecutionStatus.SUCCEEDED
     assert result.outputs is not None
     assert result.outputs["result"] is True
+    assert result.outputs["selected_case_id"] == "true"
 
 
 def test_execute_if_else_result_false():
@@ -161,19 +167,24 @@ def test_execute_if_else_result_false():
         "data": {
             "title": "123",
             "type": "if-else",
-            "logical_operator": "or",
-            "conditions": [
+            "cases": [
                 {
-                    "comparison_operator": "contains",
-                    "variable_selector": ["start", "array_contains"],
-                    "value": "ab",
-                },
-                {
-                    "comparison_operator": "not contains",
-                    "variable_selector": ["start", "array_not_contains"],
-                    "value": "ab",
-                },
-            ],
+                    "case_id": "true",
+                    "logical_operator": "or",
+                    "conditions": [
+                        {
+                            "comparison_operator": "contains",
+                            "variable_selector": ["start", "array_contains"],
+                            "value": "ab",
+                        },
+                        {
+                            "comparison_operator": "not contains",
+                            "variable_selector": ["start", "array_not_contains"],
+                            "value": "ab",
+                        },
+                    ],
+                }
+            ]
         },
     }
 
@@ -193,12 +204,12 @@ def test_execute_if_else_result_false():
     assert result.status == WorkflowNodeExecutionStatus.SUCCEEDED
     assert result.outputs is not None
     assert result.outputs["result"] is False
+    assert result.outputs["selected_case_id"] == "false"
 
 
 def test_array_file_contains_file_name():
     node_data = IfElseNodeData(
         title="123",
-        logical_operator="and",
         cases=[
             IfElseNodeData.Case(
                 case_id="true",
@@ -329,8 +340,13 @@ def test_execute_if_else_boolean_conditions(condition: Condition):
     node_data = {
         "title": "Boolean Test",
         "type": "if-else",
-        "logical_operator": "and",
-        "conditions": [condition.model_dump()],
+        "cases": [
+            {
+                "case_id": "true",
+                "logical_operator": "and",
+                "conditions": [condition.model_dump()]
+            }
+        ],
     }
     node = IfElseNode(
         id=str(uuid.uuid4()),
@@ -383,19 +399,24 @@ def test_execute_if_else_boolean_false_conditions():
     node_data = {
         "title": "Boolean False Test",
         "type": "if-else",
-        "logical_operator": "or",
-        "conditions": [
-            # Test boolean "is" operator (should be false)
-            {"comparison_operator": "is", "variable_selector": ["start", "bool_true"], "value": "false"},
-            # Test boolean "=" operator (should be false)
-            {"comparison_operator": "=", "variable_selector": ["start", "bool_false"], "value": "1"},
-            # Test boolean "not contains" operator (should be false)
+        "cases": [
             {
-                "comparison_operator": "not contains",
-                "variable_selector": ["start", "bool_array"],
-                "value": "true",
-            },
-        ],
+                "case_id": "true",
+                "logical_operator": "or",
+                "conditions": [
+                    # Test boolean "is" operator (should be false)
+                    {"comparison_operator": "is", "variable_selector": ["start", "bool_true"], "value": "false"},
+                    # Test boolean "=" operator (should be false)
+                    {"comparison_operator": "=", "variable_selector": ["start", "bool_false"], "value": "1"},
+                    # Test boolean "not contains" operator (should be false)
+                    {
+                        "comparison_operator": "not contains",
+                        "variable_selector": ["start", "bool_array"],
+                        "value": "true",
+                    },
+                ],
+            }
+        ]
     }
 
     node = IfElseNode(
