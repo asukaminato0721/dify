@@ -1,7 +1,6 @@
 from typing import Any, Literal, cast
 
 from flask import request
-from flask_restx import marshal
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
 from werkzeug.exceptions import Forbidden, NotFound
 
@@ -19,6 +18,7 @@ from core.provider_manager import ProviderManager
 from fields.dataset_fields import dataset_detail_fields
 from fields.tag_fields import build_dataset_tag_fields
 from libs.login import current_user
+from libs.openapi import marshal
 from models.account import Account
 from models.dataset import DatasetPermissionEnum
 from models.provider_ids import ModelProviderID

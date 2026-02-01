@@ -1,7 +1,6 @@
 import logging
 
 from flask import request
-from flask_restx import fields, marshal_with
 from pydantic import BaseModel, field_validator
 from werkzeug.exceptions import InternalServerError
 
@@ -22,6 +21,7 @@ from controllers.web.wraps import WebApiResource
 from core.errors.error import ModelCurrentlyNotSupportError, ProviderTokenNotInitError, QuotaExceededError
 from core.model_runtime.errors.invoke import InvokeError
 from libs.helper import uuid_value
+from libs.openapi import fields, marshal_with
 from models.model import App
 from services.audio_service import AudioService
 from services.errors.audio import (

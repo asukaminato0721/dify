@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
-from flask_restx import Api
 
 import services.errors.account
 from controllers.console.auth.error import AuthenticationFailedError
 from controllers.console.auth.login import LoginApi
+from libs.external_api import ExternalApi
 
 
 def encode_password(password: str) -> str:
@@ -23,7 +23,7 @@ class TestAuthenticationSecurity:
     def setup_method(self):
         """Set up test fixtures."""
         self.app = Flask(__name__)
-        self.api = Api(self.app)
+        self.api = ExternalApi(self.app)
         self.api.add_resource(LoginApi, "/login")
         self.client = self.app.test_client()
         self.app.config["TESTING"] = True

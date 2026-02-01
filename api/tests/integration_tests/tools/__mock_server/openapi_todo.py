@@ -1,8 +1,10 @@
 from flask import Flask, request
-from flask_restx import Api, Resource
+
+from libs.external_api import ExternalApi
+from libs.openapi import Resource
 
 app = Flask(__name__)
-api = Api(app)
+api = ExternalApi(app)
 
 # Mock data
 todos_data = {

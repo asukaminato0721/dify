@@ -1,11 +1,11 @@
 from flask import Blueprint, Flask
-from flask_restx import Resource
 from werkzeug.exceptions import BadRequest, Unauthorized
 
 from constants import COOKIE_NAME_ACCESS_TOKEN, COOKIE_NAME_CSRF_TOKEN, COOKIE_NAME_REFRESH_TOKEN
 from core.errors.error import AppInvokeQuotaExceededError
 from libs.exception import BaseHTTPException
 from libs.external_api import ExternalApi
+from libs.openapi import Resource
 
 
 def _create_api_app():
@@ -110,7 +110,7 @@ def test_external_api_param_mapping_and_quota():
     assert data["code"] == "invalid_param"
     assert data["params"] == "field"
 
-    # Quota path — depending on Flask-RESTX internals it may be handled
+    # Quota path — depending on error handler behavior it may be handled
     res = client.get("/api/quota")
     assert res.status_code in (400, 429)
 

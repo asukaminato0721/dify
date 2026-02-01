@@ -1,6 +1,5 @@
 from typing import Literal
 
-from flask_restx import Resource, marshal_with
 from pydantic import BaseModel, Field, field_validator
 from werkzeug.exceptions import NotFound
 
@@ -17,6 +16,7 @@ from extensions.ext_database import db
 from fields.app_fields import app_site_fields
 from libs.datetime_utils import naive_utc_now
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, marshal_with
 from models import Site
 
 DEFAULT_REF_TEMPLATE_SWAGGER_2_0 = "#/definitions/{model}"
@@ -53,7 +53,7 @@ console_ns.schema_model(
     AppSiteUpdatePayload.model_json_schema(ref_template=DEFAULT_REF_TEMPLATE_SWAGGER_2_0),
 )
 
-# Register model for flask_restx to avoid dict type issues in Swagger
+# Register model for OpenAPI compatibility to avoid dict type issues in Swagger
 app_site_model = console_ns.model("AppSite", app_site_fields)
 
 

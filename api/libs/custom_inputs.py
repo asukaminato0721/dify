@@ -1,4 +1,4 @@
-"""Custom input types for Flask-RESTX request parsing."""
+"""Custom input types for request parsing helpers."""
 
 import re
 

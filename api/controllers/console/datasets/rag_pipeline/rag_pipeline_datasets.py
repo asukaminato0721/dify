@@ -1,4 +1,3 @@
-from flask_restx import Resource, marshal
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden
@@ -15,6 +14,7 @@ from controllers.console.wraps import (
 from extensions.ext_database import db
 from fields.dataset_fields import dataset_detail_fields
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, marshal
 from models.dataset import DatasetPermissionEnum
 from services.dataset_service import DatasetPermissionService, DatasetService
 from services.entities.knowledge_entities.rag_pipeline_entities import IconInfo, RagPipelineDatasetCreateEntity

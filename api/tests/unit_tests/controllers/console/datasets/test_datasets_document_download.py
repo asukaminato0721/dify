@@ -52,7 +52,7 @@ def datasets_document_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(wraps, "cloud_edition_billing_resource_check", lambda *_args, **_kwargs: (lambda f: f))
     monkeypatch.setattr(wraps, "cloud_edition_billing_rate_limit_check", lambda *_args, **_kwargs: (lambda f: f))
 
-    # Avoid Flask-RESTX route registration side effects during import.
+    # Avoid route registration side effects during import.
     def _noop_route(*_args, **_kwargs):  # type: ignore[override]
         def _decorator(cls):
             return cls

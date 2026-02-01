@@ -2,7 +2,6 @@ from typing import Any
 
 import flask_login
 from flask import make_response, request
-from flask_restx import Resource
 from pydantic import BaseModel, Field
 
 import services
@@ -33,6 +32,7 @@ from controllers.console.wraps import (
 from events.tenant_event import tenant_was_created
 from libs.helper import EmailStr, extract_remote_ip
 from libs.login import current_account_with_tenant
+from libs.openapi import Resource
 from libs.token import (
     clear_access_token_from_cookie,
     clear_csrf_token_from_cookie,

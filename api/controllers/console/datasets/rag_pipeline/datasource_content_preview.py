@@ -1,6 +1,3 @@
-from flask_restx import (  # type: ignore
-    Resource,  # type: ignore
-)
 from pydantic import BaseModel
 from werkzeug.exceptions import Forbidden
 
@@ -8,6 +5,7 @@ from controllers.console import console_ns
 from controllers.console.datasets.wraps import get_rag_pipeline
 from controllers.console.wraps import account_initialization_required, setup_required
 from libs.login import current_user, login_required
+from libs.openapi import Resource
 from models import Account
 from models.dataset import Pipeline
 from services.rag_pipeline.rag_pipeline import RagPipelineService

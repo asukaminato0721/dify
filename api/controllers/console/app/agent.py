@@ -1,5 +1,4 @@
 from flask import request
-from flask_restx import Resource, fields
 from pydantic import BaseModel, Field, field_validator
 
 from controllers.console import console_ns
@@ -7,6 +6,7 @@ from controllers.console.app.wraps import get_app_model
 from controllers.console.wraps import account_initialization_required, setup_required
 from libs.helper import uuid_value
 from libs.login import login_required
+from libs.openapi import Resource, fields
 from models.model import AppMode
 from services.agent_service import AgentService
 

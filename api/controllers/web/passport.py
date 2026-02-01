@@ -2,7 +2,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from flask import make_response, request
-from flask_restx import Resource
 from sqlalchemy import func, select
 from werkzeug.exceptions import NotFound, Unauthorized
 
@@ -11,6 +10,7 @@ from constants import HEADER_NAME_APP_CODE
 from controllers.web import web_ns
 from controllers.web.error import WebAppAuthRequiredError
 from extensions.ext_database import db
+from libs.openapi import Resource
 from libs.passport import PassportService
 from libs.token import extract_webapp_access_token
 from models.model import App, EndUser, Site

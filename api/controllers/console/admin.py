@@ -3,7 +3,6 @@ from functools import wraps
 from typing import ParamSpec, TypeVar
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from werkzeug.exceptions import NotFound, Unauthorized
@@ -14,6 +13,7 @@ from controllers.console import console_ns
 from controllers.console.wraps import only_edition_cloud
 from core.db.session_factory import session_factory
 from extensions.ext_database import db
+from libs.openapi import Resource
 from libs.token import extract_access_token
 from models.model import App, ExporleBanner, InstalledApp, RecommendedApp, TrialApp
 

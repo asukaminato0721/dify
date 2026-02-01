@@ -342,15 +342,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aniso8601"
-version = "10.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8b/8d/52179c4e3f1978d3d9a285f98c706642522750ef343e9738286130423730/aniso8601-10.0.1.tar.gz", hash = "sha256:25488f8663dd1528ae1f54f94ac1ea51ae25b4d531539b8bc707fed184d16845", size = 47190, upload-time = "2025-04-18T17:29:42.995Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/75/e0e10dc7ed1408c28e03a6cb2d7a407f99320eb953f229d008a7a6d05546/aniso8601-10.0.1-py2.py3-none-any.whl", hash = "sha256:eb19717fd4e0db6de1aab06f12450ab92144246b257423fe020af5748c0cb89e", size = 52848, upload-time = "2025-04-18T17:29:41.492Z" },
-]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1388,8 +1379,8 @@ dependencies = [
     { name = "flask-cors" },
     { name = "flask-login" },
     { name = "flask-migrate" },
+    { name = "flask-openapi3", extra = ["scalar"] },
     { name = "flask-orjson" },
-    { name = "flask-restx" },
     { name = "flask-sqlalchemy" },
     { name = "gevent" },
     { name = "gmpy2" },
@@ -1588,8 +1579,8 @@ requires-dist = [
     { name = "flask-cors", specifier = "~=6.0.0" },
     { name = "flask-login", specifier = "~=0.6.3" },
     { name = "flask-migrate", specifier = "~=4.0.7" },
+    { name = "flask-openapi3", extras = ["scalar"], specifier = ">=4.3.1" },
     { name = "flask-orjson", specifier = "~=2.0.0" },
-    { name = "flask-restx", specifier = "~=1.3.2" },
     { name = "flask-sqlalchemy", specifier = "~=3.1.1" },
     { name = "gevent", specifier = "~=25.9.1" },
     { name = "gmpy2", specifier = "~=2.2.1" },
@@ -2085,6 +2076,36 @@ wheels = [
 ]
 
 [[package]]
+name = "flask-openapi3"
+version = "4.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flask" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/64/ae/0337693698112ab07e8cdcc37826fa105f6967819fdd0d972d8a9c79d477/flask_openapi3-4.3.1.tar.gz", hash = "sha256:9a2d1173cfd7f7a3d60b091024f2c61d6bb85707791a249e80b628ab47530885", size = 51348, upload-time = "2026-01-12T06:18:11.96Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/95/0e/232f0e960798f2f7e2e68f546fea9f41fac26107d9a00477ccc4af60a96c/flask_openapi3-4.3.1-py3-none-any.whl", hash = "sha256:80c2c72415b8f18023f042fb21077ebeb54ee275508abc1ea951c76a71e5e66a", size = 46456, upload-time = "2026-01-12T06:18:10.31Z" },
+]
+
+[package.optional-dependencies]
+scalar = [
+    { name = "flask-openapi3-scalar" },
+]
+
+[[package]]
+name = "flask-openapi3-scalar"
+version = "1.44.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flask-openapi3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0f/46/2efeae9677e055d58bc5eb395dc86299cb9a68336c0f4b9ae5bdbee03d0a/flask_openapi3_scalar-1.44.6.tar.gz", hash = "sha256:3e268b8f839e36c1455af6f260eba26c3b377fb8b61620bc418da5b10e389702", size = 933044, upload-time = "2026-02-01T03:26:34.058Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/4d/d221fd8b6c70ce88be47e5ef66a3cec0c0b6bd9ed33f40ce3fca1e3d23df/flask_openapi3_scalar-1.44.6-py3-none-any.whl", hash = "sha256:9cc87cee9b9efaea66382475ff6f2026d62655a896daad254af1688ad25a0a2f", size = 936729, upload-time = "2026-02-01T03:26:32.324Z" },
+]
+
+[[package]]
 name = "flask-orjson"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2095,23 +2116,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a3/49/575796f6ddca171d82dbb12762e33166c8b8f8616c946f0a6dfbb9bc3cd6/flask_orjson-2.0.0.tar.gz", hash = "sha256:6df6631437f9bc52cf9821735f896efa5583b5f80712f7d29d9ef69a79986a9c", size = 2974, upload-time = "2024-01-15T00:03:22.236Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f3/ca/53e14be018a2284acf799830e8cd8e0b263c0fd3dff1ad7b35f8417e7067/flask_orjson-2.0.0-py3-none-any.whl", hash = "sha256:5d15f2ba94b8d6c02aee88fc156045016e83db9eda2c30545fabd640aebaec9d", size = 3622, upload-time = "2024-01-15T00:03:17.511Z" },
-]
-
-[[package]]
-name = "flask-restx"
-version = "1.3.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aniso8601" },
-    { name = "flask" },
-    { name = "importlib-resources" },
-    { name = "jsonschema" },
-    { name = "referencing" },
-    { name = "werkzeug" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/43/89/9b9ca58cbb8e9ec46f4a510ba93878e0c88d518bf03c350e3b1b7ad85cbe/flask-restx-1.3.2.tar.gz", hash = "sha256:0ae13d77e7d7e4dce513970cfa9db45364aef210e99022de26d2b73eb4dbced5", size = 2814719, upload-time = "2025-09-23T20:34:25.21Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/3f/b82cd8e733a355db1abb8297afbf59ec972c00ef90bf8d4eed287958b204/flask_restx-1.3.2-py2.py3-none-any.whl", hash = "sha256:6e035496e8223668044fc45bf769e526352fd648d9e159bd631d94fd645a687b", size = 2799859, upload-time = "2025-09-23T20:34:23.055Z" },
 ]
 
 [[package]]

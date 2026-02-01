@@ -1,6 +1,5 @@
-from flask_restx import fields
-
 from libs.helper import TimestampField
+from libs.openapi import fields
 
 
 class HiddenAPIKey(fields.Raw):

@@ -19,7 +19,6 @@ from services.account_service import AccountService
 def app():
     app = Flask(__name__)
     app.config["TESTING"] = True
-    app.config["RESTX_MASK_HEADER"] = "X-Fields"
     app.login_manager = SimpleNamespace(_load_user=lambda: None)
     return app
 

@@ -2,7 +2,6 @@ import logging
 from typing import Any
 
 from flask import make_response, redirect, request
-from flask_restx import Resource
 from pydantic import BaseModel, model_validator
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import BadRequest, Forbidden
@@ -17,6 +16,7 @@ from core.trigger.entities.entities import SubscriptionBuilderUpdater
 from core.trigger.trigger_manager import TriggerManager
 from extensions.ext_database import db
 from libs.login import current_user, login_required
+from libs.openapi import Resource
 from models.account import Account
 from models.provider_ids import TriggerProviderID
 from services.plugin.oauth_service import OAuthProxyService

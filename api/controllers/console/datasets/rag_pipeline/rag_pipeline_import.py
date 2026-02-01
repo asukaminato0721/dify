@@ -1,5 +1,4 @@
 from flask import request
-from flask_restx import Resource, fields, marshal_with  # type: ignore
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -18,6 +17,7 @@ from fields.rag_pipeline_fields import (
     pipeline_import_fields,
 )
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models.dataset import Pipeline
 from services.app_dsl_service import ImportStatus
 from services.rag_pipeline.rag_pipeline_dsl_service import RagPipelineDslService

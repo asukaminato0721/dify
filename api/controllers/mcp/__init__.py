@@ -1,9 +1,7 @@
-from flask import Blueprint
-from flask_restx import Namespace
-
 from libs.external_api import ExternalApi
+from libs.openapi import APIBlueprint, Namespace
 
-bp = Blueprint("mcp", __name__, url_prefix="/mcp")
+bp = APIBlueprint("mcp", __name__, url_prefix="/mcp")
 
 api = ExternalApi(
     bp,

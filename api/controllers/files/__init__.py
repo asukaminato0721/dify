@@ -1,9 +1,7 @@
-from flask import Blueprint
-from flask_restx import Namespace
-
 from libs.external_api import ExternalApi
+from libs.openapi import APIBlueprint, Namespace
 
-bp = Blueprint("files", __name__, url_prefix="/files")
+bp = APIBlueprint("files", __name__, url_prefix="/files")
 
 api = ExternalApi(
     bp,

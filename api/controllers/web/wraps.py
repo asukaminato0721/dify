@@ -4,7 +4,6 @@ from functools import wraps
 from typing import Concatenate, ParamSpec, TypeVar
 
 from flask import request
-from flask_restx import Resource
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import BadRequest, NotFound, Unauthorized
@@ -12,6 +11,7 @@ from werkzeug.exceptions import BadRequest, NotFound, Unauthorized
 from constants import HEADER_NAME_APP_CODE
 from controllers.web.error import WebAppAuthAccessDeniedError, WebAppAuthRequiredError
 from extensions.ext_database import db
+from libs.openapi import Resource
 from libs.passport import PassportService
 from libs.token import extract_webapp_passport
 from models.model import App, EndUser, Site

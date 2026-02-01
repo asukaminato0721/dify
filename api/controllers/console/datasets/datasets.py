@@ -1,7 +1,6 @@
 from typing import Any, cast
 
 from flask import request
-from flask_restx import Resource, fields, marshal, marshal_with
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from werkzeug.exceptions import Forbidden, NotFound
@@ -52,12 +51,13 @@ from fields.dataset_fields import (
 )
 from fields.document_fields import document_status_fields
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal, marshal_with
 from models import ApiToken, Dataset, Document, DocumentSegment, UploadFile
 from models.dataset import DatasetPermissionEnum
 from models.provider_ids import ModelProviderID
 from services.dataset_service import DatasetPermissionService, DatasetService, DocumentService
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 dataset_base_model = get_or_create_model("DatasetBase", dataset_fields)
 
 tag_model = get_or_create_model("Tag", tag_fields)

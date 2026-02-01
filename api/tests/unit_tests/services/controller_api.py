@@ -24,7 +24,8 @@ These tests verify that:
 ARCHITECTURE OVERVIEW
 ================================================================================
 
-The controller layer in Dify uses Flask-RESTX to provide RESTful API endpoints.
+The controller layer in Dify uses a lightweight OpenAPI compatibility layer
+(backed by flask_openapi3) to provide RESTful API endpoints.
 Controllers act as a thin layer between HTTP requests and service methods,
 handling:
 
@@ -36,7 +37,7 @@ handling:
 6. Error Handling: Converting exceptions to appropriate HTTP status codes
 
 Key Components:
-- Flask-RESTX Resources: Define endpoint classes with HTTP methods
+- Resource classes: Define endpoint classes with HTTP methods
 - Decorators: Handle authentication, authorization, and setup requirements
 - Request Parsers: Validate and extract request parameters
 - Response Models: Define response structure for Swagger documentation
@@ -87,13 +88,13 @@ from uuid import uuid4
 
 import pytest
 from flask import Flask
-from flask_restx import Api
 
 from controllers.console.datasets.datasets import DatasetApi, DatasetListApi
 from controllers.console.datasets.external import (
     ExternalApiTemplateListApi,
 )
 from controllers.console.datasets.hit_testing import HitTestingApi
+from libs.external_api import ExternalApi
 from models.dataset import Dataset, DatasetPermissionEnum
 
 # ============================================================================
@@ -148,15 +149,15 @@ class ControllerApiTestDataFactory:
     @staticmethod
     def create_api_instance(app):
         """
-        Create a Flask-RESTX API instance.
+        Create an External API instance.
 
         Args:
             app: Flask application instance
 
         Returns:
-            Api instance configured for the application
+            ExternalApi instance configured for the application
         """
-        api = Api(app, doc="/docs/")
+        api = ExternalApi(app)
         return api
 
     @staticmethod
@@ -166,7 +167,7 @@ class ControllerApiTestDataFactory:
 
         Args:
             app: Flask application instance
-            api: Flask-RESTX API instance
+            api: ExternalApi instance
             resource_class: Resource class to register
             route: URL route for the resource
 
@@ -304,7 +305,7 @@ class TestDatasetListApi:
     @pytest.fixture
     def api(self, app):
         """
-        Create Flask-RESTX API instance.
+        Create OpenAPI-compatible API instance.
 
         Provides an API instance for registering resources.
         """
@@ -473,7 +474,7 @@ class TestDatasetApiGet:
 
     @pytest.fixture
     def api(self, app):
-        """Create Flask-RESTX API instance."""
+        """Create OpenAPI-compatible API instance."""
         return ControllerApiTestDataFactory.create_api_instance(app)
 
     @pytest.fixture
@@ -589,7 +590,7 @@ class TestDatasetApiCreate:
 
     @pytest.fixture
     def api(self, app):
-        """Create Flask-RESTX API instance."""
+        """Create OpenAPI-compatible API instance."""
         return ControllerApiTestDataFactory.create_api_instance(app)
 
     @pytest.fixture
@@ -682,7 +683,7 @@ class TestHitTestingApi:
 
     @pytest.fixture
     def api(self, app):
-        """Create Flask-RESTX API instance."""
+        """Create OpenAPI-compatible API instance."""
         return ControllerApiTestDataFactory.create_api_instance(app)
 
     @pytest.fixture
@@ -800,7 +801,7 @@ class TestExternalDatasetApi:
 
     @pytest.fixture
     def api(self, app):
-        """Create Flask-RESTX API instance."""
+        """Create OpenAPI-compatible API instance."""
         return ControllerApiTestDataFactory.create_api_instance(app)
 
     @pytest.fixture
@@ -935,14 +936,14 @@ class TestExternalDatasetApi:
 
 
 # ============================================================================
-# Flask-RESTX Resource Testing Patterns
+# Resource Testing Patterns
 # ============================================================================
 #
-# Flask-RESTX resources are tested using Flask's test client. The typical
+# Resources are tested using Flask's test client. The typical
 # pattern involves:
 #
 # 1. Creating a Flask test application
-# 2. Creating a Flask-RESTX API instance
+# 2. Creating an ExternalApi instance
 # 3. Registering the resource with a route
 # 4. Creating a test client
 # 5. Making HTTP requests through the test client
@@ -952,7 +953,7 @@ class TestExternalDatasetApi:
 #
 #   app = Flask(__name__)
 #   app.config["TESTING"] = True
-#   api = Api(app)
+#   api = ExternalApi(app)
 #   api.add_resource(MyResource, "/my-endpoint")
 #   client = app.test_client()
 #   response = client.get("/my-endpoint")
@@ -969,7 +970,7 @@ class TestExternalDatasetApi:
 # Request/Response Validation
 # ============================================================================
 #
-# API endpoints use Flask-RESTX request parsers to validate incoming requests.
+# API endpoints use request parsers to validate incoming requests.
 # These parsers:
 #
 # 1. Extract parameters from query strings, form data, or JSON body
@@ -978,7 +979,7 @@ class TestExternalDatasetApi:
 # 4. Provide default values when parameters are missing
 # 5. Raise BadRequest exceptions when validation fails
 #
-# Response formatting is handled by Flask-RESTX's marshal_with decorator
+# Response formatting is handled by the marshal_with decorator
 # or marshal function, which:
 #
 # 1. Formats response data according to defined models

@@ -2,7 +2,6 @@ import logging
 from typing import Any, cast
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, field_validator
 
 from controllers.common.schema import register_enum_models, register_schema_models
@@ -13,6 +12,7 @@ from core.model_runtime.errors.validate import CredentialsValidateFailedError
 from core.model_runtime.utils.encoders import jsonable_encoder
 from libs.helper import uuid_value
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource
 from services.model_load_balancing_service import ModelLoadBalancingService
 from services.model_provider_service import ModelProviderService
 

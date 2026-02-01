@@ -3,13 +3,13 @@ from functools import wraps
 from typing import Concatenate, ParamSpec, TypeVar
 
 from flask import abort
-from flask_restx import Resource
 from werkzeug.exceptions import NotFound
 
 from controllers.console.explore.error import AppAccessDeniedError, TrialAppLimitExceeded, TrialAppNotAllowed
 from controllers.console.wraps import account_initialization_required
 from extensions.ext_database import db
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource
 from models import AccountTrialAppRecord, App, InstalledApp, TrialApp
 from services.enterprise.enterprise_service import EnterpriseService
 from services.feature_service import FeatureService

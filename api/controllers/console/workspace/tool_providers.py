@@ -4,7 +4,6 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from flask import make_response, redirect, request, send_file
-from flask_restx import Resource
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden
@@ -30,6 +29,7 @@ from core.tools.entities.tool_entities import ApiProviderSchemaType, WorkflowToo
 from extensions.ext_database import db
 from libs.helper import alphanumeric, uuid_value
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource
 from models.provider_ids import ToolProviderID
 
 # from models.provider_ids import ToolProviderID

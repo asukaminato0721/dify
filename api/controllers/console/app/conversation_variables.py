@@ -1,5 +1,4 @@
 from flask import request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +12,7 @@ from fields.conversation_variable_fields import (
     paginated_conversation_variable_fields,
 )
 from libs.login import login_required
+from libs.openapi import Resource, fields, marshal_with
 from models import ConversationVariable
 from models.model import AppMode
 
@@ -28,7 +28,7 @@ console_ns.schema_model(
     ConversationVariablesQuery.model_json_schema(ref_template=DEFAULT_REF_TEMPLATE_SWAGGER_2_0),
 )
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 # Register base model first
 conversation_variable_model = console_ns.model("ConversationVariable", conversation_variable_fields)
 

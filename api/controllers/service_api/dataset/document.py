@@ -3,7 +3,6 @@ from typing import Self
 from uuid import UUID
 
 from flask import request
-from flask_restx import marshal
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import desc, select
 from werkzeug.exceptions import Forbidden, NotFound
@@ -34,6 +33,7 @@ from core.rag.retrieval.retrieval_methods import RetrievalMethod
 from extensions.ext_database import db
 from fields.document_fields import document_fields, document_status_fields
 from libs.login import current_user
+from libs.openapi import marshal
 from models.dataset import Dataset, Document, DocumentSegment
 from services.dataset_service import DatasetService, DocumentService
 from services.entities.knowledge_entities.knowledge_entities import (

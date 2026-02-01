@@ -1,4 +1,3 @@
-from flask_restx import fields, marshal_with
 from werkzeug.exceptions import Forbidden
 
 from configs import dify_config
@@ -6,6 +5,7 @@ from controllers.web import web_ns
 from controllers.web.wraps import WebApiResource
 from extensions.ext_database import db
 from libs.helper import AppIconUrlField
+from libs.openapi import fields, marshal_with
 from models.account import TenantStatus
 from models.model import Site
 from services.feature_service import FeatureService

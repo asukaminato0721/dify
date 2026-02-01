@@ -1,5 +1,4 @@
 from flask import make_response, request
-from flask_restx import Resource
 from jwt import InvalidTokenError
 from pydantic import BaseModel, Field, field_validator
 
@@ -21,6 +20,7 @@ from controllers.console.wraps import (
 from controllers.web import web_ns
 from controllers.web.wraps import decode_jwt_token
 from libs.helper import EmailStr
+from libs.openapi import Resource
 from libs.passport import PassportService
 from libs.password import valid_password
 from libs.token import (

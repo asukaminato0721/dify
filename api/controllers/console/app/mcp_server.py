@@ -1,7 +1,6 @@
 import json
 from enum import StrEnum
 
-from flask_restx import Resource, marshal_with
 from pydantic import BaseModel, Field
 from werkzeug.exceptions import NotFound
 
@@ -11,11 +10,12 @@ from controllers.console.wraps import account_initialization_required, edit_perm
 from extensions.ext_database import db
 from fields.app_fields import app_server_fields
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, marshal_with
 from models.model import AppMCPServer
 
 DEFAULT_REF_TEMPLATE_SWAGGER_2_0 = "#/definitions/{model}"
 
-# Register model for flask_restx to avoid dict type issues in Swagger
+# Register model for OpenAPI compatibility to avoid dict type issues in Swagger
 app_server_model = console_ns.model("AppServer", app_server_fields)
 
 

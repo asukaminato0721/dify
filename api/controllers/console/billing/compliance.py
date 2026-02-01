@@ -1,9 +1,9 @@
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field
 
 from libs.helper import extract_remote_ip
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource
 from services.billing_service import BillingService
 
 from .. import console_ns

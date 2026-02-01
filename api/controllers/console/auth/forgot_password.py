@@ -2,7 +2,6 @@ import base64
 import secrets
 
 from flask import request
-from flask_restx import Resource, fields
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -19,6 +18,7 @@ from controllers.console.wraps import email_password_login_enabled, setup_requir
 from events.tenant_event import tenant_was_created
 from extensions.ext_database import db
 from libs.helper import EmailStr, extract_remote_ip
+from libs.openapi import Resource, fields
 from libs.password import hash_password, valid_password
 from services.account_service import AccountService, TenantService
 from services.feature_service import FeatureService

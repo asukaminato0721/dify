@@ -2,7 +2,6 @@ import logging
 from typing import Any, NoReturn
 
 from flask import Response, request
-from flask_restx import Resource, marshal, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden
@@ -27,6 +26,7 @@ from extensions.ext_database import db
 from factories.file_factory import build_from_mapping, build_from_mappings
 from factories.variable_factory import build_segment_with_type
 from libs.login import current_user, login_required
+from libs.openapi import Resource, marshal, marshal_with
 from models import Account
 from models.dataset import Pipeline
 from services.rag_pipeline.rag_pipeline import RagPipelineService

@@ -5,7 +5,7 @@ Unit tests for the external dataset controller payload schemas.
 
 These tests focus on Pydantic validation rules so we can catch regressions
 in request constraints (e.g. max length changes) without exercising the
-full Flask/RESTX request stack.
+full request stack.
 """
 
 import pytest

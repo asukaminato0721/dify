@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
-from flask_restx import Api
 
 from controllers.console.auth.login import RefreshTokenApi
+from libs.external_api import ExternalApi
 
 
 class TestRefreshTokenApi:
@@ -29,8 +29,8 @@ class TestRefreshTokenApi:
 
     @pytest.fixture
     def api(self, app):
-        """Create Flask-RESTX API instance."""
-        return Api(app)
+        """Create External API instance."""
+        return ExternalApi(app)
 
     @pytest.fixture
     def client(self, app, api):

@@ -1,6 +1,5 @@
-from flask_restx import Resource
-
 from controllers.web import web_ns
+from libs.openapi import Resource
 from services.feature_service import FeatureService
 
 

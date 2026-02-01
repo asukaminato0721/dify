@@ -1,6 +1,5 @@
-from flask_restx import Namespace, fields
-
 from libs.helper import TimestampField
+from libs.openapi import Namespace, fields
 
 annotation_fields = {
     "id": fields.String,

@@ -1,7 +1,6 @@
 from urllib.parse import quote
 
 from flask import Response, request
-from flask_restx import Resource
 from pydantic import BaseModel, Field
 from werkzeug.exceptions import Forbidden, NotFound
 
@@ -11,6 +10,7 @@ from controllers.files import files_ns
 from core.tools.signature import verify_tool_file_signature
 from core.tools.tool_file_manager import ToolFileManager
 from extensions.ext_database import db as global_db
+from libs.openapi import Resource
 
 DEFAULT_REF_TEMPLATE_SWAGGER_2_0 = "#/definitions/{model}"
 

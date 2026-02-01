@@ -8,7 +8,6 @@ from typing import Concatenate, ParamSpec, TypeVar
 
 from flask import current_app, request
 from flask_login import user_logged_in
-from flask_restx import Resource
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -19,6 +18,7 @@ from extensions.ext_database import db
 from extensions.ext_redis import redis_client
 from libs.datetime_utils import naive_utc_now
 from libs.login import current_user
+from libs.openapi import Resource
 from models import Account, Tenant, TenantAccountJoin, TenantStatus
 from models.dataset import Dataset, RateLimitLog
 from models.model import ApiToken, App

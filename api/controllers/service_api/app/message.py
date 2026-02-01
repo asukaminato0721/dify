@@ -2,7 +2,6 @@ import logging
 from typing import Literal
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, TypeAdapter
 from werkzeug.exceptions import BadRequest, InternalServerError, NotFound
 
@@ -15,6 +14,7 @@ from core.app.entities.app_invoke_entities import InvokeFrom
 from fields.conversation_fields import ResultResponse
 from fields.message_fields import MessageInfiniteScrollPagination, MessageListItem
 from libs.helper import UUIDStrOrEmpty
+from libs.openapi import Resource
 from models.model import App, AppMode, EndUser
 from services.errors.message import (
     FirstMessageNotExistsError,

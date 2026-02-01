@@ -3,7 +3,6 @@ from typing import Any, Literal
 
 from dateutil.parser import isoparse
 from flask import request
-from flask_restx import Namespace, Resource, fields
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
 from werkzeug.exceptions import BadRequest, InternalServerError, NotFound
@@ -34,6 +33,7 @@ from extensions.ext_database import db
 from fields.workflow_app_log_fields import build_workflow_app_log_pagination_model
 from libs import helper
 from libs.helper import TimestampField
+from libs.openapi import Namespace, Resource, fields
 from models.model import App, AppMode, EndUser
 from repositories.factory import DifyAPIRepositoryFactory
 from services.app_generate_service import AppGenerateService

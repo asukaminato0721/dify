@@ -1,9 +1,8 @@
-from flask_restx import Resource, fields
-
 from controllers.console import console_ns
 from controllers.console.wraps import account_initialization_required, setup_required
 from core.model_runtime.utils.encoders import jsonable_encoder
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields
 from services.agent_service import AgentService
 
 

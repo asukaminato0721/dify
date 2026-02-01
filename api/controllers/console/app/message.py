@@ -2,7 +2,6 @@ import logging
 from typing import Literal
 
 from flask import request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import exists, select
 from werkzeug.exceptions import InternalServerError, NotFound
@@ -29,6 +28,7 @@ from fields.raws import FilesContainedField
 from libs.helper import TimestampField, uuid_value
 from libs.infinite_scroll_pagination import InfiniteScrollPagination
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models.model import AppMode, Conversation, Message, MessageAnnotation, MessageFeedback
 from services.errors.conversation import ConversationNotExistsError
 from services.errors.message import MessageNotExistsError, SuggestedQuestionsAfterAnswerDisabledError
@@ -98,7 +98,7 @@ reg(ChatMessagesQuery)
 reg(MessageFeedbackPayload)
 reg(FeedbackExportQuery)
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 # Register in dependency order: base models first, then dependent models
 
 # Base models

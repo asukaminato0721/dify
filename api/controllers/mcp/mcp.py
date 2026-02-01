@@ -1,7 +1,6 @@
 from typing import Any, Union
 
 from flask import Response
-from flask_restx import Resource
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
@@ -13,6 +12,7 @@ from core.mcp import types as mcp_types
 from core.mcp.server.streamable_http import handle_mcp_request
 from extensions.ext_database import db
 from libs import helper
+from libs.openapi import Resource
 from models.model import App, AppMCPServer, AppMode, EndUser
 
 

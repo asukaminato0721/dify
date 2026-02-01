@@ -1,7 +1,6 @@
 import logging
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, ConfigDict, Field
 from werkzeug.exceptions import Unauthorized
 
@@ -9,6 +8,7 @@ from constants import HEADER_NAME_APP_CODE
 from controllers.common import fields
 from controllers.common.schema import register_schema_models
 from core.app.app_config.common.parameters_mapping import get_parameters_from_feature_dict
+from libs.openapi import Resource
 from libs.passport import PassportService
 from libs.token import extract_webapp_passport
 from models.model import App, AppMode

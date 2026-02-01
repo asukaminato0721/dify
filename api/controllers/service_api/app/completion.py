@@ -3,7 +3,6 @@ from typing import Any, Literal
 from uuid import UUID
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, field_validator
 from werkzeug.exceptions import BadRequest, InternalServerError, NotFound
 
@@ -31,6 +30,7 @@ from core.helper.trace_id_helper import get_external_trace_id
 from core.model_runtime.errors.invoke import InvokeError
 from libs import helper
 from libs.helper import UUIDStrOrEmpty
+from libs.openapi import Resource
 from models.model import App, AppMode, EndUser
 from services.app_generate_service import AppGenerateService
 from services.app_task_service import AppTaskService

@@ -2,7 +2,6 @@ import logging
 from typing import Any
 
 from flask import request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from werkzeug.exceptions import BadRequest, Forbidden, NotFound
@@ -15,6 +14,7 @@ from extensions.ext_database import db
 from fields.installed_app_fields import app_fields, installed_app_fields, installed_app_list_fields
 from libs.datetime_utils import naive_utc_now
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models import App, InstalledApp, RecommendedApp
 from services.account_service import TenantService
 from services.enterprise.enterprise_service import EnterpriseService

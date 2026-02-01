@@ -70,12 +70,6 @@ def _mock_console_guards(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return account
 
 
-@pytest.fixture(autouse=True)
-def _restx_mask_defaults(app: Flask):
-    app.config.setdefault("RESTX_MASK_HEADER", "X-Fields")
-    app.config.setdefault("RESTX_MASK_SWAGGER", False)
-
-
 def test_code_based_extension_get_returns_service_data(app: Flask, monkeypatch: pytest.MonkeyPatch):
     service_result = {"entrypoint": "main:agent"}
     service_mock = MagicMock(return_value=service_result)

@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import Any
 
 from flask import abort, request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden, InternalServerError, NotFound
@@ -40,6 +39,7 @@ from libs import helper
 from libs.datetime_utils import naive_utc_now
 from libs.helper import TimestampField, uuid_value
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models import App
 from models.model import AppMode
 from models.workflow import Workflow
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 LISTENING_RETRY_IN = 2000
 DEFAULT_REF_TEMPLATE_SWAGGER_2_0 = "#/definitions/{model}"
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 # Register in dependency order: base models first, then dependent models
 
 # Base models

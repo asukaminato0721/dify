@@ -2,7 +2,6 @@ import logging
 from typing import Any, Literal
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, field_validator
 from werkzeug.exceptions import InternalServerError, NotFound
 
@@ -30,6 +29,7 @@ from core.model_runtime.errors.invoke import InvokeError
 from libs import helper
 from libs.helper import uuid_value
 from libs.login import current_user, login_required
+from libs.openapi import Resource
 from models import Account
 from models.model import AppMode
 from services.app_generate_service import AppGenerateService

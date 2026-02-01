@@ -1,5 +1,4 @@
 from flask import request
-from flask_restx import Resource, fields
 from pydantic import BaseModel, Field, field_validator
 
 from constants.languages import supported_language
@@ -8,6 +7,7 @@ from controllers.console.error import AlreadyActivateError
 from extensions.ext_database import db
 from libs.datetime_utils import naive_utc_now
 from libs.helper import EmailStr, timezone
+from libs.openapi import Resource, fields
 from models import AccountStatus
 from services.account_service import RegisterService
 

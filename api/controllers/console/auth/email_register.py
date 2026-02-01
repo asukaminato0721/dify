@@ -1,5 +1,4 @@
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -16,6 +15,7 @@ from controllers.console.auth.error import (
 )
 from extensions.ext_database import db
 from libs.helper import EmailStr, extract_remote_ip
+from libs.openapi import Resource
 from libs.password import valid_password
 from models import Account
 from services.account_service import AccountService

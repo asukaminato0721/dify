@@ -1,7 +1,6 @@
 from typing import Any
 
 from flask import request
-from flask_restx import marshal
 from pydantic import BaseModel, Field
 from werkzeug.exceptions import NotFound
 
@@ -21,6 +20,7 @@ from core.model_runtime.entities.model_entities import ModelType
 from extensions.ext_database import db
 from fields.segment_fields import child_chunk_fields, segment_fields
 from libs.login import current_account_with_tenant
+from libs.openapi import marshal
 from models.dataset import Dataset
 from services.dataset_service import DatasetService, DocumentService, SegmentService
 from services.entities.knowledge_entities.knowledge_entities import SegmentUpdateArgs

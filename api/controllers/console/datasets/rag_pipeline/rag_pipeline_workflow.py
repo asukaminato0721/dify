@@ -3,7 +3,6 @@ import logging
 from typing import Any, Literal, cast
 
 from flask import abort, request
-from flask_restx import Resource, marshal_with  # type: ignore
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden, InternalServerError, NotFound
@@ -39,6 +38,7 @@ from factories import variable_factory
 from libs import helper
 from libs.helper import TimestampField, UUIDStrOrEmpty
 from libs.login import current_account_with_tenant, current_user, login_required
+from libs.openapi import Resource, marshal_with
 from models import Account
 from models.dataset import Pipeline
 from models.model import EndUser

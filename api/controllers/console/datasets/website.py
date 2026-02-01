@@ -1,7 +1,6 @@
 from typing import Literal
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel
 
 from controllers.common.schema import register_schema_models
@@ -9,6 +8,7 @@ from controllers.console import console_ns
 from controllers.console.datasets.error import WebsiteCrawlError
 from controllers.console.wraps import account_initialization_required, setup_required
 from libs.login import login_required
+from libs.openapi import Resource
 from services.website_service import WebsiteCrawlApiRequest, WebsiteCrawlStatusApiRequest, WebsiteService
 
 

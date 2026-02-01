@@ -2,7 +2,6 @@ from typing import Literal
 
 import sqlalchemy as sa
 from flask import abort, request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
@@ -17,6 +16,7 @@ from fields.raws import FilesContainedField
 from libs.datetime_utils import naive_utc_now, parse_time_range
 from libs.helper import TimestampField
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models import Conversation, EndUser, Message, MessageAnnotation
 from models.model import AppMode
 from services.conversation_service import ConversationService
@@ -62,7 +62,7 @@ console_ns.schema_model(
     ChatConversationQuery.model_json_schema(ref_template=DEFAULT_REF_TEMPLATE_SWAGGER_2_0),
 )
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 # Register in dependency order: base models first, then dependent models
 
 # Base models

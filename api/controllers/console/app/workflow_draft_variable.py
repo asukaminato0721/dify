@@ -4,7 +4,6 @@ from functools import wraps
 from typing import Any, NoReturn, ParamSpec, TypeVar
 
 from flask import Response, request
-from flask_restx import Resource, fields, marshal, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -24,6 +23,7 @@ from extensions.ext_database import db
 from factories.file_factory import build_from_mapping, build_from_mappings
 from factories.variable_factory import build_segment_with_type
 from libs.login import login_required
+from libs.openapi import Resource, fields, marshal, marshal_with
 from models import App, AppMode
 from models.workflow import WorkflowDraftVariable
 from services.workflow_draft_variable_service import WorkflowDraftVariableList, WorkflowDraftVariableService
@@ -147,7 +147,7 @@ _WORKFLOW_DRAFT_VARIABLE_LIST_FIELDS = {
     "items": fields.List(fields.Nested(_WORKFLOW_DRAFT_VARIABLE_FIELDS), attribute=_get_items),
 }
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 workflow_draft_variable_without_value_model = console_ns.model(
     "WorkflowDraftVariableWithoutValue", _WORKFLOW_DRAFT_VARIABLE_WITHOUT_VALUE_FIELDS
 )

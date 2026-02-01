@@ -1,6 +1,5 @@
 import json
 
-from flask_restx import Resource
 from pydantic import BaseModel
 
 from controllers.common.schema import register_schema_models
@@ -9,6 +8,7 @@ from controllers.inner_api import inner_api_ns
 from controllers.inner_api.wraps import enterprise_inner_api_only
 from events.tenant_event import tenant_was_created
 from extensions.ext_database import db
+from libs.openapi import Resource
 from models import Account
 from services.account_service import TenantService
 

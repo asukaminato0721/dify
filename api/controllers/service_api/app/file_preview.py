@@ -2,7 +2,6 @@ import logging
 from urllib.parse import quote
 
 from flask import Response, request
-from flask_restx import Resource
 from pydantic import BaseModel, Field
 
 from controllers.common.file_response import enforce_download_for_html
@@ -15,6 +14,7 @@ from controllers.service_api.app.error import (
 from controllers.service_api.wraps import FetchUserArg, WhereisUserArg, validate_app_token
 from extensions.ext_database import db
 from extensions.ext_storage import storage
+from libs.openapi import Resource
 from models.model import App, EndUser, Message, MessageFile, UploadFile
 
 logger = logging.getLogger(__name__)

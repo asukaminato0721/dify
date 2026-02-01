@@ -1,4 +1,3 @@
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -16,6 +15,7 @@ from fields.app_fields import (
     leaked_dependency_fields,
 )
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models.model import App
 from services.app_dsl_service import AppDslService, ImportStatus
 from services.enterprise.enterprise_service import EnterpriseService
@@ -23,7 +23,7 @@ from services.feature_service import FeatureService
 
 from .. import console_ns
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 # Register base model first
 leaked_dependency_model = console_ns.model("LeakedDependency", leaked_dependency_fields)
 

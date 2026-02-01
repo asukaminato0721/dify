@@ -1,9 +1,7 @@
-from flask import Blueprint
-from flask_restx import Namespace
-
 from libs.external_api import ExternalApi
+from libs.openapi import APIBlueprint, Namespace
 
-bp = Blueprint("inner_api", __name__, url_prefix="/inner/api")
+bp = APIBlueprint("inner_api", __name__, url_prefix="/inner/api")
 
 api = ExternalApi(
     bp,

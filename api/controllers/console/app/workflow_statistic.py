@@ -1,5 +1,4 @@
 from flask import abort, jsonify, request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import sessionmaker
 
@@ -9,6 +8,7 @@ from controllers.console.wraps import account_initialization_required, setup_req
 from extensions.ext_database import db
 from libs.datetime_utils import parse_time_range
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource
 from models.enums import WorkflowRunTriggeredFrom
 from models.model import AppMode
 from repositories.factory import DifyAPIRepositoryFactory

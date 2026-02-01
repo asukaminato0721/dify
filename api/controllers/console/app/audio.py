@@ -1,7 +1,6 @@
 import logging
 
 from flask import request
-from flask_restx import Resource, fields
 from pydantic import BaseModel, Field
 from werkzeug.exceptions import InternalServerError
 
@@ -23,6 +22,7 @@ from controllers.console.wraps import account_initialization_required, setup_req
 from core.errors.error import ModelCurrentlyNotSupportError, ProviderTokenNotInitError, QuotaExceededError
 from core.model_runtime.errors.invoke import InvokeError
 from libs.login import login_required
+from libs.openapi import Resource, fields
 from models import App, AppMode
 from services.audio_service import AudioService
 from services.errors.audio import (

@@ -1,4 +1,4 @@
-from flask_restx import Namespace, fields
+from libs.openapi import Namespace, fields
 
 dataset_tag_fields = {
     "id": fields.String,

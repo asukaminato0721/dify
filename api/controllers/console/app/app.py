@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Any, Literal, TypeAlias
 
 from flask import request
-from flask_restx import Resource
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,6 +27,7 @@ from core.rag.retrieval.retrieval_methods import RetrievalMethod
 from core.workflow.enums import NodeType, WorkflowExecutionStatus
 from extensions.ext_database import db
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource
 from models import App, DatasetPermissionEnum, Workflow
 from models.model import IconType
 from services.app_dsl_service import AppDslService, ImportMode

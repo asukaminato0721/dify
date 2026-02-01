@@ -1,6 +1,5 @@
-import flask_restx
-from flask_restx import Resource, fields, marshal_with
-from flask_restx._http import HTTPStatus
+from http import HTTPStatus
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden
@@ -8,6 +7,7 @@ from werkzeug.exceptions import Forbidden
 from extensions.ext_database import db
 from libs.helper import TimestampField
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, abort, fields, marshal_with
 from models.dataset import Dataset
 from models.model import ApiToken, App
 
@@ -44,7 +44,7 @@ def _get_resource(resource_id, tenant_id, resource_model):
             ).scalar_one_or_none()
 
     if resource is None:
-        flask_restx.abort(HTTPStatus.NOT_FOUND, message=f"{resource_model.__name__} not found.")
+        abort(HTTPStatus.NOT_FOUND, message=f"{resource_model.__name__} not found.")
 
     return resource
 
@@ -86,7 +86,7 @@ class BaseApiKeyListResource(Resource):
         )
 
         if current_key_count >= self.max_keys:
-            flask_restx.abort(
+            abort(
                 HTTPStatus.BAD_REQUEST,
                 message=f"Cannot create more than {self.max_keys} API keys for this resource type.",
                 custom="max_keys_exceeded",
@@ -129,7 +129,7 @@ class BaseApiKeyResource(Resource):
         )
 
         if key is None:
-            flask_restx.abort(HTTPStatus.NOT_FOUND, message="API key not found")
+            abort(HTTPStatus.NOT_FOUND, message="API key not found")
 
         db.session.query(ApiToken).where(ApiToken.id == api_key_id).delete()
         db.session.commit()

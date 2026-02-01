@@ -1,7 +1,6 @@
 import logging
 
 from flask import request
-from flask_restx import Resource, fields, marshal, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from werkzeug.exceptions import Unauthorized
@@ -27,6 +26,7 @@ from enums.cloud_plan import CloudPlan
 from extensions.ext_database import db
 from libs.helper import TimestampField
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal, marshal_with
 from models.account import Tenant, TenantStatus
 from services.account_service import TenantService
 from services.enterprise.enterprise_service import EnterpriseService

@@ -1,7 +1,6 @@
 from typing import Any
 
 from flask import request
-from flask_restx import Resource, fields
 from pydantic import BaseModel, Field
 
 from controllers.console import console_ns
@@ -9,6 +8,7 @@ from controllers.console.wraps import account_initialization_required, is_admin_
 from core.model_runtime.utils.encoders import jsonable_encoder
 from core.plugin.impl.exc import PluginPermissionDeniedError
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields
 from services.plugin.endpoint_service import EndpointService
 
 DEFAULT_REF_TEMPLATE_SWAGGER_2_0 = "#/definitions/{model}"

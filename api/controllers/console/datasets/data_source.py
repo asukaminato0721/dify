@@ -3,7 +3,6 @@ from collections.abc import Generator
 from typing import Any, cast
 
 from flask import request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,6 +26,7 @@ from fields.data_source_fields import (
 )
 from libs.datetime_utils import naive_utc_now
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models import DataSourceOauthBinding, Document
 from services.dataset_service import DatasetService, DocumentService
 from services.datasource_provider_service import DatasourceProviderService

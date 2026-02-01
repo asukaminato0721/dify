@@ -3,11 +3,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
-from flask_restx import Api
 
 from controllers.console.workspace.tool_providers import ToolProviderMCPApi
 from core.db.session_factory import configure_session_factory
 from extensions.ext_database import db
+from libs.external_api import ExternalApi
 from services.tools.mcp_tools_manage_service import ReconnectResult
 
 
@@ -29,7 +29,7 @@ def client():
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    api = Api(app)
+    api = ExternalApi(app)
     api.add_resource(ToolProviderMCPApi, "/console/api/workspaces/current/tool-provider/mcp")
     db.init_app(app)
     # Configure session factory used by controller code

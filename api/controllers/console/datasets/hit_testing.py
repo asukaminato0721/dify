@@ -1,5 +1,3 @@
-from flask_restx import Resource, fields
-
 from controllers.common.schema import register_schema_model
 from fields.hit_testing_fields import (
     child_chunk_fields,
@@ -9,6 +7,7 @@ from fields.hit_testing_fields import (
     segment_fields,
 )
 from libs.login import login_required
+from libs.openapi import Resource, fields
 
 from .. import console_ns
 from ..datasets.hit_testing_base import DatasetsHitTestingBase, HitTestingPayload
@@ -22,14 +21,14 @@ register_schema_model(console_ns, HitTestingPayload)
 
 
 def _get_or_create_model(model_name: str, field_def):
-    """Get or create a flask_restx model to avoid dict type issues in Swagger."""
+    """Get or create an OpenAPI model to avoid dict type issues in Swagger."""
     existing = console_ns.models.get(model_name)
     if existing is None:
         existing = console_ns.model(model_name, field_def)
     return existing
 
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 document_model = _get_or_create_model("HitTestingDocument", document_fields)
 
 segment_fields_copy = segment_fields.copy()

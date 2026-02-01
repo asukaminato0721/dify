@@ -5,7 +5,6 @@ from typing import Literal
 
 import pytz
 from flask import request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -41,6 +40,7 @@ from fields.member_fields import account_fields
 from libs.datetime_utils import naive_utc_now
 from libs.helper import EmailStr, TimestampField, extract_remote_ip, timezone
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models import AccountIntegrate, InvitationCode
 from services.account_service import AccountService
 from services.billing_service import BillingService

@@ -1,7 +1,6 @@
 from typing import Any, Literal
 
 from flask import request
-from flask_restx import Resource
 from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import BadRequest, NotFound
@@ -23,6 +22,7 @@ from fields.conversation_variable_fields import (
     build_conversation_variable_model,
 )
 from libs.helper import UUIDStrOrEmpty
+from libs.openapi import Resource
 from models.model import App, AppMode, EndUser
 from services.conversation_service import ConversationService
 

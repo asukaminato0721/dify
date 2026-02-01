@@ -8,7 +8,6 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from flask import request, send_file
-from flask_restx import Resource, fields, marshal, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy import asc, desc, select
 from werkzeug.exceptions import Forbidden, NotFound
@@ -40,6 +39,7 @@ from fields.document_fields import (
 )
 from libs.datetime_utils import naive_utc_now
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields, marshal, marshal_with
 from models import DatasetProcessRule, Document, DocumentSegment, UploadFile
 from models.dataset import DocumentPipelineExecutionLog
 from services.dataset_service import DatasetService, DocumentService
@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 DOCUMENT_BATCH_DOWNLOAD_ZIP_MAX_DOCS = 100
 
 
-# Register models for flask_restx to avoid dict type issues in Swagger
+# Register models for OpenAPI compatibility to avoid dict type issues in Swagger
 dataset_model = get_or_create_model("Dataset", dataset_fields)
 
 document_metadata_model = get_or_create_model("DocumentMetadata", document_metadata_fields)

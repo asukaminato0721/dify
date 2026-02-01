@@ -1,10 +1,10 @@
 from flask import request
-from flask_restx import Resource, fields
 from pydantic import BaseModel, Field
 
 from controllers.console import console_ns
 from controllers.console.wraps import account_initialization_required, setup_required
 from libs.login import login_required
+from libs.openapi import Resource, fields
 from services.advanced_prompt_template_service import AdvancedPromptTemplateService
 
 

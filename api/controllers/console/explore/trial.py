@@ -2,7 +2,6 @@ import logging
 from typing import Any, cast
 
 from flask import request
-from flask_restx import Resource, fields, marshal, marshal_with, reqparse
 from werkzeug.exceptions import Forbidden, InternalServerError, NotFound
 
 import services
@@ -61,6 +60,7 @@ from fields.workflow_fields import (
 from libs import helper
 from libs.helper import uuid_value
 from libs.login import current_user
+from libs.openapi import Resource, fields, marshal, marshal_with, reqparse
 from models import Account
 from models.account import TenantStatus
 from models.model import AppMode, Site

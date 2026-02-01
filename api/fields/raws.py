@@ -1,6 +1,5 @@
-from flask_restx import fields
-
 from core.file import File
+from libs.openapi import fields
 
 
 class FilesContainedField(fields.Raw):

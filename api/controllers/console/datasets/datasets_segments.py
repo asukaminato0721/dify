@@ -1,7 +1,6 @@
 import uuid
 
 from flask import request
-from flask_restx import Resource, marshal
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -32,6 +31,7 @@ from extensions.ext_redis import redis_client
 from fields.segment_fields import child_chunk_fields, segment_fields
 from libs.helper import escape_like_pattern
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, marshal
 from models.dataset import ChildChunk, DocumentSegment
 from models.model import UploadFile
 from services.dataset_service import DatasetService, DocumentService, SegmentService

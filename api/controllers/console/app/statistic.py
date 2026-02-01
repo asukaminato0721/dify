@@ -2,7 +2,6 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 from flask import abort, jsonify, request
-from flask_restx import Resource, fields
 from pydantic import BaseModel, Field, field_validator
 
 from controllers.console import console_ns
@@ -13,6 +12,7 @@ from extensions.ext_database import db
 from libs.datetime_utils import parse_time_range
 from libs.helper import convert_datetime_to_date
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource, fields
 from models import AppMode
 
 DEFAULT_REF_TEMPLATE_SWAGGER_2_0 = "#/definitions/{model}"

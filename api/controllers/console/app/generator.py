@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 
-from flask_restx import Resource
 from pydantic import BaseModel, Field
 
 from controllers.console import console_ns
@@ -21,6 +20,7 @@ from core.llm_generator.llm_generator import LLMGenerator
 from core.model_runtime.errors.invoke import InvokeError
 from extensions.ext_database import db
 from libs.login import current_account_with_tenant, login_required
+from libs.openapi import Resource
 from models import App
 from services.workflow_service import WorkflowService
 

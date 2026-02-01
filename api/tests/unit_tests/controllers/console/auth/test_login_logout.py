@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
-from flask_restx import Api
 
 from controllers.console.auth.error import (
     AuthenticationFailedError,
@@ -26,6 +25,7 @@ from controllers.console.error import (
     AccountInFreezeError,
     WorkspacesLimitExceeded,
 )
+from libs.external_api import ExternalApi
 from services.errors.account import AccountLoginError, AccountPasswordError
 
 
@@ -46,8 +46,8 @@ class TestLoginApi:
 
     @pytest.fixture
     def api(self, app):
-        """Create Flask-RESTX API instance."""
-        return Api(app)
+        """Create External API instance."""
+        return ExternalApi(app)
 
     @pytest.fixture
     def client(self, app, api):

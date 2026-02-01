@@ -1,7 +1,6 @@
 import logging
 
 from flask import request
-from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +11,7 @@ from controllers.common.schema import get_or_create_model
 from extensions.ext_database import db
 from fields.workflow_trigger_fields import trigger_fields, triggers_list_fields, webhook_trigger_fields
 from libs.login import current_user, login_required
+from libs.openapi import Resource, fields, marshal_with
 from models.enums import AppTriggerStatus
 from models.model import Account, App, AppMode
 from models.trigger import AppTrigger, WorkflowWebhookTrigger

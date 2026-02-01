@@ -2,7 +2,6 @@ import logging
 
 import httpx
 from flask import current_app, redirect, request
-from flask_restx import Resource
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Unauthorized
 
@@ -13,6 +12,7 @@ from extensions.ext_database import db
 from libs.datetime_utils import naive_utc_now
 from libs.helper import extract_remote_ip
 from libs.oauth import GitHubOAuth, GoogleOAuth, OAuthUserInfo
+from libs.openapi import Resource
 from libs.token import (
     set_access_token_to_cookie,
     set_csrf_token_to_cookie,

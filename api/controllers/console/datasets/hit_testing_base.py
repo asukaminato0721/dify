@@ -1,7 +1,6 @@
 import logging
 from typing import Any
 
-from flask_restx import marshal
 from pydantic import BaseModel, Field
 from werkzeug.exceptions import Forbidden, InternalServerError, NotFound
 
@@ -22,6 +21,7 @@ from core.errors.error import (
 from core.model_runtime.errors.invoke import InvokeError
 from fields.hit_testing_fields import hit_testing_record_fields
 from libs.login import current_user
+from libs.openapi import marshal
 from models.account import Account
 from services.dataset_service import DatasetService
 from services.hit_testing_service import HitTestingService
