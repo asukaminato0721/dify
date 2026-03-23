@@ -159,7 +159,9 @@ class Workflow(Base):  # bug
         sa.Index("workflow_version_idx", "tenant_id", "app_id", "version"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4())
+    )
     tenant_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     app_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     type: Mapped[WorkflowType] = mapped_column(EnumText(WorkflowType, length=255), nullable=False)
@@ -698,7 +700,9 @@ class WorkflowRun(Base):
         sa.Index("workflow_run_created_at_id_idx", "created_at", "id"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4())
+    )
     tenant_id: Mapped[str] = mapped_column(StringUUID)
     app_id: Mapped[str] = mapped_column(StringUUID)
 
@@ -913,7 +917,9 @@ class WorkflowNodeExecutionModel(Base):  # This model is expected to have `offlo
         ),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4())
+    )
     tenant_id: Mapped[str] = mapped_column(StringUUID)
     app_id: Mapped[str] = mapped_column(StringUUID)
     workflow_id: Mapped[str] = mapped_column(StringUUID)
@@ -1105,7 +1111,8 @@ class WorkflowNodeExecutionOffload(Base):
     id: Mapped[str] = mapped_column(
         StringUUID,
         primary_key=True,
-        insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()),
+        insert_default=lambda: str(uuid4()),
+        default_factory=lambda: str(uuid4()),
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -1400,7 +1407,9 @@ class WorkflowDraftVariable(Base):
     __allow_unmapped__ = True
 
     # id is the unique identifier of a draft variable.
-    id: Mapped[str] = mapped_column(StringUUID, primary_key=True, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        StringUUID, primary_key=True, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4())
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -1792,7 +1801,8 @@ class WorkflowDraftVariableFile(Base):
     id: Mapped[str] = mapped_column(
         StringUUID,
         primary_key=True,
-        insert_default=lambda: str(uuidv7()), default_factory=lambda: str(uuidv7()),
+        insert_default=lambda: str(uuidv7()),
+        default_factory=lambda: str(uuidv7()),
     )
 
     created_at: Mapped[datetime] = mapped_column(
