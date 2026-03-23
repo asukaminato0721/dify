@@ -31,7 +31,9 @@ class DefaultFieldsMixin:
         # The application can generate the `id` before saving to optimize
         # the insertion process (especially for interdependent models)
         # and reduce database roundtrips.
-        default=lambda: str(uuidv7()),
+        # Use insert_default for SQLAlchemy level default, default_factory for Python dataclass level
+        insert_default=lambda: str(uuidv7()),
+        default_factory=lambda: str(uuidv7()),
     )
 
     created_at: Mapped[datetime] = mapped_column(

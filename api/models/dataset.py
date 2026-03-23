@@ -124,7 +124,7 @@ class Dataset(Base):
     PROVIDER_LIST = ["vendor", "external", None]
     DOC_FORM_LIST = [member.value for member in IndexStructureType]
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     tenant_id: Mapped[str] = mapped_column(StringUUID)
     name: Mapped[str] = mapped_column(String(255))
     description = mapped_column(LongText, nullable=True)
@@ -392,7 +392,7 @@ class DatasetProcessRule(Base):  # bug
         sa.Index("dataset_process_rule_dataset_id_idx", "dataset_id"),
     )
 
-    id = mapped_column(StringUUID, nullable=False, default=lambda: str(uuid4()))
+    id = mapped_column(StringUUID, nullable=False, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     dataset_id = mapped_column(StringUUID, nullable=False)
     mode = mapped_column(EnumText(ProcessRuleMode, length=255), nullable=False, server_default=sa.text("'automatic'"))
     rules = mapped_column(LongText, nullable=True)
@@ -436,7 +436,7 @@ class Document(Base):
     )
 
     # initial fields
-    id = mapped_column(StringUUID, nullable=False, default=lambda: str(uuid4()))
+    id = mapped_column(StringUUID, nullable=False, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     tenant_id = mapped_column(StringUUID, nullable=False)
     dataset_id = mapped_column(StringUUID, nullable=False)
     position: Mapped[int] = mapped_column(sa.Integer, nullable=False)
@@ -781,7 +781,7 @@ class DocumentSegment(Base):
     )
 
     # initial fields
-    id = mapped_column(StringUUID, nullable=False, default=lambda: str(uuid4()))
+    id = mapped_column(StringUUID, nullable=False, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     tenant_id = mapped_column(StringUUID, nullable=False)
     dataset_id = mapped_column(StringUUID, nullable=False)
     document_id = mapped_column(StringUUID, nullable=False)
@@ -987,7 +987,7 @@ class ChildChunk(Base):
     )
 
     # initial fields
-    id = mapped_column(StringUUID, nullable=False, default=lambda: str(uuid4()))
+    id = mapped_column(StringUUID, nullable=False, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     tenant_id = mapped_column(StringUUID, nullable=False)
     dataset_id = mapped_column(StringUUID, nullable=False)
     document_id = mapped_column(StringUUID, nullable=False)
@@ -1638,7 +1638,7 @@ class SegmentAttachmentBinding(Base):
         ),
         sa.Index("segment_attachment_binding_attachment_idx", "attachment_id"),
     )
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuidv7()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuidv7()), default_factory=lambda: str(uuidv7()))
     tenant_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     dataset_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     document_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
@@ -1657,7 +1657,7 @@ class DocumentSegmentSummary(Base):
         sa.Index("document_segment_summaries_status_idx", "status"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, nullable=False, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, nullable=False, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     dataset_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     document_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     # corresponds to DocumentSegment.id or parent chunk id

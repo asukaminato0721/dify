@@ -350,7 +350,7 @@ class App(Base):
     __tablename__ = "apps"
     __table_args__ = (sa.PrimaryKeyConstraint("id", name="app_pkey"), sa.Index("app_tenant_id_idx", "tenant_id"))
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     tenant_id: Mapped[str] = mapped_column(StringUUID)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(LongText, default=sa.text("''"))
@@ -589,7 +589,7 @@ class AppModelConfig(TypeBase):
     __tablename__ = "app_model_configs"
     __table_args__ = (sa.PrimaryKeyConstraint("id", name="app_model_config_pkey"), sa.Index("app_app_id_idx", "app_id"))
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()), init=False)
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()), init=False)
     app_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     provider: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     model_id: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
@@ -840,7 +840,7 @@ class RecommendedApp(Base):  # bug
         sa.Index("recommended_app_is_listed_idx", "is_listed", "language"),
     )
 
-    id = mapped_column(StringUUID, primary_key=True, default=lambda: str(uuid4()))
+    id = mapped_column(StringUUID, primary_key=True, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     app_id = mapped_column(StringUUID, nullable=False)
     description = mapped_column(sa.JSON, nullable=False)
     copyright: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1006,7 +1006,7 @@ class Conversation(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     app_id = mapped_column(StringUUID, nullable=False)
     app_model_config_id = mapped_column(StringUUID, nullable=True)
     model_provider = mapped_column(String(255), nullable=True)
@@ -1349,7 +1349,7 @@ class Message(Base):
         Index("message_created_at_id_idx", "created_at", "id"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     app_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     model_provider: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -1810,7 +1810,7 @@ class MessageAnnotation(Base):
         sa.Index("message_annotation_message_idx", "message_id"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     app_id: Mapped[str] = mapped_column(StringUUID)
     conversation_id: Mapped[str | None] = mapped_column(StringUUID, sa.ForeignKey("conversations.id"))
     message_id: Mapped[str | None] = mapped_column(StringUUID)
@@ -1847,7 +1847,7 @@ class AppAnnotationHitHistory(TypeBase):
         sa.Index("app_annotation_hit_histories_message_idx", "message_id"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()), init=False)
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()), init=False)
     app_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     annotation_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     source: Mapped[str] = mapped_column(LongText, nullable=False)
@@ -1952,7 +1952,7 @@ class EndUser(Base, UserMixin):
         sa.Index("end_user_tenant_session_id_idx", "tenant_id", "session_id", "type"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     tenant_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     app_id = mapped_column(StringUUID, nullable=True)
     type: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -2032,7 +2032,7 @@ class Site(Base):
         sa.Index("site_code_idx", "code", "status"),
     )
 
-    id = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     app_id = mapped_column(StringUUID, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     icon_type: Mapped[IconType | None] = mapped_column(EnumText(IconType, length=255), nullable=True)
@@ -2094,7 +2094,7 @@ class ApiToken(Base):  # bug: this uses setattr so idk the field.
         sa.Index("api_token_tenant_idx", "tenant_id", "type"),
     )
 
-    id = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     app_id = mapped_column(StringUUID, nullable=True)
     tenant_id = mapped_column(StringUUID, nullable=True)
     type: Mapped[ApiTokenType] = mapped_column(EnumText(ApiTokenType, length=16), nullable=False)
@@ -2121,7 +2121,7 @@ class UploadFile(Base):
     # NOTE: The `id` field is generated within the application to minimize extra roundtrips
     # (especially when generating `source_url`).
     # The `server_default` serves as a fallback mechanism.
-    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4()))
     tenant_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     storage_type: Mapped[StorageType] = mapped_column(EnumText(StorageType, length=255), nullable=False)
     key: Mapped[str] = mapped_column(String(255), nullable=False)
