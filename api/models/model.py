@@ -350,9 +350,7 @@ class App(Base):
     __tablename__ = "apps"
     __table_args__ = (sa.PrimaryKeyConstraint("id", name="app_pkey"), sa.Index("app_tenant_id_idx", "tenant_id"))
 
-    id: Mapped[str] = mapped_column(
-        StringUUID, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4())
-    )
+    id: Mapped[str] = mapped_column(StringUUID, default=lambda: str(uuid4()))
     tenant_id: Mapped[str] = mapped_column(StringUUID)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(LongText, default=sa.text("''"))
