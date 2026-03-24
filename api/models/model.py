@@ -842,9 +842,7 @@ class RecommendedApp(Base):  # bug
         sa.Index("recommended_app_is_listed_idx", "is_listed", "language"),
     )
 
-    id = mapped_column(
-        StringUUID, primary_key=True, insert_default=lambda: str(uuid4()), default_factory=lambda: str(uuid4())
-    )
+    id = mapped_column(StringUUID, primary_key=True, default=lambda: str(uuid4()))
     app_id = mapped_column(StringUUID, nullable=False)
     description = mapped_column(sa.JSON, nullable=False)
     copyright: Mapped[str] = mapped_column(String(255), nullable=False)
