@@ -82,6 +82,7 @@ Done
 - Added async runner entrypoints on `WorkflowAppRunner` and `AdvancedChatAppRunner` to consume the new async graph-event surface.
 - Added async-native ready-queue, dispatcher, and worker-pool primitives for the graph engine control plane.
 - Added async node execution entrypoints on the graph node base class and switched the async worker pool to consume them.
+- Added async pooled HTTP client support and async plugin model-client methods for the lower model/provider runtime layer.
 - Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
 - Added local async human-input form models in `api_server/models/human_input.py` for public form token access without the legacy Flask repositories.
 - Added a FastAPI-native human-input form service in `api_server/services/human_input_forms.py`.
@@ -191,6 +192,7 @@ Current status
 - The workflow runners now expose async entrypoints, but advanced-chat/workflow still need async-native persistence and response services built on top of them.
 - The graph engine now has async-native queue/control-plane primitives, but node execution and workflow persistence still are not fully ported end to end.
 - The graph nodes now expose an async execution entrypoint, but most node implementations still execute synchronously behind that interface and workflow persistence is still not async-native end to end.
+- The plugin/model client now has async request surfaces for key LLM operations, but the node/model runtime stack still needs to consume those async methods end to end.
 
 Immediate blockers
 ------------------

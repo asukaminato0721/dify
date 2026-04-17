@@ -1,7 +1,7 @@
 import inspect
 import json
 import logging
-from collections.abc import Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from typing import Any, cast
 
 import httpx
@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from yarl import URL
 
 from configs import dify_config
-from core.helper.http_client_pooling import get_pooled_http_client
+from core.helper.http_client_pooling import get_pooled_async_http_client, get_pooled_http_client
 from core.plugin.endpoint.exc import EndpointSetupFailedError
 from core.plugin.entities.plugin_daemon import PluginDaemonBasicResponse, PluginDaemonError, PluginDaemonInnerError
 from core.plugin.impl.exc import (
@@ -56,6 +56,10 @@ logger = logging.getLogger(__name__)
 _httpx_client: httpx.Client = get_pooled_http_client(
     "plugin_daemon",
     lambda: httpx.Client(limits=httpx.Limits(max_keepalive_connections=50, max_connections=100), trust_env=False),
+)
+_async_httpx_client: httpx.AsyncClient = get_pooled_async_http_client(
+    "plugin_daemon",
+    lambda: httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=100), trust_env=False),
 )
 
 
@@ -122,6 +126,38 @@ class BasePluginClient:
 
         return str(url), prepared_headers, prepared_data, params, files
 
+    async def _async_request(
+        self,
+        method: str,
+        path: str,
+        headers: dict[str, str] | None = None,
+        data: bytes | dict[str, Any] | str | None = None,
+        params: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        url, headers, prepared_data, params, files = self._prepare_request(path, headers, data, params, files)
+
+        request_kwargs: dict[str, Any] = {
+            "method": method,
+            "url": url,
+            "headers": headers,
+            "params": params,
+            "files": files,
+            "timeout": plugin_daemon_request_timeout,
+        }
+        if isinstance(prepared_data, dict):
+            request_kwargs["data"] = prepared_data
+        elif prepared_data is not None:
+            request_kwargs["content"] = prepared_data
+
+        try:
+            response = await _async_httpx_client.request(**request_kwargs)
+        except httpx.RequestError:
+            logger.exception("Async request to Plugin Daemon Service failed")
+            raise PluginDaemonInnerError(code=-500, message="Request to Plugin Daemon Service failed")
+
+        return response
+
     def _inject_trace_headers(self, headers: dict[str, str]) -> None:
         """
         Inject W3C traceparent header for distributed tracing.
@@ -187,6 +223,44 @@ class BasePluginClient:
                         yield line
         except httpx.RequestError:
             logger.exception("Stream request to Plugin Daemon Service failed")
+            raise PluginDaemonInnerError(code=-500, message="Request to Plugin Daemon Service failed")
+
+    async def _async_stream_request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        data: bytes | dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        url, headers, prepared_data, params, files = self._prepare_request(path, headers, data, params, files)
+
+        stream_kwargs: dict[str, Any] = {
+            "method": method,
+            "url": url,
+            "headers": headers,
+            "params": params,
+            "files": files,
+            "timeout": plugin_daemon_request_timeout,
+        }
+        if isinstance(prepared_data, dict):
+            stream_kwargs["data"] = prepared_data
+        elif prepared_data is not None:
+            stream_kwargs["content"] = prepared_data
+
+        try:
+            async with _async_httpx_client.stream(**stream_kwargs) as response:
+                async for raw_line in response.aiter_lines():
+                    if not raw_line:
+                        continue
+                    line = raw_line.strip()
+                    if line.startswith("data:"):
+                        line = line[5:].strip()
+                    if line:
+                        yield line
+        except httpx.RequestError:
+            logger.exception("Async stream request to Plugin Daemon Service failed")
             raise PluginDaemonInnerError(code=-500, message="Request to Plugin Daemon Service failed")
 
     def _stream_request_with_model[T: BaseModel | dict[str, Any] | list[Any] | bool | str](
@@ -276,6 +350,57 @@ class BasePluginClient:
 
         return rep.data
 
+    async def _async_request_with_plugin_daemon_response[T: BaseModel | dict[str, Any] | list[Any] | bool | str](
+        self,
+        method: str,
+        path: str,
+        type_: type[T],
+        headers: dict[str, str] | None = None,
+        data: bytes | dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
+        transformer: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> T:
+        try:
+            response = await self._async_request(method, path, headers, data, params, files)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.exception("Failed to request plugin daemon, status: %s, url: %s", e.response.status_code, path)
+            if e.response.status_code < 500:
+                raise PluginDaemonClientSideError(description=str(e))
+            else:
+                raise PluginDaemonInternalServerError(description=str(e))
+        except Exception as e:
+            msg = f"Failed to request plugin daemon, url: {path}"
+            logger.exception("Failed to request plugin daemon, url: %s", path)
+            raise ValueError(msg) from e
+
+        try:
+            json_response = response.json()
+            if transformer:
+                json_response = transformer(json_response)
+            rep = PluginDaemonBasicResponse[type_].model_validate(json_response)  # type: ignore
+        except Exception:
+            msg = (
+                f"Failed to parse response from plugin daemon to PluginDaemonBasicResponse [{str(type_.__name__)}],"
+                f" url: {path}"
+            )
+            logger.exception(msg)
+            raise ValueError(msg)
+
+        if rep.code != 0:
+            try:
+                error = PluginDaemonError.model_validate(json.loads(rep.message))
+            except Exception:
+                raise ValueError(f"{rep.message}, code: {rep.code}")
+
+            self._handle_plugin_daemon_error(error.error_type, error.message)
+        if rep.data is None:
+            frame = inspect.currentframe()
+            raise ValueError(f"got empty data from plugin daemon: {frame.f_lineno if frame else 'unknown'}")
+
+        return rep.data
+
     def _request_with_plugin_daemon_response_stream[T: BaseModel | dict[str, Any] | list[Any] | bool | str](
         self,
         method: str,
@@ -301,6 +426,41 @@ class BasePluginClient:
                 # If the dictionary contains the `error` key, use its value as the argument
                 # for `ValueError`.
                 # Otherwise, use the `line` to provide better contextual information about the error.
+                raise ValueError(line_data.get("error", line))
+
+            if rep.code != 0:
+                if rep.code == -500:
+                    try:
+                        error = PluginDaemonError.model_validate(json.loads(rep.message))
+                    except Exception:
+                        raise PluginDaemonInnerError(code=rep.code, message=rep.message)
+
+                    logger.error("Error in stream response for plugin %s", rep.__dict__)
+                    self._handle_plugin_daemon_error(error.error_type, error.message)
+                raise ValueError(f"plugin daemon: {rep.message}, code: {rep.code}")
+            if rep.data is None:
+                frame = inspect.currentframe()
+                raise ValueError(f"got empty data from plugin daemon: {frame.f_lineno if frame else 'unknown'}")
+            yield rep.data
+
+    async def _async_request_with_plugin_daemon_response_stream[T: BaseModel | dict[str, Any] | list[Any] | bool | str](
+        self,
+        method: str,
+        path: str,
+        type_: type[T],
+        headers: dict[str, str] | None = None,
+        data: bytes | dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
+    ) -> AsyncGenerator[T, None]:
+        async for line in self._async_stream_request(method, path, params, headers, data, files):
+            try:
+                rep = PluginDaemonBasicResponse[type_].model_validate_json(line)  # type: ignore
+            except (ValueError, TypeError):
+                try:
+                    line_data = json.loads(line)
+                except (ValueError, TypeError):
+                    raise ValueError(line)
                 raise ValueError(line_data.get("error", line))
 
             if rep.code != 0:

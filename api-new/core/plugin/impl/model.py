@@ -1,5 +1,5 @@
 import binascii
-from collections.abc import Generator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from typing import IO, Any
 
 from core.plugin.entities.plugin_daemon import (
@@ -74,6 +74,40 @@ class PluginModelClient(BasePluginClient):
         )
 
         for resp in response:
+            return resp.model_schema
+
+        return None
+
+    async def aget_model_schema(
+        self,
+        tenant_id: str,
+        user_id: str | None,
+        plugin_id: str,
+        provider: str,
+        model_type: str,
+        model: str,
+        credentials: dict[str, Any],
+    ) -> AIModelEntity | None:
+        response = self._async_request_with_plugin_daemon_response_stream(
+            "POST",
+            f"plugin/{tenant_id}/dispatch/model/schema",
+            PluginModelSchemaEntity,
+            data=self._dispatch_payload(
+                user_id=user_id,
+                data={
+                    "provider": provider,
+                    "model_type": model_type,
+                    "model": model,
+                    "credentials": credentials,
+                },
+            ),
+            headers={
+                "X-Plugin-ID": plugin_id,
+                "Content-Type": "application/json",
+            },
+        )
+
+        async for resp in response:
             return resp.model_schema
 
         return None
@@ -197,6 +231,49 @@ class PluginModelClient(BasePluginClient):
         except PluginDaemonInnerError as e:
             raise ValueError(e.message + str(e.code))
 
+    async def ainvoke_llm(
+        self,
+        tenant_id: str,
+        user_id: str | None,
+        plugin_id: str,
+        provider: str,
+        model: str,
+        credentials: dict[str, Any],
+        prompt_messages: list[PromptMessage],
+        model_parameters: dict[str, Any] | None = None,
+        tools: list[PromptMessageTool] | None = None,
+        stop: list[str] | None = None,
+        stream: bool = True,
+    ) -> AsyncGenerator[LLMResultChunk, None]:
+        response = self._async_request_with_plugin_daemon_response_stream(
+            method="POST",
+            path=f"plugin/{tenant_id}/dispatch/llm/invoke",
+            type_=LLMResultChunk,
+            data=jsonable_encoder(
+                self._dispatch_payload(
+                    user_id=user_id,
+                    data={
+                        "provider": provider,
+                        "model_type": "llm",
+                        "model": model,
+                        "credentials": credentials,
+                        "prompt_messages": prompt_messages,
+                        "model_parameters": model_parameters,
+                        "tools": tools,
+                        "stop": stop,
+                        "stream": stream,
+                    },
+                )
+            ),
+            headers={
+                "X-Plugin-ID": plugin_id,
+                "Content-Type": "application/json",
+            },
+        )
+
+        async for resp in response:
+            yield resp
+
     def get_llm_num_tokens(
         self,
         tenant_id: str,
@@ -236,6 +313,46 @@ class PluginModelClient(BasePluginClient):
         )
 
         for resp in response:
+            return resp.num_tokens
+
+        return 0
+
+    async def aget_llm_num_tokens(
+        self,
+        tenant_id: str,
+        user_id: str | None,
+        plugin_id: str,
+        provider: str,
+        model_type: str,
+        model: str,
+        credentials: dict[str, Any],
+        prompt_messages: list[PromptMessage],
+        tools: list[PromptMessageTool] | None = None,
+    ) -> int:
+        response = self._async_request_with_plugin_daemon_response_stream(
+            method="POST",
+            path=f"plugin/{tenant_id}/dispatch/llm/num_tokens",
+            type_=PluginLLMNumTokensResponse,
+            data=jsonable_encoder(
+                self._dispatch_payload(
+                    user_id=user_id,
+                    data={
+                        "provider": provider,
+                        "model_type": model_type,
+                        "model": model,
+                        "credentials": credentials,
+                        "prompt_messages": prompt_messages,
+                        "tools": tools,
+                    },
+                )
+            ),
+            headers={
+                "X-Plugin-ID": plugin_id,
+                "Content-Type": "application/json",
+            },
+        )
+
+        async for resp in response:
             return resp.num_tokens
 
         return 0
