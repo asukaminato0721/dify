@@ -94,7 +94,7 @@ class AsyncWorker:
             with self._execution_context:
                 self._invoke_node_run_start_hooks(node)
                 try:
-                    for event in node.run():
+                    async for event in node.run_async():
                         if isinstance(event, NodeRunStartedEvent) and event.id == node.execution_id:
                             self._current_node_started_at = event.start_at
                         await self._event_queue.put(event)
@@ -108,7 +108,7 @@ class AsyncWorker:
         else:
             self._invoke_node_run_start_hooks(node)
             try:
-                for event in node.run():
+                async for event in node.run_async():
                     if isinstance(event, NodeRunStartedEvent) and event.id == node.execution_id:
                         self._current_node_started_at = event.start_at
                     await self._event_queue.put(event)

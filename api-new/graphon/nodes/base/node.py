@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import operator
 from abc import abstractmethod
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Generator, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from functools import singledispatchmethod
 from types import MappingProxyType
@@ -362,6 +363,15 @@ class Node(Generic[NodeDataT]):
         """
         raise NotImplementedError
 
+    async def _run_async(self) -> NodeRunResult | Generator[NodeEventBase, None, None] | AsyncGenerator[NodeEventBase, None]:
+        """Async node execution hook.
+
+        Subclasses can override this to provide true async node execution.
+        The default implementation delegates to `_run()` so callers have a
+        stable async entrypoint while node implementations migrate.
+        """
+        return self._run()
+
     def populate_start_event(self, event: NodeRunStartedEvent) -> None:
         """Allow subclasses to enrich the started event without cross-node imports
         in the base class."""
@@ -409,7 +419,82 @@ class Node(Generic[NodeDataT]):
                     and not event.in_iteration_id
                     and not event.in_loop_id
                 ):  # pyright: ignore[reportUnnecessaryIsInstance]
-                    event.id = self.execution_id
+                    cast(Any, event).id = self.execution_id
+                    yield event
+                else:
+                    yield event
+        except Exception as e:
+            logger.exception("Node %s failed to run", self._node_id)
+            result = NodeRunResult(
+                status=WorkflowNodeExecutionStatus.FAILED,
+                error=str(e),
+                error_type="WorkflowNodeError",
+            )
+            finished_at = datetime.now(UTC).replace(tzinfo=None)
+            yield NodeRunFailedEvent(
+                id=self.execution_id,
+                node_id=self._node_id,
+                node_type=self.node_type,
+                start_at=self._start_at,
+                finished_at=finished_at,
+                node_run_result=result,
+                error=str(e),
+            )
+
+    async def run_async(self) -> AsyncGenerator[GraphNodeEventBase, None]:
+        execution_id = self.ensure_execution_id()
+        self._start_at = datetime.now(UTC).replace(tzinfo=None)
+
+        start_event = NodeRunStartedEvent(
+            id=execution_id,
+            node_id=self._node_id,
+            node_type=self.node_type,
+            node_title=self.title,
+            in_iteration_id=None,
+            start_at=self._start_at,
+        )
+        try:
+            self.populate_start_event(start_event)
+        except Exception:
+            logger.warning(
+                "Failed to populate start event for node %s",
+                self._node_id,
+                exc_info=True,
+            )
+        yield start_event
+
+        try:
+            result = await self._run_async()
+
+            if isinstance(result, NodeRunResult):
+                yield self._convert_node_run_result_to_graph_node_event(result)
+                return
+
+            if hasattr(result, "__aiter__"):
+                async for event in result:  # type: ignore[misc]
+                    if isinstance(event, NodeEventBase):
+                        yield self._dispatch(event)
+                    elif (
+                        isinstance(event, GraphNodeEventBase)
+                        and not event.in_iteration_id
+                        and not event.in_loop_id
+                    ):
+                        cast(Any, event).id = self.execution_id
+                        yield event
+                    else:
+                        yield event
+                return
+
+            sync_result = cast(Iterable[NodeEventBase | GraphNodeEventBase], result)
+            for event in sync_result:
+                if isinstance(event, NodeEventBase):
+                    yield self._dispatch(event)
+                elif (
+                    isinstance(event, GraphNodeEventBase)
+                    and not event.in_iteration_id
+                    and not event.in_loop_id
+                ):
+                    cast(Any, event).id = self.execution_id
                     yield event
                 else:
                     yield event

@@ -81,6 +81,7 @@ Done
 - Added async event emission APIs on `EventManager`, `GraphEngine`, and `WorkflowEntry` as the execution-engine path forward for the remaining workflow runtime port.
 - Added async runner entrypoints on `WorkflowAppRunner` and `AdvancedChatAppRunner` to consume the new async graph-event surface.
 - Added async-native ready-queue, dispatcher, and worker-pool primitives for the graph engine control plane.
+- Added async node execution entrypoints on the graph node base class and switched the async worker pool to consume them.
 - Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
 - Added local async human-input form models in `api_server/models/human_input.py` for public form token access without the legacy Flask repositories.
 - Added a FastAPI-native human-input form service in `api_server/services/human_input_forms.py`.
@@ -116,9 +117,10 @@ Done
 - Added focused generation route tests in `tests/test_generation_routes.py`.
 - Added focused async graph-engine event tests in `tests/test_graph_engine_async.py`.
 - Added focused async ready-queue tests in `tests/test_async_ready_queue.py`.
+- Added focused async node execution tests in `tests/test_node_async.py`.
 - Installed the new project environment with `uv sync`.
 - Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
-- Current active FastAPI runtime tests pass: `48 passed`.
+- Current active FastAPI runtime tests pass: `49 passed`.
 
 Current status
 --------------
@@ -188,6 +190,7 @@ Current status
 - The execution engine now has an async event-emission surface, but advanced-chat/workflow still need an async-native app service built on top of it.
 - The workflow runners now expose async entrypoints, but advanced-chat/workflow still need async-native persistence and response services built on top of them.
 - The graph engine now has async-native queue/control-plane primitives, but node execution and workflow persistence still are not fully ported end to end.
+- The graph nodes now expose an async execution entrypoint, but most node implementations still execute synchronously behind that interface and workflow persistence is still not async-native end to end.
 
 Immediate blockers
 ------------------
