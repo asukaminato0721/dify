@@ -1,0 +1,137 @@
+FastAPI Port Roadmap
+====================
+
+Last updated: 2026-04-17
+
+Done
+----
+- Copied the existing `../api` backend source into `api-new` as migration material.
+- Replaced the stub entrypoint with a FastAPI/Uvicorn app in `main.py`.
+- Added a FastAPI app factory with lifespan management in `app_factory.py`.
+- Added request/tracing middleware in `api_server/middleware.py`.
+- Replaced the Flask database bootstrap with an async SQLAlchemy manager in `extensions/ext_database.py`.
+- Added a FastAPI-native exception layer in `api_server/errors.py`.
+- Added FastAPI-native JWT/passport helpers in `api_server/auth.py`.
+- Added a FastAPI-local ORM base and SQLAlchemy types in `api_server/db.py` to avoid importing the legacy `models` package.
+- Replaced eager `models/__init__.py` imports with a lazy loader so the package no longer imports the full Flask-era ORM graph at import time.
+- Ported health endpoints:
+  - `GET /health`
+  - `GET /health/live`
+  - `GET /health/ready`
+- Ported bootstrap/public endpoints:
+  - `GET /console/api/ping`
+  - `GET /console/api/version`
+  - `GET /console/api/system-features`
+  - `GET /api/system-features`
+  - `GET /console/api/init`
+  - `POST /console/api/init`
+  - `GET /console/api/setup`
+  - `POST /console/api/setup`
+- Ported public webapp endpoints:
+  - `GET /api/webapp/access-mode`
+  - `GET /api/webapp/permission`
+  - `GET /api/site`
+  - `GET /api/parameters`
+  - `GET /api/meta`
+  - `GET /api/passport`
+  - `GET /api/login/status`
+  - `POST /api/logout`
+  - `POST /api/login`
+  - `POST /api/email-code-login`
+  - `POST /api/email-code-login/validity`
+  - `POST /api/forgot-password`
+  - `POST /api/forgot-password/validity`
+  - `POST /api/forgot-password/resets`
+  - `GET /api/remote-files/{url}`
+  - `POST /api/remote-files/upload`
+  - `POST /api/files/upload`
+- Added an async bootstrap service in `api_server/services/bootstrap.py` for first-time setup and init validation.
+- Added a minimal async app/site lookup service in `api_server/services/app_lookup.py`.
+- Added a FastAPI-native webapp context service in `api_server/services/webapp_context.py`.
+- Added local public webapp models in `api_server/models/app.py` for app, tenant, site, end-user, app config, workflow, and API tool provider lookups.
+- Added a minimal FastAPI test file in `tests/test_app_routes.py`.
+- Installed the new project environment with `uv sync`.
+- Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
+- Current active FastAPI runtime tests pass: `14 passed`.
+
+Current status
+--------------
+- The active FastAPI runtime slice is type-clean under targeted `pyrefly` checks.
+- The current verified FastAPI route surface is:
+  - `/health`
+  - `/health/live`
+  - `/health/ready`
+  - `/console/api/ping`
+  - `/console/api/version`
+  - `/console/api/system-features`
+  - `/api/system-features`
+  - `/console/api/init`
+  - `/console/api/setup`
+  - `/api/webapp/access-mode`
+  - `/api/webapp/permission`
+  - `/api/site`
+  - `/api/parameters`
+  - `/api/meta`
+  - `/api/passport`
+  - `/api/login/status`
+  - `/api/logout`
+  - `/api/login`
+  - `/api/email-code-login`
+  - `/api/email-code-login/validity`
+  - `/api/forgot-password`
+  - `/api/forgot-password/validity`
+  - `/api/forgot-password/resets`
+  - `/api/remote-files/{url}`
+  - `/api/remote-files/upload`
+  - `/api/files/upload`
+- The copied legacy tree is not ported yet; it still contains Flask-specific imports and synchronous `db.session` usage.
+- The previous import-time blocker from `models/__init__.py` has been removed for the new runtime slice.
+
+Immediate blockers
+------------------
+- Large parts of the copied code still assume:
+  - Flask request/session globals
+  - Flask-Login
+  - sync SQLAlchemy sessions via `db.session`
+  - Flask-specific controllers and decorators
+- Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
+
+Next steps
+----------
+1. Continue porting the next public route family.
+   - Candidate next slice: conversation/message APIs or workflow run APIs.
+   - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
+
+2. Expand the FastAPI-native domain layer.
+   - Continue extracting minimal async models/services for features actually exposed by routes.
+   - Keep new runtime code under `api_server/` instead of extending Flask-era modules.
+
+3. Port controller groups incrementally.
+   - Bootstrap/authentication
+   - Console public endpoints
+   - Web public endpoints
+   - Console authenticated endpoints
+   - Service API endpoints
+
+4. Replace sync DB access.
+   - Eliminate `db.session` usage from active code paths.
+   - Move active repositories/services to `AsyncSession`.
+
+5. Replace Flask-specific infrastructure.
+   - Auth/session wrappers
+   - Error translation
+   - request-context helpers
+   - extension bootstrapping
+
+6. Widen verification after each slice.
+   - `pyrefly` on the active FastAPI package
+   - pytest on newly ported routes/services
+   - only after a package is active, run broader type coverage on it
+
+Definition of done
+------------------
+- No active FastAPI code imports Flask or Flask-only extensions.
+- Active routes use FastAPI request handling and async SQLAlchemy.
+- Targeted `pyrefly` passes for every active package.
+- Route/service tests pass for the active surface.
+- Legacy copied files are either ported, isolated from runtime, or removed.
