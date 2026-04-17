@@ -319,9 +319,13 @@ class Workflow(Base):
     id: Mapped[str] = mapped_column(StringUUID)
     tenant_id: Mapped[str] = mapped_column(StringUUID)
     app_id: Mapped[str] = mapped_column(StringUUID)
+    type: Mapped[str | None] = mapped_column(String(255), default=None)
     version: Mapped[str] = mapped_column(String(255))
     graph: Mapped[str] = mapped_column(LongText)
     features: Mapped[str | None] = mapped_column(LongText, default=None)
+    created_by: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    environment_variables: Mapped[str | None] = mapped_column(LongText, default=None)
+    conversation_variables: Mapped[str | None] = mapped_column(LongText, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
@@ -348,6 +352,28 @@ class Workflow(Base):
             )
             del features["file_upload"]["image"]
         return features
+
+    @property
+    def environment_variables_list(self) -> list[dict[str, Any]]:
+        if not self.environment_variables:
+            return []
+        raw_values = json.loads(self.environment_variables)
+        if isinstance(raw_values, dict):
+            return [value for value in raw_values.values() if isinstance(value, dict)]
+        if isinstance(raw_values, list):
+            return [value for value in raw_values if isinstance(value, dict)]
+        return []
+
+    @property
+    def conversation_variables_list(self) -> list[dict[str, Any]]:
+        if not self.conversation_variables:
+            return []
+        raw_values = json.loads(self.conversation_variables)
+        if isinstance(raw_values, dict):
+            return [value for value in raw_values.values() if isinstance(value, dict)]
+        if isinstance(raw_values, list):
+            return [value for value in raw_values if isinstance(value, dict)]
+        return []
 
     def user_input_form(self, to_old_structure: bool = False) -> list[Any]:
         if not self.graph:
