@@ -59,7 +59,10 @@ class StorageType(enum.StrEnum):
 
 class Tenant(Base):
     __tablename__ = "tenants"
-    __table_args__ = (sa.PrimaryKeyConstraint("id", name="tenant_pkey"),)
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="tenant_pkey"),
+        {"extend_existing": True},
+    )
 
     id: Mapped[str] = mapped_column(StringUUID)
     plan: Mapped[str] = mapped_column(String(255), default="basic")
@@ -79,7 +82,11 @@ class Tenant(Base):
 
 class Account(Base):
     __tablename__ = "accounts"
-    __table_args__ = (sa.PrimaryKeyConstraint("id", name="account_pkey"), sa.Index("account_email_idx", "email"))
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="account_pkey"),
+        sa.Index("account_email_idx", "email"),
+        {"extend_existing": True},
+    )
 
     id: Mapped[str] = mapped_column(StringUUID)
     name: Mapped[str] = mapped_column(String(255))
@@ -123,6 +130,7 @@ class TenantAccountJoin(Base):
         sa.Index("tenant_account_join_account_id_idx", "account_id"),
         sa.Index("tenant_account_join_tenant_id_idx", "tenant_id"),
         sa.UniqueConstraint("tenant_id", "account_id", name="unique_tenant_account_join"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -153,6 +161,7 @@ class App(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="app_pkey"),
         sa.Index("app_tenant_id_idx", "tenant_id"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -186,6 +195,7 @@ class EndUser(Base):
         sa.PrimaryKeyConstraint("id", name="end_user_pkey"),
         sa.Index("end_user_session_id_idx", "session_id", "type"),
         sa.Index("end_user_tenant_session_id_idx", "tenant_id", "session_id", "type"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -201,6 +211,7 @@ class Site(Base):
         sa.PrimaryKeyConstraint("id", name="site_pkey"),
         sa.Index("site_app_id_idx", "app_id"),
         sa.Index("site_code_idx", "code", "status"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -228,6 +239,7 @@ class AppModelConfig(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="app_model_config_pkey"),
         sa.Index("app_app_id_idx", "app_id"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -301,6 +313,7 @@ class Workflow(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="workflow_pkey"),
         sa.Index("workflow_version_idx", "tenant_id", "app_id", "version"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -351,7 +364,10 @@ class Workflow(Base):
 
 class ApiToolProvider(Base):
     __tablename__ = "tool_api_providers"
-    __table_args__ = (sa.PrimaryKeyConstraint("id", name="tool_api_provider_pkey"),)
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="tool_api_provider_pkey"),
+        {"extend_existing": True},
+    )
 
     id: Mapped[str] = mapped_column(StringUUID)
     icon: Mapped[str] = mapped_column(String(255))
@@ -362,6 +378,7 @@ class UploadFile(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="upload_file_pkey"),
         sa.Index("upload_file_tenant_idx", "tenant_id"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -387,6 +404,7 @@ class Conversation(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="conversation_pkey"),
         sa.Index("conversation_app_from_user_idx", "app_id", "from_source", "from_end_user_id"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -411,6 +429,7 @@ class PinnedConversation(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="pinned_conversation_pkey"),
         sa.Index("pinned_conversation_conversation_idx", "app_id", "conversation_id", "created_by_role", "created_by"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -426,6 +445,7 @@ class Message(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="message_pkey"),
         sa.Index("message_conversation_id_idx", "conversation_id"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -449,6 +469,7 @@ class MessageFeedback(Base):
     __table_args__ = (
         sa.PrimaryKeyConstraint("id", name="message_feedback_pkey"),
         sa.Index("message_feedback_message_idx", "message_id", "from_source"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)
@@ -469,6 +490,7 @@ class SavedMessage(Base):
         sa.PrimaryKeyConstraint("id", name="saved_message_pkey"),
         sa.Index("saved_message_message_idx", "app_id", "message_id", "created_by_role", "created_by"),
         sa.Index("saved_message_message_id_idx", "message_id"),
+        {"extend_existing": True},
     )
 
     id: Mapped[str] = mapped_column(StringUUID)

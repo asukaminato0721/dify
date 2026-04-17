@@ -1,8 +1,18 @@
 from __future__ import annotations
 
-from httpx import ASGITransport, AsyncClient
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
+
+from api_server.errors import bad_request
+from api_server.models.app import AppMode, CreatorUserRole
+from api_server.routes.workflow_events import get_workflow_events
+from api_server.services.generation_bridge import ChatMessagePayload, CompletionMessagePayload, WorkflowRunPayload
+from api_server.services.webapp_context import WebappContext
+from api_server.services.workflow_events import WorkflowEventsService, WorkflowRunRecord
 from main import app
 
 
@@ -117,6 +127,127 @@ async def test_stop_chat_task_requires_passport() -> None:
 
     assert response.status_code == 401
     assert response.json()["code"] == "missing_passport"
+
+
+async def test_completion_generation_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.post("/api/completion-messages", json={"inputs": {}, "query": ""})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_chat_generation_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.post("/api/chat-messages", json={"inputs": {}, "query": "hello"})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_workflow_generation_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.post("/api/workflows/run", json={"inputs": {}})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_workflow_events_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/api/workflow/test-task/events")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_finished_workflow_events_return_sse_payload() -> None:
+    context = WebappContext(
+        app=type("AppStub", (), {"mode": AppMode.WORKFLOW, "id": "app-1"})(),
+        site=type("SiteStub", (), {})(),
+        end_user=type("EndUserStub", (), {"id": "end-user-1", "session_id": "session-1"})(),
+        tenant=type("TenantStub", (), {"id": "tenant-1"})(),
+        app_model_config=None,
+        workflow=None,
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/workflow/workflow-run-1/events",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+
+    with (
+        patch("api_server.routes.workflow_events.WebappContextService.resolve", new=AsyncMock(return_value=context)),
+        patch(
+            "api_server.routes.workflow_events.WorkflowEventsService.get_accessible_workflow_run",
+            new=AsyncMock(return_value=object()),
+        ),
+        patch(
+            "api_server.routes.workflow_events.WorkflowEventsService.stream_events",
+            return_value=iter(["event: ping\n\n"]),
+        ),
+    ):
+        response = await get_workflow_events(request, "workflow-run-1")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+
+def test_finished_workflow_service_streams_single_sse_event() -> None:
+    finished_run = WorkflowRunRecord(
+        id="workflow-run-1",
+        workflow_id="workflow-1",
+        tenant_id="tenant-1",
+        app_id="app-1",
+        inputs={"query": "hello"},
+        status="succeeded",
+        outputs={"answer": "done"},
+        error=None,
+        elapsed_time=1.5,
+        total_tokens=42,
+        total_steps=3,
+        created_at=datetime(2026, 4, 18, 12, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 4, 18, 12, 1, tzinfo=UTC),
+        exceptions_count=0,
+        created_by_role=CreatorUserRole.END_USER,
+        created_by="end-user-1",
+    )
+    end_user = type("EndUserStub", (), {"id": "end-user-1", "session_id": "session-1"})()
+
+    events = list(
+        WorkflowEventsService.stream_events(
+            app_mode=AppMode.WORKFLOW,
+            workflow_run=finished_run,
+            end_user=end_user,
+            include_state_snapshot=False,
+        )
+    )
+
+    assert len(events) == 1
+    assert '"event":"workflow_finished"' in events[0]
+    assert '"workflow_run_id":"workflow-run-1"' in events[0]
+
+
+def test_generation_payload_models_validate_response_mode() -> None:
+    assert CompletionMessagePayload(inputs={}, query="", response_mode="blocking").response_mode == "blocking"
+    assert ChatMessagePayload(inputs={}, query="hi", response_mode="streaming").response_mode == "streaming"
+    assert WorkflowRunPayload(inputs={}, response_mode=None).response_mode is None
+
+
+async def test_file_preview_missing_file() -> None:
+    with patch(
+        "api_server.services.file_access.FileAccessService.get_upload_file",
+        new=AsyncMock(side_effect=bad_request("file_not_found", "File not found")),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(f"/files/{uuid4()}/file-preview")
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "file_not_found"
 
 
 async def test_passport_requires_app_code() -> None:

@@ -16,7 +16,10 @@ class DifySetup(TypeBase):
     """Minimal setup model used by the async bootstrap endpoints."""
 
     __tablename__ = "dify_setups"
-    __table_args__ = (sa.PrimaryKeyConstraint("version", name="dify_setup_pkey"),)
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("version", name="dify_setup_pkey"),
+        {"extend_existing": True},
+    )
 
     version: Mapped[str] = mapped_column(String(255), nullable=False)
     setup_at: Mapped[datetime] = mapped_column(

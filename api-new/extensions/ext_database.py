@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import relationship
 
 from configs import dify_config
 
@@ -26,11 +27,37 @@ def _build_async_database_uri(database_uri: str) -> str:
     return database_uri
 
 
+def _normalize_async_engine_options(database_uri: str, engine_options: dict[str, Any]) -> dict[str, Any]:
+    """Adapt sync SQLAlchemy engine options to async driver expectations."""
+
+    normalized = dict(engine_options)
+    connect_args = dict(normalized.get("connect_args", {}))
+
+    if database_uri.startswith("postgresql+asyncpg://"):
+        options = connect_args.pop("options", None)
+        if isinstance(options, str) and options.strip():
+            server_settings: dict[str, str] = {}
+            option_parts = options.split()
+            for index, token in enumerate(option_parts):
+                if token == "-c" and index + 1 < len(option_parts):
+                    key_value = option_parts[index + 1]
+                    if "=" in key_value:
+                        key, value = key_value.split("=", 1)
+                        server_settings[key] = value
+            if server_settings:
+                connect_args["server_settings"] = server_settings
+
+    normalized["connect_args"] = connect_args
+    return normalized
+
+
 class AsyncDatabaseManager:
     """Application-scoped async SQLAlchemy engine/session registry."""
 
     engine: AsyncEngine | None
     session_maker: async_sessionmaker[AsyncSession] | None
+    relationship = staticmethod(relationship)
+    text = staticmethod(text)
 
     def __init__(self) -> None:
         self.engine = None
@@ -41,7 +68,7 @@ class AsyncDatabaseManager:
             return
 
         database_uri = _build_async_database_uri(dify_config.SQLALCHEMY_DATABASE_URI)
-        engine_options: dict[str, Any] = dict(dify_config.SQLALCHEMY_ENGINE_OPTIONS)
+        engine_options = _normalize_async_engine_options(database_uri, dict(dify_config.SQLALCHEMY_ENGINE_OPTIONS))
         self.engine = create_async_engine(database_uri, **engine_options)
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
         app.state.db = self

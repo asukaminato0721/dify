@@ -14,11 +14,24 @@ from typing import TYPE_CHECKING, Annotated, Any, Protocol, cast
 from uuid import UUID
 from zoneinfo import available_timezones
 
-from flask import Response, stream_with_context
-from flask_restx import fields
 from pydantic import BaseModel, TypeAdapter
 from pydantic.functional_validators import AfterValidator
 from typing_extensions import TypedDict
+
+from flask import Response, stream_with_context
+
+try:
+    from flask_restx import fields
+except ModuleNotFoundError:
+    class _RawField:
+        def output(self, key, obj, **kwargs):
+            _ = key, kwargs
+            return obj
+
+    class _FieldsModule:
+        Raw = _RawField
+
+    fields = _FieldsModule()
 
 from configs import dify_config
 from core.app.features.rate_limiting.rate_limit import RateLimitGenerator

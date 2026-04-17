@@ -12,6 +12,8 @@ always use full type python, don't just return Mapping, return TypedDict instead
 
 use TypeBase.
 
+DONT introduce flask-login, werkzeug libraries, use fastapi libraries instead.
+
 ---
 
 Before changing any backend code under `api/`, you MUST read the surrounding docstrings and comments. These notes contain required context (invariants, edge cases, trade-offs) and are treated as part of the spec.
