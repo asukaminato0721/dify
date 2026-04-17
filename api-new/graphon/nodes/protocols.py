@@ -17,7 +17,15 @@ class HttpClientProtocol(Protocol):
         self, url: str, max_retries: int = ..., **kwargs: Any
     ) -> httpx.Response: ...
 
+    async def aget(
+        self, url: str, max_retries: int = ..., **kwargs: Any
+    ) -> httpx.Response: ...
+
     def head(
+        self, url: str, max_retries: int = ..., **kwargs: Any
+    ) -> httpx.Response: ...
+
+    async def ahead(
         self, url: str, max_retries: int = ..., **kwargs: Any
     ) -> httpx.Response: ...
 
@@ -25,7 +33,15 @@ class HttpClientProtocol(Protocol):
         self, url: str, max_retries: int = ..., **kwargs: Any
     ) -> httpx.Response: ...
 
+    async def apost(
+        self, url: str, max_retries: int = ..., **kwargs: Any
+    ) -> httpx.Response: ...
+
     def put(
+        self, url: str, max_retries: int = ..., **kwargs: Any
+    ) -> httpx.Response: ...
+
+    async def aput(
         self, url: str, max_retries: int = ..., **kwargs: Any
     ) -> httpx.Response: ...
 
@@ -33,7 +49,15 @@ class HttpClientProtocol(Protocol):
         self, url: str, max_retries: int = ..., **kwargs: Any
     ) -> httpx.Response: ...
 
+    async def adelete(
+        self, url: str, max_retries: int = ..., **kwargs: Any
+    ) -> httpx.Response: ...
+
     def patch(
+        self, url: str, max_retries: int = ..., **kwargs: Any
+    ) -> httpx.Response: ...
+
+    async def apatch(
         self, url: str, max_retries: int = ..., **kwargs: Any
     ) -> httpx.Response: ...
 

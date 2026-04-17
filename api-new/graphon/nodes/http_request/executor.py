@@ -425,12 +425,53 @@ class Executor:
             raise HttpRequestNodeError(str(e)) from e
         return response
 
+    async def _ado_http_request(self, headers: dict[str, Any]) -> httpx.Response:
+        _METHOD_MAP = {
+            "get": self._http_client.aget,
+            "head": self._http_client.ahead,
+            "post": self._http_client.apost,
+            "put": self._http_client.aput,
+            "delete": self._http_client.adelete,
+            "patch": self._http_client.apatch,
+        }
+        method_lc = self.method.lower()
+        if method_lc not in _METHOD_MAP:
+            raise InvalidHttpMethodError(f"Invalid http method {self.method}")
+
+        request_args: dict[str, Any] = {
+            "data": self.data,
+            "files": self.files,
+            "json": self.json,
+            "content": self.content,
+            "headers": headers,
+            "params": self.params,
+            "timeout": (self.timeout.connect, self.timeout.read, self.timeout.write),
+            "ssl_verify": self.ssl_verify,
+            "follow_redirects": True,
+        }
+        try:
+            response = await _METHOD_MAP[method_lc](
+                url=self.url,
+                **request_args,
+                max_retries=self.max_retries,
+            )
+        except self._http_client.max_retries_exceeded_error as e:
+            raise HttpRequestNodeError(f"Reached maximum retries for URL {self.url}") from e
+        except self._http_client.request_error as e:
+            raise HttpRequestNodeError(str(e)) from e
+        return response
+
     def invoke(self) -> Response:
         # assemble headers
         headers = self._assembling_headers()
         # do http request
         response = self._do_http_request(headers)
         # validate response
+        return self._validate_and_parse_response(response)
+
+    async def ainvoke(self) -> Response:
+        headers = self._assembling_headers()
+        response = await self._ado_http_request(headers)
         return self._validate_and_parse_response(response)
 
     def to_log(self):

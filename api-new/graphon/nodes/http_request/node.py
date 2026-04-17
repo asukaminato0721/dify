@@ -158,6 +158,55 @@ class HttpRequestNode(Node[HttpRequestNodeData]):
                 error_type=type(e).__name__,
             )
 
+    async def _run_async(self) -> NodeRunResult:
+        process_data = {}
+        try:
+            http_executor = Executor(
+                node_data=self.node_data,
+                timeout=self._get_request_timeout(self.node_data),
+                variable_pool=self.graph_runtime_state.variable_pool,
+                http_request_config=self._http_request_config,
+                max_retries=0,
+                ssl_verify=self.node_data.ssl_verify,
+                http_client=self._http_client,
+                file_manager=self._file_manager,
+            )
+            process_data["request"] = http_executor.to_log()
+
+            response = await http_executor.ainvoke()
+            files = self.extract_files(url=http_executor.url, response=response)
+            if not response.response.is_success and (self.error_strategy or self.retry):
+                return NodeRunResult(
+                    status=WorkflowNodeExecutionStatus.FAILED,
+                    outputs={
+                        "status_code": response.status_code,
+                        "body": response.text if not files.value else "",
+                        "headers": response.headers,
+                        "files": files,
+                    },
+                    process_data={"request": http_executor.to_log()},
+                    error=f"Request failed with status code {response.status_code}",
+                    error_type="HTTPResponseCodeError",
+                )
+            return NodeRunResult(
+                status=WorkflowNodeExecutionStatus.SUCCEEDED,
+                outputs={
+                    "status_code": response.status_code,
+                    "body": response.text if not files.value else "",
+                    "headers": response.headers,
+                    "files": files,
+                },
+                process_data={"request": http_executor.to_log()},
+            )
+        except HttpRequestNodeError as e:
+            logger.warning("http request node %s failed to run: %s", self._node_id, e)
+            return NodeRunResult(
+                status=WorkflowNodeExecutionStatus.FAILED,
+                error=str(e),
+                process_data=process_data,
+                error_type=type(e).__name__,
+            )
+
     def _get_request_timeout(
         self, node_data: HttpRequestNodeData
     ) -> HttpRequestNodeTimeout:
