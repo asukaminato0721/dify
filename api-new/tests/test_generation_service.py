@@ -41,7 +41,7 @@ async def test_run_chat_uses_compatibility_bridge_for_advanced_chat() -> None:
 async def test_run_workflow_uses_compatibility_bridge() -> None:
     context = _ContextStub(AppMode.WORKFLOW)
     with patch(
-        "api_server.services.generation._run_compat_public_generation",
+        "api_server.services.generation._run_native_public_workflow",
         new=AsyncMock(return_value={"workflow_run_id": "run-1"}),
     ) as compatibility_mock:
         response = await AsyncWebGenerationService.run_workflow(

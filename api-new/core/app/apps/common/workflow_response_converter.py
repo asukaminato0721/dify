@@ -7,7 +7,8 @@ from datetime import datetime
 from typing import Any, NewType, TypedDict, Union
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from core.app.entities.app_invoke_entities import AdvancedChatAppGenerateEntity, InvokeFrom, WorkflowAppGenerateEntity
 from core.app.entities.queue_entities import (
@@ -114,11 +115,13 @@ class WorkflowResponseConverter:
         application_generate_entity: Union[AdvancedChatAppGenerateEntity, WorkflowAppGenerateEntity],
         user: Union[Account, EndUser],
         system_variables: Sequence[Variable],
+        session_factory: sessionmaker[Session] | Engine | None = None,
     ):
         self._application_generate_entity = application_generate_entity
         self._user = user
         self._system_variables = system_variables_to_mapping(system_variables)
         self._workflow_inputs = self._prepare_workflow_inputs()
+        self._session_factory = session_factory
 
         # Disable truncation for SERVICE_API calls to keep backward compatibility.
         if application_generate_entity.invoke_from == InvokeFrom.SERVICE_API:
@@ -129,6 +132,17 @@ class WorkflowResponseConverter:
         self._node_snapshots: dict[NodeExecutionId, _NodeSnapshot] = {}
         self._workflow_execution_id: str | None = None
         self._workflow_started_at: datetime | None = None
+
+    def _open_session(self) -> Session:
+        session_factory = self._session_factory
+        if isinstance(session_factory, sessionmaker):
+            return session_factory()
+        if isinstance(session_factory, Engine):
+            return Session(bind=session_factory)
+        sync_engine = getattr(db.engine, "sync_engine", None)
+        if isinstance(sync_engine, Engine):
+            return Session(bind=sync_engine)
+        raise RuntimeError("WorkflowResponseConverter requires a sync SQLAlchemy engine for pause-form lookups.")
 
     # ------------------------------------------------------------------
     # Workflow lifecycle helpers
@@ -328,7 +342,7 @@ class WorkflowResponseConverter:
                 HumanInputForm.expiration_time,
                 HumanInputForm.form_definition,
             ).where(HumanInputForm.id.in_(human_input_form_ids))
-            with Session(bind=db.engine) as session:
+            with self._open_session() as session:
                 for form_id, expiration_time, form_definition in session.execute(stmt):
                     expiration_times_by_form_id[str(form_id)] = expiration_time
                     try:

@@ -4,6 +4,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Union
 
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from constants.tts_auto_play_timeout import TTS_AUTO_PLAY_TIMEOUT, TTS_AUTO_PLAY_YIELD_CPU_TIME
@@ -82,6 +83,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
         user: Union[Account, EndUser],
         stream: bool,
         draft_var_saver_factory: DraftVariableSaverFactory,
+        session_factory: sessionmaker[Session] | Engine | None = None,
     ):
         self._base_task_pipeline = BasedGenerateTaskPipeline(
             application_generate_entity=application_generate_entity,
@@ -104,6 +106,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
         self._invoke_from = queue_manager.invoke_from
         self._draft_var_saver_factory = draft_var_saver_factory
         self._workflow = workflow
+        self._session_factory = session_factory
         self._workflow_system_variables = build_system_variables(
             files=application_generate_entity.files,
             user_id=user_session_id,
@@ -115,6 +118,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
             application_generate_entity=application_generate_entity,
             user=user,
             system_variables=self._workflow_system_variables,
+            session_factory=session_factory,
         )
         self._graph_runtime_state: GraphRuntimeState | None = self._base_task_pipeline.queue_manager.graph_runtime_state
 
@@ -252,7 +256,19 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
     @contextmanager
     def _database_session(self):
         """Context manager for database sessions."""
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        session_factory = self._session_factory
+        if isinstance(session_factory, sessionmaker):
+            with session_factory.begin() as session:
+                yield session
+            return
+        if isinstance(session_factory, Engine):
+            with sessionmaker(bind=session_factory, expire_on_commit=False).begin() as session:
+                yield session
+            return
+        sync_engine = getattr(db.engine, "sync_engine", None)
+        if not isinstance(sync_engine, Engine):
+            raise RuntimeError("WorkflowAppGenerateTaskPipeline requires a sync SQLAlchemy engine for workflow logs.")
+        with sessionmaker(bind=sync_engine, expire_on_commit=False).begin() as session:
             yield session
 
     def _ensure_workflow_initialized(self):

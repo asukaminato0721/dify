@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import uuid
 from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
@@ -17,10 +18,15 @@ from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
 from sqlalchemy import select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+from pydantic import ValidationError
 
+import contexts
 from api_server.errors import bad_request, forbidden, not_found, service_unavailable
 from api_server.models.app import AppModelConfig, Conversation, Message
 from api_server.services.webapp_context import WebappContext
+from configs import dify_config
 from core.app.app_config.base_app_config_manager import BaseAppConfigManager
 from core.app.app_config.common.sensitive_word_avoidance.manager import SensitiveWordAvoidanceConfigManager
 from core.app.app_config.easy_ui_based_app.dataset.manager import DatasetConfigManager
@@ -28,9 +34,19 @@ from core.app.app_config.easy_ui_based_app.model_config.converter import ModelCo
 from core.app.app_config.easy_ui_based_app.model_config.manager import ModelConfigManager
 from core.app.app_config.easy_ui_based_app.prompt_template.manager import PromptTemplateConfigManager
 from core.app.app_config.easy_ui_based_app.variables.manager import BasicVariablesConfigManager
+from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
+from core.app.apps.base_app_generator import BaseAppGenerator
 from core.app.entities.app_invoke_entities import InvokeFrom
+from core.app.apps.exc import GenerateTaskStoppedError
+from core.app.apps.base_app_queue_manager import PublishFrom
 from core.app.apps.chat.app_config_manager import ChatAppConfig
 from core.app.apps.completion.app_config_manager import CompletionAppConfig
+from core.app.apps.workflow.app_config_manager import WorkflowAppConfigManager
+from core.app.apps.workflow.app_queue_manager import WorkflowAppQueueManager
+from core.app.apps.workflow.app_runner import WorkflowAppRunner
+from core.app.apps.workflow.generate_response_converter import WorkflowAppGenerateResponseConverter
+from core.app.apps.workflow.generate_task_pipeline import WorkflowAppGenerateTaskPipeline
+from core.app.entities.app_invoke_entities import WorkflowAppGenerateEntity
 from core.app.entities.app_invoke_entities import ModelConfigWithCredentialsEntity
 from core.app.entities.task_entities import (
     ChatbotAppBlockingResponse,
@@ -40,24 +56,33 @@ from core.app.entities.task_entities import (
     MessageEndStreamResponse,
     MessageStreamResponse,
 )
+from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig
+from core.app.layers.pause_state_persist_layer import PauseStatePersistenceLayer
+from core.ops.ops_trace_manager import TraceQueueManager
+from core.repositories import DifyCoreRepositoryFactory
 from core.model_manager import ModelInstance
 from core.prompt.advanced_prompt_transform import AdvancedPromptTransform
 from core.prompt.entities.advanced_prompt_entities import CompletionModelPromptTemplate, MemoryConfig
 from core.prompt.simple_prompt_transform import SimplePromptTransform
 from extensions.ext_database import db
+from factories import file_factory
 from graphon.prompt_entities import ChatModelMessage
 from graphon.model_runtime.entities.llm_entities import LLMResult, LLMResultChunk, LLMUsage
+from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
 from graphon.model_runtime.entities.message_entities import (
     AssistantPromptMessage,
     PromptMessage,
     UserPromptMessage,
 )
-from libs.flask_utils import set_login_user
+from graphon.variable_loader import DUMMY_VARIABLE_LOADER
 from libs.orjson import orjson_dumps
 from models.model import App as LegacyApp
 from models.model import AppMode as LegacyAppMode
 from models.model import AppModelConfigDict
 from models.model import EndUser as LegacyEndUser
+from models.workflow import Workflow as LegacyWorkflow
+from models.enums import WorkflowRunTriggeredFrom
+from models.workflow import WorkflowNodeExecutionTriggeredFrom
 
 
 def _timestamp(value: datetime | None) -> int:
@@ -244,6 +269,7 @@ def _run_compat_public_generation_blocking(
     """Run the copied workflow-capable generators inside the local Flask shim."""
 
     from flask import Flask
+    from libs.flask_utils import set_login_user
     from services.app_generate_service import AppGenerateService
 
     compat_app = Flask("fastapi-public-generation")
@@ -270,6 +296,219 @@ async def _run_compat_public_generation(
         context=context,
         args=args,
         streaming=streaming,
+    )
+
+
+def _get_legacy_sync_engine() -> Engine:
+    engine = getattr(db.engine, "sync_engine", None)
+    if isinstance(engine, Engine):
+        return engine
+    raise RuntimeError("Legacy workflow bridge requires an async SQLAlchemy engine with a sync companion engine.")
+
+
+def _prepare_workflow_generation_entity(
+    *,
+    app_model: LegacyApp,
+    workflow: LegacyWorkflow,
+    end_user: LegacyEndUser,
+    inputs: dict[str, Any],
+    files: list[dict[str, Any]] | None,
+    streaming: bool,
+) -> WorkflowAppGenerateEntity:
+    """Build the workflow generate entity without touching Flask globals."""
+
+    base_generator = BaseAppGenerator()
+    file_extra_config = FileUploadConfigManager.convert(workflow.features_dict, is_vision=False)
+
+    with base_generator._bind_file_access_scope(
+        tenant_id=app_model.tenant_id,
+        user=end_user,
+        invoke_from=InvokeFrom.WEB_APP,
+    ):
+        file_objects = file_factory.build_from_mappings(
+            mappings=files or [],
+            tenant_id=app_model.tenant_id,
+            config=file_extra_config,
+            access_controller=base_generator._file_access_controller,
+        )
+        app_config = WorkflowAppConfigManager.get_app_config(app_model=app_model, workflow=workflow)
+        prepared_inputs = base_generator._prepare_user_inputs(
+            user_inputs=inputs,
+            variables=app_config.variables,
+            tenant_id=app_model.tenant_id,
+        )
+
+    trace_manager = TraceQueueManager(app_id=app_model.id, user_id=end_user.session_id)
+    return WorkflowAppGenerateEntity(
+        task_id=str(uuid.uuid4()),
+        app_config=app_config,
+        file_upload_config=file_extra_config,
+        inputs=prepared_inputs,
+        files=list(file_objects),
+        user_id=end_user.id,
+        stream=streaming,
+        invoke_from=InvokeFrom.WEB_APP,
+        extras={},
+        trace_manager=trace_manager,
+        workflow_execution_id=str(uuid.uuid4()),
+    )
+
+
+def _run_workflow_runner(
+    *,
+    application_generate_entity: WorkflowAppGenerateEntity,
+    workflow: LegacyWorkflow,
+    end_user: LegacyEndUser,
+    queue_manager: WorkflowAppQueueManager,
+    workflow_execution_repository: Any,
+    workflow_node_execution_repository: Any,
+    pause_state_config: PauseStateLayerConfig,
+) -> None:
+    """Execute the workflow runner and push translated failures into the queue."""
+
+    contexts.plugin_tool_providers.set({})
+    contexts.plugin_tool_providers_lock.set(threading.Lock())
+
+    runner = WorkflowAppRunner(
+        application_generate_entity=application_generate_entity,
+        queue_manager=queue_manager,
+        variable_loader=DUMMY_VARIABLE_LOADER,
+        workflow=workflow,
+        system_user_id=end_user.session_id,
+        workflow_execution_repository=workflow_execution_repository,
+        workflow_node_execution_repository=workflow_node_execution_repository,
+        graph_engine_layers=(
+            PauseStatePersistenceLayer(
+                session_factory=pause_state_config.session_factory,
+                generate_entity=application_generate_entity,
+                state_owner_user_id=pause_state_config.state_owner_user_id,
+            ),
+        ),
+        graph_runtime_state=None,
+    )
+
+    try:
+        runner.run()
+    except GenerateTaskStoppedError:
+        return
+    except InvokeAuthorizationError:
+        queue_manager.publish_error(InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER)
+    except ValidationError as exc:
+        queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+    except ValueError as exc:
+        if dify_config.DEBUG:
+            pass
+        queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+    except Exception as exc:
+        queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+
+
+def _run_native_public_workflow_blocking(
+    *,
+    context: WebappContext,
+    inputs: dict[str, Any],
+    files: list[dict[str, Any]] | None,
+    streaming: bool,
+) -> Mapping[str, Any] | Iterator[str]:
+    """Run the public workflow route on the workflow runner without Flask glue."""
+
+    sync_engine = _get_legacy_sync_engine()
+    sync_session_factory = sessionmaker(bind=sync_engine, expire_on_commit=False)
+
+    with sync_session_factory() as session:
+        app_model = session.get(LegacyApp, context.app.id)
+        workflow = session.scalar(
+            select(LegacyWorkflow).where(
+                LegacyWorkflow.id == context.app.workflow_id,
+                LegacyWorkflow.app_id == context.app.id,
+            )
+        )
+        end_user = session.get(LegacyEndUser, context.end_user.id)
+
+    if app_model is None or workflow is None or end_user is None:
+        raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
+
+    application_generate_entity = _prepare_workflow_generation_entity(
+        app_model=app_model,
+        workflow=workflow,
+        end_user=end_user,
+        inputs=inputs,
+        files=files,
+        streaming=streaming,
+    )
+
+    workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
+        session_factory=sync_session_factory,
+        user=end_user,
+        app_id=application_generate_entity.app_config.app_id,
+        triggered_from=WorkflowRunTriggeredFrom.APP_RUN,
+    )
+    workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
+        session_factory=sync_session_factory,
+        user=end_user,
+        app_id=application_generate_entity.app_config.app_id,
+        triggered_from=WorkflowNodeExecutionTriggeredFrom.WORKFLOW_RUN,
+    )
+
+    queue_manager = WorkflowAppQueueManager(
+        task_id=application_generate_entity.task_id,
+        user_id=end_user.id,
+        invoke_from=InvokeFrom.WEB_APP,
+        app_mode=app_model.mode,
+    )
+    pause_state_config = PauseStateLayerConfig(
+        session_factory=sync_session_factory,
+        state_owner_user_id=workflow.created_by,
+    )
+
+    worker = threading.Thread(
+        target=_run_workflow_runner,
+        kwargs={
+            "application_generate_entity": application_generate_entity,
+            "workflow": workflow,
+            "end_user": end_user,
+            "queue_manager": queue_manager,
+            "workflow_execution_repository": workflow_execution_repository,
+            "workflow_node_execution_repository": workflow_node_execution_repository,
+            "pause_state_config": pause_state_config,
+        },
+        daemon=True,
+    )
+    worker.start()
+
+    response = WorkflowAppGenerateTaskPipeline(
+        application_generate_entity=application_generate_entity,
+        workflow=workflow,
+        queue_manager=queue_manager,
+        user=end_user,
+        draft_var_saver_factory=BaseAppGenerator._get_draft_var_saver_factory(InvokeFrom.WEB_APP, end_user),
+        stream=streaming,
+        session_factory=sync_session_factory,
+    ).process()
+    converted = WorkflowAppGenerateResponseConverter.convert(response=response, invoke_from=InvokeFrom.WEB_APP)
+    return cast(Mapping[str, Any] | Iterator[str], BaseAppGenerator.convert_to_event_stream(converted))
+
+
+async def _run_native_public_workflow(
+    *,
+    context: WebappContext,
+    inputs: dict[str, Any],
+    files: list[dict[str, Any]] | None,
+    streaming: bool,
+) -> Mapping[str, Any] | Iterator[str]:
+    if streaming:
+        return _run_native_public_workflow_blocking(
+            context=context,
+            inputs=inputs,
+            files=files,
+            streaming=True,
+        )
+    return await asyncio.to_thread(
+        _run_native_public_workflow_blocking,
+        context=context,
+        inputs=inputs,
+        files=files,
+        streaming=False,
     )
 
 
@@ -770,14 +1009,10 @@ class AsyncWebGenerationService:
         files: list[dict[str, Any]] | None,
         streaming: bool,
     ) -> Mapping[str, Any] | Iterator[str]:
-        compatibility_args: _CompatibilityGenerationArgs = {
-            "inputs": inputs,
-        }
-        if files:
-            compatibility_args["files"] = files
-        return await _run_compat_public_generation(
+        return await _run_native_public_workflow(
             context=context,
-            args=compatibility_args,
+            inputs=inputs,
+            files=files,
             streaming=streaming,
         )
 

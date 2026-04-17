@@ -100,7 +100,7 @@ Done
   - `POST /api/chat-messages`
   - `POST /api/workflows/run`
 - Rewired public completion/chat generation endpoints through the async-native FastAPI generation service.
-- Replaced the public workflow route's hard-coded `generation_backend_unavailable` stub with a compatibility bridge into the copied workflow execution stack.
+- Replaced the public workflow route's hard-coded `generation_backend_unavailable` stub with a direct workflow-runner path that no longer depends on Flask compatibility glue.
 - Replaced the public advanced-chat and agent-chat route-level `generation_backend_unavailable` path with the same compatibility bridge.
 - Rewired public completion `more-like-this` through the async-native FastAPI generation service.
 - Ported public workflow event replay endpoint:
@@ -197,7 +197,8 @@ Current status
 - Public `more-like-this` now routes through the async-native completion generation service.
 - Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
-- Public advanced-chat, agent-chat, and workflow generation routes no longer hard-fail at the route layer; they now bridge into the copied workflow-capable execution stack behind the FastAPI service layer.
+- Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
+- Public advanced-chat and agent-chat generation no longer hard-fail at the route layer; they still bridge into the copied workflow-capable execution stack behind the FastAPI service layer.
 - The execution engine now has an async event-emission surface, but advanced-chat/workflow still need an async-native app service built on top of it.
 - The workflow runners now expose async entrypoints, but advanced-chat/workflow still need async-native persistence and response services built on top of them.
 - The graph engine now has async-native queue/control-plane primitives, but node execution and workflow persistence still are not fully ported end to end.
@@ -213,15 +214,15 @@ Immediate blockers
   - Flask-Login
   - sync SQLAlchemy sessions via `db.session`
   - Flask-specific controllers and decorators
-- Advanced-chat/workflow generation now execute through a compatibility bridge, but the active FastAPI runtime still lacks a fully async-native workflow-backed generation service.
+- Advanced-chat generation now executes through a compatibility bridge, but the active FastAPI runtime still lacks a fully async-native workflow-backed generation service for chatflow-backed modes.
 - Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
 - Model-provider resolution and the broader generation feature set still depend on copied legacy domain code in places, so the async-native generation slice is only partially ported compared with the original Flask feature set.
-- The remaining unfinished work is concentrated in replacing the compatibility workflow-backed generators with services that persist workflow runs, emit graph events, and resume pauses on the new async execution surface.
+- The remaining unfinished work is concentrated in replacing the remaining advanced-chat compatibility path with services that persist workflow runs, emit graph events, and resume pauses on the new async execution surface.
 
 Next steps
 ----------
 1. Continue porting the next public route family.
-   - Candidate next slice: replace the new compatibility bridge for advanced-chat and workflows with async-native execution/persistence services.
+   - Candidate next slice: replace the remaining advanced-chat compatibility bridge with async-native execution/persistence services.
    - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
 
 2. Expand the FastAPI-native domain layer.
