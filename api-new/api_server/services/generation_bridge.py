@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from api_server.errors import forbidden, service_unavailable
 from api_server.models.app import AppMode
+from api_server.services.generation import AsyncWebGenerationService
 from api_server.services.webapp_context import WebappContext
 
 
@@ -84,7 +85,7 @@ class PublicGenerationBridge:
             raise forbidden(error_code, message)
 
     @classmethod
-    def run_completion(
+    async def run_completion(
         cls,
         *,
         context: WebappContext,
@@ -98,13 +99,17 @@ class PublicGenerationBridge:
         )
         args = payload.model_dump(exclude_none=True)
         args["auto_generate_name"] = False
-        return cls._run(
-            args=args,
+        response = await AsyncWebGenerationService.run_completion(
+            context=context,
+            inputs=args["inputs"],
+            query=args["query"],
+            files=args.get("files"),
             streaming=payload.response_mode == "streaming",
         )
+        return cls.to_fastapi_response(response)
 
     @classmethod
-    def run_chat(
+    async def run_chat(
         cls,
         *,
         context: WebappContext,
@@ -118,13 +123,19 @@ class PublicGenerationBridge:
         )
         args = payload.model_dump(exclude_none=True)
         args["auto_generate_name"] = False
-        return cls._run(
-            args=args,
+        response = await AsyncWebGenerationService.run_chat(
+            context=context,
+            inputs=args["inputs"],
+            query=args["query"],
+            files=args.get("files"),
+            conversation_id=args.get("conversation_id"),
+            parent_message_id=args.get("parent_message_id"),
             streaming=payload.response_mode == "streaming",
         )
+        return cls.to_fastapi_response(response)
 
     @classmethod
-    def run_workflow(
+    async def run_workflow(
         cls,
         *,
         context: WebappContext,
@@ -136,20 +147,41 @@ class PublicGenerationBridge:
             error_code="not_workflow_app",
             message="Please check if your Workflow app mode matches the right API route.",
         )
-        return cls._run(
-            args=payload.model_dump(exclude_none=True),
-            streaming=payload.response_mode == "streaming",
+        raise service_unavailable(
+            "generation_backend_unavailable",
+            "Workflow generation is not ported to the FastAPI runtime yet.",
         )
 
     @classmethod
-    def _run(
+    async def run_more_like_this(
         cls,
         *,
-        args: dict[str, Any],
+        context: WebappContext,
+        message_id: str,
         streaming: bool,
     ) -> JSONResponse | StreamingResponse:
-        del args, streaming
-        raise service_unavailable(
-            "generation_backend_unavailable",
-            "Public generation is not ported to the FastAPI runtime yet.",
+        cls.ensure_mode(
+            app_mode=context.app.mode,
+            expected_modes={AppMode.COMPLETION},
+            error_code="not_completion_app",
+            message="Please check if your Completion app mode matches the right API route.",
+        )
+        response = await AsyncWebGenerationService.run_more_like_this(
+            context=context,
+            message_id=message_id,
+            streaming=streaming,
+        )
+        return cls.to_fastapi_response(response)
+
+    @staticmethod
+    def to_fastapi_response(response: Any) -> JSONResponse | StreamingResponse:
+        if hasattr(response, "model_dump"):
+            return JSONResponse(content=response.model_dump(mode="json"))
+        return StreamingResponse(
+            response,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
         )

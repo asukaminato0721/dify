@@ -65,6 +65,10 @@ Done
   - `GET /files/workspaces/{workspace_id}/webapp-logo`
   - `GET /api/form/human_input/{form_token}`
   - `POST /api/form/human_input/{form_token}`
+  - `POST /api/audio-to-text`
+  - `POST /api/text-to-audio`
+  - `GET /api/messages/{message_id}/suggested-questions`
+  - `GET /api/messages/{message_id}/more-like-this`
 - Added an async bootstrap service in `api_server/services/bootstrap.py` for first-time setup and init validation.
 - Added a minimal async app/site lookup service in `api_server/services/app_lookup.py`.
 - Added a FastAPI-native webapp context service in `api_server/services/webapp_context.py`.
@@ -72,25 +76,43 @@ Done
 - Added a local async `WorkflowRun` model in `api_server/models/workflow.py` for workflow event replay without importing the legacy ORM graph.
 - Added a FastAPI-native workflow event replay service in `api_server/services/workflow_events.py`.
 - Added a FastAPI-native public generation bridge in `api_server/services/generation_bridge.py`.
+- Added an async-native completion/chat generation service in `api_server/services/generation.py`.
+- Extended the async-native generation service to support completion `more-like-this`.
 - Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
 - Added local async human-input form models in `api_server/models/human_input.py` for public form token access without the legacy Flask repositories.
 - Added a FastAPI-native human-input form service in `api_server/services/human_input_forms.py`.
+- Added a FastAPI-native public audio service in `api_server/services/audio.py`.
+- Added a FastAPI-native suggested-questions service in `api_server/services/suggested_questions.py`.
+- Rewired the public `more-like-this` message route through the async-native completion generation service.
 - Initialized Redis pub/sub for the FastAPI app lifespan via the existing Redis extension bootstrap.
 - Mounted public generation endpoints on FastAPI route handlers:
   - `POST /api/completion-messages`
   - `POST /api/chat-messages`
   - `POST /api/workflows/run`
+- Rewired public completion/chat generation endpoints through the async-native FastAPI generation service.
+- Rewired public completion `more-like-this` through the async-native FastAPI generation service.
 - Ported public workflow event replay endpoint:
   - `GET /api/workflow/{task_id}/events`
 - Ported public human-input form endpoints:
   - `GET /api/form/human_input/{form_token}`
   - `POST /api/form/human_input/{form_token}`
+- Ported public audio endpoints:
+  - `POST /api/audio-to-text`
+  - `POST /api/text-to-audio`
+- Ported public message suggestion endpoint:
+  - `GET /api/messages/{message_id}/suggested-questions`
+- Mounted public message `more-like-this` endpoint:
+  - `GET /api/messages/{message_id}/more-like-this`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused human-input route tests in `tests/test_human_input_form.py`.
+- Added focused audio route tests in `tests/test_audio_routes.py`.
+- Added focused suggested-questions route tests in `tests/test_suggested_questions_route.py`.
+- Added focused `more-like-this` route coverage in `tests/test_suggested_questions_route.py`.
+- Added focused generation bridge tests in `tests/test_generation_bridge.py`.
 - Installed the new project environment with `uv sync`.
 - Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
-- Current active FastAPI runtime tests pass: `31 passed`.
+- Current active FastAPI runtime tests pass: `41 passed`.
 
 Current status
 --------------
@@ -139,6 +161,10 @@ Current status
   - `/api/workflows/tasks/{task_id}/stop`
   - `/api/workflow/{task_id}/events`
   - `/api/form/human_input/{form_token}`
+  - `/api/audio-to-text`
+  - `/api/text-to-audio`
+  - `/api/messages/{message_id}/suggested-questions`
+  - `/api/messages/{message_id}/more-like-this`
   - `/files/{file_id}/image-preview`
   - `/files/{file_id}/file-preview`
   - `/files/workspaces/{workspace_id}/webapp-logo`
@@ -147,8 +173,12 @@ Current status
 - The previous import-time blocker from `models/__init__.py` has been removed for the new runtime slice.
 - Workflow event replay now stays on local FastAPI models/services; it no longer imports Flask response objects or legacy workflow controllers.
 - Public human-input form handling now stays on local FastAPI models/services with async SQLAlchemy and Redis-backed rate limits.
+- Public audio handling now stays on FastAPI route/service code and uses the model runtime directly instead of the legacy Flask audio controller path.
+- Public suggested-questions handling now stays on FastAPI route/service code with local async conversation/message lookups.
+- Public `more-like-this` now routes through the async-native completion generation service.
 - Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
-- Public generation routes now live on FastAPI and validate/authenticate in the new runtime without importing the legacy Flask generation service; authenticated execution currently returns `generation_backend_unavailable` until a native backend is ported.
+- Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
+- Advanced-chat/workflow generation routes still return `generation_backend_unavailable` until their async-native domain services are ported.
 
 Immediate blockers
 ------------------
@@ -157,14 +187,14 @@ Immediate blockers
   - Flask-Login
   - sync SQLAlchemy sessions via `db.session`
   - Flask-specific controllers and decorators
-- The remaining generation backend is still tied to legacy models/services and eager imports from the copied tree, so `/api/completion-messages`, `/api/chat-messages`, and `/api/workflows/run` are mounted but intentionally unimplemented in the active FastAPI runtime.
+- Advanced-chat/workflow generation are still unimplemented in the active FastAPI runtime.
 - Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
-- The legacy generation import graph is cleaner than before, but the execution path still assumes the copied sync runtime and is not yet compatible with the active async FastAPI database layer.
+- Model-provider resolution and the broader generation feature set still depend on copied legacy domain code in places, so the async-native generation slice is only partially ported compared with the original Flask feature set.
 
 Next steps
 ----------
 1. Continue porting the next public route family.
-   - Candidate next slice: implement FastAPI-native execution services for `/chat-messages`, `/completion-messages`, and `/workflows/run`.
+   - Candidate next slice: finish async-native generation for advanced-chat and workflows.
    - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
 
 2. Expand the FastAPI-native domain layer.

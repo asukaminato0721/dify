@@ -14,6 +14,10 @@ use TypeBase.
 
 DONT introduce flask-login, werkzeug libraries, use fastapi.security .
 
+use fully async model in sqlalchemy. dont fallback to sync model.
+
+dont use Any if possible.
+
 ---
 
 Before changing any backend code under `api/`, you MUST read the surrounding docstrings and comments. These notes contain required context (invariants, edge cases, trade-offs) and are treated as part of the spec.

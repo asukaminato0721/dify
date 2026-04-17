@@ -22,7 +22,7 @@ async def create_completion(
     payload: CompletionMessagePayload,
 ) -> JSONResponse | StreamingResponse:
     context = await WebappContextService.resolve(request)
-    return PublicGenerationBridge.run_completion(context=context, payload=payload)
+    return await PublicGenerationBridge.run_completion(context=context, payload=payload)
 
 
 @router.post("/api/chat-messages", response_model=None)
@@ -31,7 +31,7 @@ async def create_chat_message(
     payload: ChatMessagePayload,
 ) -> JSONResponse | StreamingResponse:
     context = await WebappContextService.resolve(request)
-    return PublicGenerationBridge.run_chat(context=context, payload=payload)
+    return await PublicGenerationBridge.run_chat(context=context, payload=payload)
 
 
 @router.post("/api/workflows/run", response_model=None)
@@ -40,4 +40,4 @@ async def run_workflow(
     payload: WorkflowRunPayload,
 ) -> JSONResponse | StreamingResponse:
     context = await WebappContextService.resolve(request)
-    return PublicGenerationBridge.run_workflow(context=context, payload=payload)
+    return await PublicGenerationBridge.run_workflow(context=context, payload=payload)

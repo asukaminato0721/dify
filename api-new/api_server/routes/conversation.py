@@ -4,6 +4,7 @@ import uuid
 from typing import Literal, TypedDict
 
 from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api_server.errors import forbidden
@@ -15,6 +16,8 @@ from api_server.services.conversation_message import (
     ResultDict,
     SavedMessagePaginationDict,
 )
+from api_server.services.generation_bridge import PublicGenerationBridge
+from api_server.services.suggested_questions import SuggestedQuestionsService
 from api_server.services.webapp_context import WebappContextService
 
 router = APIRouter(tags=["conversation"])
@@ -38,6 +41,10 @@ class MessageFeedbackPayload(BaseModel):
 
 class SavedMessageCreatePayload(BaseModel):
     message_id: str
+
+
+class SuggestedQuestionsResponseDict(TypedDict):
+    data: list[str]
 
 
 @router.get("/api/conversations")
@@ -149,6 +156,33 @@ async def create_message_feedback(
         end_user=context.end_user,
         rating=payload.rating,
         content=payload.content,
+    )
+
+
+@router.get("/api/messages/{message_id}/suggested-questions")
+async def get_suggested_questions(request: Request, message_id: str) -> SuggestedQuestionsResponseDict:
+    context = await WebappContextService.resolve(request)
+    if context.app.mode not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    questions = await SuggestedQuestionsService.get_suggested_questions(context=context, message_id=message_id)
+    return {"data": questions}
+
+
+@router.get("/api/messages/{message_id}/more-like-this", response_model=None)
+async def get_more_like_this(
+    request: Request,
+    message_id: str,
+    response_mode: Literal["blocking", "streaming"] = Query(default="blocking"),
+) -> JSONResponse | StreamingResponse:
+    context = await WebappContextService.resolve(request)
+    if context.app.mode != "completion":
+        raise forbidden("not_completion_app", "Please check if your Completion app mode matches the right API route.")
+    return PublicGenerationBridge.to_fastapi_response(
+        await PublicGenerationBridge.run_more_like_this(
+            context=context,
+            message_id=message_id,
+            streaming=response_mode == "streaming",
+        )
     )
 
 
