@@ -53,7 +53,10 @@ from .graph_state_manager import GraphStateManager
 from .graph_traversal import EdgeProcessor, SkipPropagator
 from .layers.base import GraphEngineLayer
 from .orchestration import Dispatcher, ExecutionCoordinator
+from .orchestration.async_dispatcher import AsyncDispatcher
+from .ready_queue.async_in_memory import AsyncInMemoryReadyQueue
 from .worker_management import WorkerPool
+from .worker_management.async_worker_pool import AsyncWorkerPool
 
 if TYPE_CHECKING:
     from graphon.entities.graph_init_params import GraphInitParams
@@ -347,6 +350,29 @@ class GraphEngine:
     async def run_async(self) -> AsyncGenerator[GraphEngineEvent, None]:
         """Async generator variant of `run` for async runtimes."""
 
+        async_ready_queue = AsyncInMemoryReadyQueue()
+        self._graph_runtime_state._ready_queue = async_ready_queue  # noqa: SLF001
+        self._ready_queue = async_ready_queue
+        self._state_manager._ready_queue = async_ready_queue  # noqa: SLF001
+        async_event_queue: asyncio.Queue[GraphNodeEventBase] = asyncio.Queue()
+        async_worker_pool = AsyncWorkerPool(
+            ready_queue=async_ready_queue,
+            event_queue=async_event_queue,
+            graph=self._graph,
+            layers=self._layers,
+            execution_context=self._graph_runtime_state.execution_context,
+            initial_count=self._config.min_workers,
+        )
+        async_dispatcher = AsyncDispatcher(
+            event_queue=async_event_queue,
+            event_handler=self._event_handler_registry,
+            state_manager=self._state_manager,
+            graph_execution=self._graph_execution,
+            command_processor=self._command_processor,
+            worker_pool=async_worker_pool,
+            event_emitter=self._event_manager,
+        )
+
         try:
             self._initialize_layers()
 
@@ -365,10 +391,15 @@ class GraphEngine:
             self._event_manager.notify_layers(start_event)
             yield start_event
 
-            self._start_execution(resume=is_resume)
+            self._start_execution_async(
+                worker_pool=async_worker_pool,
+                resume=is_resume,
+            )
 
+            dispatcher_task = asyncio.create_task(async_dispatcher.run())
             async for event in self._event_manager.emit_events_async():
                 yield event
+            await dispatcher_task
 
             if self._graph_execution.is_paused:
                 pause_reasons = self._graph_execution.pause_reasons
@@ -421,6 +452,7 @@ class GraphEngine:
             raise
 
         finally:
+            await async_worker_pool.stop_async()
             self._stop_execution()
 
     def _initialize_layers(self) -> None:
@@ -481,6 +513,39 @@ class GraphEngine:
                 logger.exception(
                     "Layer %s failed on_graph_end", layer.__class__.__name__
                 )
+
+    def _start_execution_async(
+        self,
+        *,
+        worker_pool: AsyncWorkerPool,
+        resume: bool = False,
+    ) -> None:
+        """Start the async execution subsystems."""
+
+        paused_nodes: list[str] = []
+        deferred_nodes: list[str] = []
+        if resume:
+            paused_nodes = self._graph_runtime_state.consume_paused_nodes()
+            deferred_nodes = self._graph_runtime_state.consume_deferred_nodes()
+
+        worker_pool.start()
+
+        for node in self._graph.nodes.values():
+            if node.execution_type == NodeExecutionType.RESPONSE:
+                self._response_coordinator.register(node.id)
+
+        if not resume:
+            root_node = self._graph.root_node
+            self._state_manager.enqueue_node(root_node.id)
+            self._state_manager.start_execution(root_node.id)
+        else:
+            seen_nodes: set[str] = set()
+            for node_id in paused_nodes + deferred_nodes:
+                if node_id in seen_nodes:
+                    continue
+                seen_nodes.add(node_id)
+                self._state_manager.enqueue_node(node_id)
+                self._state_manager.start_execution(node_id)
 
     # Public property accessors for attributes that need external access
     @property
