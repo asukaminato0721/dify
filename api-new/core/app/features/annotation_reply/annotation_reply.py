@@ -9,8 +9,6 @@ from extensions.ext_database import db
 from models.dataset import Dataset
 from models.enums import CollectionBindingType, ConversationFromSource
 from models.model import App, AppAnnotationSetting, Message, MessageAnnotation
-from services.annotation_service import AppAnnotationService
-from services.dataset_service import DatasetCollectionBindingService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +26,9 @@ class AnnotationReplyFeature:
         :param invoke_from: invoke from
         :return:
         """
+        from services.annotation_service import AppAnnotationService
+        from services.dataset_service import DatasetCollectionBindingService
+
         stmt = select(AppAnnotationSetting).where(AppAnnotationSetting.app_id == app_record.id)
         annotation_setting = db.session.scalar(stmt)
 

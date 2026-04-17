@@ -31,5 +31,13 @@ def not_found(code: str, message: str) -> ApiError:
     return ApiError(status_code=404, code=code, message=message)
 
 
+def precondition_failed(code: str, message: str) -> ApiError:
+    return ApiError(status_code=412, code=code, message=message)
+
+
+def too_many_requests(code: str, message: str) -> ApiError:
+    return ApiError(status_code=429, code=code, message=message)
+
+
 def service_unavailable(code: str, message: str) -> ApiError:
     return ApiError(status_code=503, code=code, message=message)

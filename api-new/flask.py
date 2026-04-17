@@ -91,6 +91,7 @@ current_app = _Proxy(_get_current_app)
 request = _Proxy(_get_request)
 g = _Proxy(_get_g)
 got_request_exception = _Signal()
+Request = Any
 
 
 def has_request_context() -> bool:

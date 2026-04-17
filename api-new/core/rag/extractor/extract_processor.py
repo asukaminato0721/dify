@@ -1,33 +1,15 @@
 import re
 import tempfile
+from importlib import import_module
 from pathlib import Path
 from typing import Union
 from urllib.parse import unquote
 
 from configs import dify_config
 from core.helper import ssrf_proxy
-from core.rag.extractor.csv_extractor import CSVExtractor
 from core.rag.extractor.entity.datasource_type import DatasourceType
 from core.rag.extractor.entity.extract_setting import ExtractSetting
-from core.rag.extractor.excel_extractor import ExcelExtractor
 from core.rag.extractor.extractor_base import BaseExtractor
-from core.rag.extractor.firecrawl.firecrawl_web_extractor import FirecrawlWebExtractor
-from core.rag.extractor.html_extractor import HtmlExtractor
-from core.rag.extractor.jina_reader_extractor import JinaReaderWebExtractor
-from core.rag.extractor.markdown_extractor import MarkdownExtractor
-from core.rag.extractor.notion_extractor import NotionExtractor
-from core.rag.extractor.pdf_extractor import PdfExtractor
-from core.rag.extractor.text_extractor import TextExtractor
-from core.rag.extractor.unstructured.unstructured_doc_extractor import UnstructuredWordExtractor
-from core.rag.extractor.unstructured.unstructured_eml_extractor import UnstructuredEmailExtractor
-from core.rag.extractor.unstructured.unstructured_epub_extractor import UnstructuredEpubExtractor
-from core.rag.extractor.unstructured.unstructured_markdown_extractor import UnstructuredMarkdownExtractor
-from core.rag.extractor.unstructured.unstructured_msg_extractor import UnstructuredMsgExtractor
-from core.rag.extractor.unstructured.unstructured_ppt_extractor import UnstructuredPPTExtractor
-from core.rag.extractor.unstructured.unstructured_pptx_extractor import UnstructuredPPTXExtractor
-from core.rag.extractor.unstructured.unstructured_xml_extractor import UnstructuredXmlExtractor
-from core.rag.extractor.watercrawl.extractor import WaterCrawlWebExtractor
-from core.rag.extractor.word_extractor import WordExtractor
 from core.rag.models.document import Document
 from extensions.ext_storage import storage
 from models.model import UploadFile
@@ -37,6 +19,11 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124"
     " Safari/537.36"
 )
+
+
+def _load_symbol(module_name: str, symbol_name: str):
+    module = import_module(module_name)
+    return getattr(module, symbol_name)
 
 
 class ExtractProcessor:
@@ -111,65 +98,116 @@ class ExtractProcessor:
                     unstructured_api_key = dify_config.UNSTRUCTURED_API_KEY or ""
 
                     if file_extension in {".xlsx", ".xls"}:
+                        ExcelExtractor = _load_symbol("core.rag.extractor.excel_extractor", "ExcelExtractor")
                         extractor = ExcelExtractor(file_path)
                     elif file_extension == ".pdf":
                         assert upload_file is not None
+                        PdfExtractor = _load_symbol("core.rag.extractor.pdf_extractor", "PdfExtractor")
                         extractor = PdfExtractor(file_path, upload_file.tenant_id, upload_file.created_by)
                     elif file_extension in {".md", ".markdown", ".mdx"}:
+                        UnstructuredMarkdownExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_markdown_extractor",
+                            "UnstructuredMarkdownExtractor",
+                        )
+                        MarkdownExtractor = _load_symbol("core.rag.extractor.markdown_extractor", "MarkdownExtractor")
                         extractor = (
                             UnstructuredMarkdownExtractor(file_path, unstructured_api_url, unstructured_api_key)
                             if is_automatic
                             else MarkdownExtractor(file_path, autodetect_encoding=True)
                         )
                     elif file_extension in {".htm", ".html"}:
+                        HtmlExtractor = _load_symbol("core.rag.extractor.html_extractor", "HtmlExtractor")
                         extractor = HtmlExtractor(file_path)
                     elif file_extension == ".docx":
                         assert upload_file is not None
+                        WordExtractor = _load_symbol("core.rag.extractor.word_extractor", "WordExtractor")
                         extractor = WordExtractor(file_path, upload_file.tenant_id, upload_file.created_by)
                     elif file_extension == ".doc":
+                        UnstructuredWordExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_doc_extractor",
+                            "UnstructuredWordExtractor",
+                        )
                         extractor = UnstructuredWordExtractor(file_path, unstructured_api_url, unstructured_api_key)
                     elif file_extension == ".csv":
+                        CSVExtractor = _load_symbol("core.rag.extractor.csv_extractor", "CSVExtractor")
                         extractor = CSVExtractor(file_path, autodetect_encoding=True)
                     elif file_extension == ".msg":
+                        UnstructuredMsgExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_msg_extractor",
+                            "UnstructuredMsgExtractor",
+                        )
                         extractor = UnstructuredMsgExtractor(file_path, unstructured_api_url, unstructured_api_key)
                     elif file_extension == ".eml":
+                        UnstructuredEmailExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_eml_extractor",
+                            "UnstructuredEmailExtractor",
+                        )
                         extractor = UnstructuredEmailExtractor(file_path, unstructured_api_url, unstructured_api_key)
                     elif file_extension == ".ppt":
+                        UnstructuredPPTExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_ppt_extractor",
+                            "UnstructuredPPTExtractor",
+                        )
                         extractor = UnstructuredPPTExtractor(file_path, unstructured_api_url, unstructured_api_key)
                         # You must first specify the API key
                         # because unstructured_api_key is necessary to parse .ppt documents
                     elif file_extension == ".pptx":
+                        UnstructuredPPTXExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_pptx_extractor",
+                            "UnstructuredPPTXExtractor",
+                        )
                         extractor = UnstructuredPPTXExtractor(file_path, unstructured_api_url, unstructured_api_key)
                     elif file_extension == ".xml":
+                        UnstructuredXmlExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_xml_extractor",
+                            "UnstructuredXmlExtractor",
+                        )
                         extractor = UnstructuredXmlExtractor(file_path, unstructured_api_url, unstructured_api_key)
                     elif file_extension == ".epub":
+                        UnstructuredEpubExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_epub_extractor",
+                            "UnstructuredEpubExtractor",
+                        )
                         extractor = UnstructuredEpubExtractor(file_path, unstructured_api_url, unstructured_api_key)
                     else:
                         # txt
+                        TextExtractor = _load_symbol("core.rag.extractor.text_extractor", "TextExtractor")
                         extractor = TextExtractor(file_path, autodetect_encoding=True)
                 else:
                     if file_extension in {".xlsx", ".xls"}:
+                        ExcelExtractor = _load_symbol("core.rag.extractor.excel_extractor", "ExcelExtractor")
                         extractor = ExcelExtractor(file_path)
                     elif file_extension == ".pdf":
                         assert upload_file is not None
+                        PdfExtractor = _load_symbol("core.rag.extractor.pdf_extractor", "PdfExtractor")
                         extractor = PdfExtractor(file_path, upload_file.tenant_id, upload_file.created_by)
                     elif file_extension in {".md", ".markdown", ".mdx"}:
+                        MarkdownExtractor = _load_symbol("core.rag.extractor.markdown_extractor", "MarkdownExtractor")
                         extractor = MarkdownExtractor(file_path, autodetect_encoding=True)
                     elif file_extension in {".htm", ".html"}:
+                        HtmlExtractor = _load_symbol("core.rag.extractor.html_extractor", "HtmlExtractor")
                         extractor = HtmlExtractor(file_path)
                     elif file_extension == ".docx":
                         assert upload_file is not None
+                        WordExtractor = _load_symbol("core.rag.extractor.word_extractor", "WordExtractor")
                         extractor = WordExtractor(file_path, upload_file.tenant_id, upload_file.created_by)
                     elif file_extension == ".csv":
+                        CSVExtractor = _load_symbol("core.rag.extractor.csv_extractor", "CSVExtractor")
                         extractor = CSVExtractor(file_path, autodetect_encoding=True)
                     elif file_extension == ".epub":
+                        UnstructuredEpubExtractor = _load_symbol(
+                            "core.rag.extractor.unstructured.unstructured_epub_extractor",
+                            "UnstructuredEpubExtractor",
+                        )
                         extractor = UnstructuredEpubExtractor(file_path)
                     else:
                         # txt
+                        TextExtractor = _load_symbol("core.rag.extractor.text_extractor", "TextExtractor")
                         extractor = TextExtractor(file_path, autodetect_encoding=True)
                 return extractor.extract()
         elif extract_setting.datasource_type == DatasourceType.NOTION:
             assert extract_setting.notion_info is not None, "notion_info is required"
+            NotionExtractor = _load_symbol("core.rag.extractor.notion_extractor", "NotionExtractor")
             extractor = NotionExtractor(
                 notion_workspace_id=extract_setting.notion_info.notion_workspace_id or "",
                 notion_obj_id=extract_setting.notion_info.notion_obj_id,
@@ -182,6 +220,10 @@ class ExtractProcessor:
         elif extract_setting.datasource_type == DatasourceType.WEBSITE:
             assert extract_setting.website_info is not None, "website_info is required"
             if extract_setting.website_info.provider == "firecrawl":
+                FirecrawlWebExtractor = _load_symbol(
+                    "core.rag.extractor.firecrawl.firecrawl_web_extractor",
+                    "FirecrawlWebExtractor",
+                )
                 extractor = FirecrawlWebExtractor(
                     url=extract_setting.website_info.url,
                     job_id=extract_setting.website_info.job_id,
@@ -191,6 +233,10 @@ class ExtractProcessor:
                 )
                 return extractor.extract()
             elif extract_setting.website_info.provider == "watercrawl":
+                WaterCrawlWebExtractor = _load_symbol(
+                    "core.rag.extractor.watercrawl.extractor",
+                    "WaterCrawlWebExtractor",
+                )
                 extractor = WaterCrawlWebExtractor(
                     url=extract_setting.website_info.url,
                     job_id=extract_setting.website_info.job_id,
@@ -200,6 +246,10 @@ class ExtractProcessor:
                 )
                 return extractor.extract()
             elif extract_setting.website_info.provider == "jinareader":
+                JinaReaderWebExtractor = _load_symbol(
+                    "core.rag.extractor.jina_reader_extractor",
+                    "JinaReaderWebExtractor",
+                )
                 extractor = JinaReaderWebExtractor(
                     url=extract_setting.website_info.url,
                     job_id=extract_setting.website_info.job_id,

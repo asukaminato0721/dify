@@ -1,13 +1,13 @@
 import logging
 import os
 import sys
-from typing import Union
+from importlib import import_module
+from typing import Any, Union
 
 from celery.signals import worker_init
 from flask_login import user_loaded_from_request, user_logged_in
 from opentelemetry import metrics, trace
 from opentelemetry.propagate import set_global_textmap
-from opentelemetry.propagators.b3 import B3MultiFormat
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
@@ -19,14 +19,24 @@ from models import Account, EndUser
 logger = logging.getLogger(__name__)
 
 
+def _load_b3_multi_format() -> Any | None:
+    try:
+        b3_module = import_module("opentelemetry.propagators.b3")
+    except ModuleNotFoundError:
+        return None
+    return b3_module.B3MultiFormat
+
+
+B3MultiFormat = _load_b3_multi_format()
+
+
 def setup_context_propagation() -> None:
+    propagators = [TraceContextTextMapPropagator()]
+    if B3MultiFormat is not None:
+        propagators.append(B3MultiFormat())
+
     set_global_textmap(
-        CompositePropagator(
-            [
-                TraceContextTextMapPropagator(),
-                B3MultiFormat(),
-            ]
-        )
+        CompositePropagator(propagators)
     )
 
 
@@ -83,17 +93,19 @@ def on_user_loaded(_sender, user: Union["Account", "EndUser"]):
 @worker_init.connect(weak=False)
 def init_celery_worker(*args, **kwargs):
     if dify_config.ENABLE_OTEL:
-        from opentelemetry.instrumentation.celery import CeleryInstrumentor
         from opentelemetry.metrics import get_meter_provider
         from opentelemetry.trace import get_tracer_provider
 
         from extensions.otel.celery_sqlcommenter import setup_celery_sqlcommenter
 
+        celery_instrumentor_module = import_module("opentelemetry.instrumentation.celery")
+        celery_instrumentor_cls = celery_instrumentor_module.CeleryInstrumentor
+
         tracer_provider = get_tracer_provider()
         metric_provider = get_meter_provider()
         if dify_config.DEBUG:
             logger.info("Initializing OpenTelemetry for Celery worker")
-        CeleryInstrumentor(tracer_provider=tracer_provider, meter_provider=metric_provider).instrument()
+        celery_instrumentor_cls(tracer_provider=tracer_provider, meter_provider=metric_provider).instrument()
         setup_celery_sqlcommenter()
 
 

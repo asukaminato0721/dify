@@ -19,7 +19,6 @@ from constants import (
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
-from core.rag.extractor.extract_processor import ExtractProcessor
 from extensions.ext_database import db
 from extensions.ext_storage import storage
 from extensions.storage.storage_type import StorageType
@@ -177,6 +176,8 @@ class FileService:
         """
         Return a short text preview extracted from a document file.
         """
+        from core.rag.extractor.extract_processor import ExtractProcessor
+
         with self._session_maker(expire_on_commit=False) as session:
             upload_file = session.scalar(select(UploadFile).where(UploadFile.id == file_id).limit(1))
 

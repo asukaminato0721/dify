@@ -6,4 +6,9 @@ remaining legacy modules import while the Flask stack is being ported away.
 
 from . import exceptions
 
-__all__ = ["exceptions"]
+
+class Request:
+    pass
+
+
+__all__ = ["Request", "exceptions"]

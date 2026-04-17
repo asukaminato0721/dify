@@ -63,6 +63,8 @@ Done
   - `GET /files/{file_id}/image-preview`
   - `GET /files/{file_id}/file-preview`
   - `GET /files/workspaces/{workspace_id}/webapp-logo`
+  - `GET /api/form/human_input/{form_token}`
+  - `POST /api/form/human_input/{form_token}`
 - Added an async bootstrap service in `api_server/services/bootstrap.py` for first-time setup and init validation.
 - Added a minimal async app/site lookup service in `api_server/services/app_lookup.py`.
 - Added a FastAPI-native webapp context service in `api_server/services/webapp_context.py`.
@@ -71,6 +73,8 @@ Done
 - Added a FastAPI-native workflow event replay service in `api_server/services/workflow_events.py`.
 - Added a FastAPI-native public generation bridge in `api_server/services/generation_bridge.py`.
 - Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
+- Added local async human-input form models in `api_server/models/human_input.py` for public form token access without the legacy Flask repositories.
+- Added a FastAPI-native human-input form service in `api_server/services/human_input_forms.py`.
 - Initialized Redis pub/sub for the FastAPI app lifespan via the existing Redis extension bootstrap.
 - Mounted public generation endpoints on FastAPI route handlers:
   - `POST /api/completion-messages`
@@ -78,11 +82,15 @@ Done
   - `POST /api/workflows/run`
 - Ported public workflow event replay endpoint:
   - `GET /api/workflow/{task_id}/events`
+- Ported public human-input form endpoints:
+  - `GET /api/form/human_input/{form_token}`
+  - `POST /api/form/human_input/{form_token}`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
+- Added focused human-input route tests in `tests/test_human_input_form.py`.
 - Installed the new project environment with `uv sync`.
 - Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
-- Current active FastAPI runtime tests pass: `28 passed`.
+- Current active FastAPI runtime tests pass: `31 passed`.
 
 Current status
 --------------
@@ -130,6 +138,7 @@ Current status
   - `/api/chat-messages/{task_id}/stop`
   - `/api/workflows/tasks/{task_id}/stop`
   - `/api/workflow/{task_id}/events`
+  - `/api/form/human_input/{form_token}`
   - `/files/{file_id}/image-preview`
   - `/files/{file_id}/file-preview`
   - `/files/workspaces/{workspace_id}/webapp-logo`
@@ -137,6 +146,7 @@ Current status
 - The active `api-new` dependency set no longer includes Flask, `flask-login`, or `flask-restx`.
 - The previous import-time blocker from `models/__init__.py` has been removed for the new runtime slice.
 - Workflow event replay now stays on local FastAPI models/services; it no longer imports Flask response objects or legacy workflow controllers.
+- Public human-input form handling now stays on local FastAPI models/services with async SQLAlchemy and Redis-backed rate limits.
 - Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
 - Public generation routes now live on FastAPI and validate/authenticate in the new runtime without importing the legacy Flask generation service; authenticated execution currently returns `generation_backend_unavailable` until a native backend is ported.
 
@@ -149,6 +159,7 @@ Immediate blockers
   - Flask-specific controllers and decorators
 - The remaining generation backend is still tied to legacy models/services and eager imports from the copied tree, so `/api/completion-messages`, `/api/chat-messages`, and `/api/workflows/run` are mounted but intentionally unimplemented in the active FastAPI runtime.
 - Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
+- The legacy generation import graph is cleaner than before, but the execution path still assumes the copied sync runtime and is not yet compatible with the active async FastAPI database layer.
 
 Next steps
 ----------

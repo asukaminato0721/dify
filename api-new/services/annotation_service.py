@@ -1,10 +1,8 @@
 import logging
 import uuid
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-import pandas as pd
 from sqlalchemy import delete, or_, select, update
-from werkzeug.datastructures import FileStorage
 from werkzeug.exceptions import NotFound
 
 from core.helper.csv_sanitizer import CSVSanitizer
@@ -22,6 +20,9 @@ from tasks.annotation.enable_annotation_reply_task import enable_annotation_repl
 from tasks.annotation.update_annotation_to_index_task import update_annotation_to_index_task
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from werkzeug.datastructures import FileStorage
 
 
 class AnnotationJobStatusDict(TypedDict):
@@ -418,7 +419,7 @@ class AppAnnotationService:
         return {"deleted_count": deleted_count}
 
     @classmethod
-    def batch_import_app_annotations(cls, app_id, file: FileStorage):
+    def batch_import_app_annotations(cls, app_id, file: "FileStorage"):
         """
         Batch import annotations from CSV file with enhanced security checks.
 
@@ -430,6 +431,7 @@ class AppAnnotationService:
         - Concurrency tracking
         """
         from configs import dify_config
+        import pandas as pd
 
         # get app info
         current_user, current_tenant_id = current_account_with_tenant()

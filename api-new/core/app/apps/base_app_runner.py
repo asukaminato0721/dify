@@ -19,7 +19,6 @@ from core.app.entities.queue_entities import (
     QueueMessageEndEvent,
     QueueMessageFileEvent,
 )
-from core.app.features.annotation_reply.annotation_reply import AnnotationReplyFeature
 from core.app.features.hosting_moderation.hosting_moderation import HostingModerationFeature
 from core.external_data_tool.external_data_fetch import ExternalDataFetch
 from core.memory.token_buffer_memory import TokenBufferMemory
@@ -537,6 +536,8 @@ class AppRunner:
         :param invoke_from: invoke from
         :return:
         """
+        from core.app.features.annotation_reply.annotation_reply import AnnotationReplyFeature
+
         annotation_reply_feature = AnnotationReplyFeature()
         return annotation_reply_feature.query(
             app_record=app_record, message=message, query=query, user_id=user_id, invoke_from=invoke_from
