@@ -1,6 +1,6 @@
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from typing import cast
 
 from core.app.apps.base_app_queue_manager import AppQueueManager
@@ -173,3 +173,110 @@ class WorkflowAppRunner(WorkflowBasedAppRunner):
 
         for event in generator:
             self._handle_event(workflow_entry, event)
+
+    async def run_async(self) -> AsyncGenerator[object, None]:
+        """Async event stream variant of workflow execution."""
+
+        app_config = self.application_generate_entity.app_config
+        app_config = cast(WorkflowAppConfig, app_config)
+        invoke_from = self.application_generate_entity.invoke_from
+        if self.application_generate_entity.single_iteration_run or self.application_generate_entity.single_loop_run:
+            invoke_from = InvokeFrom.DEBUGGER
+        user_from = self._resolve_user_from(invoke_from)
+
+        resume_state = self._resume_graph_runtime_state
+
+        if resume_state is not None:
+            graph_runtime_state = resume_state
+            variable_pool = graph_runtime_state.variable_pool
+            graph = self._init_graph(
+                graph_config=self._workflow.graph_dict,
+                graph_runtime_state=graph_runtime_state,
+                workflow_id=self._workflow.id,
+                tenant_id=self._workflow.tenant_id,
+                user_id=self.application_generate_entity.user_id,
+                user_from=user_from,
+                invoke_from=invoke_from,
+                root_node_id=self._root_node_id,
+            )
+        elif self.application_generate_entity.single_iteration_run or self.application_generate_entity.single_loop_run:
+            graph, variable_pool, graph_runtime_state = self._prepare_single_node_execution(
+                workflow=self._workflow,
+                single_iteration_run=self.application_generate_entity.single_iteration_run,
+                single_loop_run=self.application_generate_entity.single_loop_run,
+                user_id=self.application_generate_entity.user_id,
+            )
+        else:
+            inputs = self.application_generate_entity.inputs
+            system_inputs = build_system_variables(
+                files=self.application_generate_entity.files,
+                user_id=self._sys_user_id,
+                app_id=app_config.app_id,
+                timestamp=int(naive_utc_now().timestamp()),
+                workflow_id=app_config.workflow_id,
+                workflow_execution_id=self.application_generate_entity.workflow_execution_id,
+            )
+            variable_pool = VariablePool()
+            add_variables_to_pool(
+                variable_pool,
+                build_bootstrap_variables(
+                    system_variables=system_inputs,
+                    environment_variables=self._workflow.environment_variables,
+                ),
+            )
+            root_node_id = self._root_node_id or get_default_root_node_id(self._workflow.graph_dict)
+            add_node_inputs_to_pool(variable_pool, node_id=root_node_id, inputs=inputs)
+
+            graph_runtime_state = GraphRuntimeState(variable_pool=variable_pool, start_at=time.perf_counter())
+            graph = self._init_graph(
+                graph_config=self._workflow.graph_dict,
+                graph_runtime_state=graph_runtime_state,
+                workflow_id=self._workflow.id,
+                tenant_id=self._workflow.tenant_id,
+                user_id=self.application_generate_entity.user_id,
+                user_from=user_from,
+                invoke_from=invoke_from,
+                root_node_id=root_node_id,
+            )
+
+        task_id = self.application_generate_entity.task_id
+        channel_key = f"workflow:{task_id}:commands"
+        command_channel = RedisChannel(redis_client, channel_key)
+
+        self._queue_manager.graph_runtime_state = graph_runtime_state
+
+        workflow_entry = WorkflowEntry(
+            tenant_id=self._workflow.tenant_id,
+            app_id=self._workflow.app_id,
+            workflow_id=self._workflow.id,
+            graph=graph,
+            graph_config=self._workflow.graph_dict,
+            user_id=self.application_generate_entity.user_id,
+            user_from=user_from,
+            invoke_from=invoke_from,
+            call_depth=self.application_generate_entity.call_depth,
+            variable_pool=variable_pool,
+            graph_runtime_state=graph_runtime_state,
+            command_channel=command_channel,
+        )
+
+        persistence_layer = WorkflowPersistenceLayer(
+            application_generate_entity=self.application_generate_entity,
+            workflow_info=PersistenceWorkflowInfo(
+                workflow_id=self._workflow.id,
+                workflow_type=WorkflowType(self._workflow.type),
+                version=self._workflow.version,
+                graph_data=self._workflow.graph_dict,
+            ),
+            workflow_execution_repository=self._workflow_execution_repository,
+            workflow_node_execution_repository=self._workflow_node_execution_repository,
+            trace_manager=self.application_generate_entity.trace_manager,
+        )
+
+        workflow_entry.graph_engine.layer(persistence_layer)
+        for layer in self._graph_engine_layers:
+            workflow_entry.graph_engine.layer(layer)
+
+        async for event in workflow_entry.run_async():
+            self._handle_event(workflow_entry, event)
+            yield event

@@ -1,6 +1,6 @@
 import logging
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any, cast
 
 from sqlalchemy import select
@@ -106,7 +106,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
             workflow_execution_id=self.application_generate_entity.workflow_run_id,
         )
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with Session(cast(Any, db.engine), expire_on_commit=False) as session:
             app_record = session.scalar(select(App).where(App.id == app_config.app_id))
 
         if not app_record:
@@ -200,7 +200,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
                 root_node_id=root_node_id,
             )
 
-        db.session.close()
+        _ = db.session.close()
 
         # RUN WORKFLOW
         # Create Redis command channel for this workflow execution
@@ -250,6 +250,155 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         for event in generator:
             self._handle_event(workflow_entry, event)
+
+    async def run_async(self) -> AsyncGenerator[object, None]:
+        app_config = self.application_generate_entity.app_config
+        app_config = cast(AdvancedChatAppConfig, app_config)
+
+        system_inputs = build_system_variables(
+            query=self.application_generate_entity.query,
+            files=self.application_generate_entity.files,
+            conversation_id=self.conversation.id,
+            user_id=self.system_user_id,
+            dialogue_count=self._dialogue_count,
+            app_id=app_config.app_id,
+            workflow_id=app_config.workflow_id,
+            workflow_execution_id=self.application_generate_entity.workflow_run_id,
+        )
+
+        with Session(cast(Any, db.engine), expire_on_commit=False) as session:
+            app_record = session.scalar(select(App).where(App.id == app_config.app_id))
+
+        if not app_record:
+            raise ValueError("App not found")
+
+        invoke_from = self.application_generate_entity.invoke_from
+        if self.application_generate_entity.single_iteration_run or self.application_generate_entity.single_loop_run:
+            invoke_from = InvokeFrom.DEBUGGER
+        user_from = self._resolve_user_from(invoke_from)
+
+        resume_state = self._resume_graph_runtime_state
+
+        if resume_state is not None:
+            graph_runtime_state = resume_state
+            variable_pool = graph_runtime_state.variable_pool
+            graph = self._init_graph(
+                graph_config=self._workflow.graph_dict,
+                graph_runtime_state=graph_runtime_state,
+                workflow_id=self._workflow.id,
+                tenant_id=self._workflow.tenant_id,
+                user_id=self.application_generate_entity.user_id,
+                invoke_from=invoke_from,
+                user_from=user_from,
+            )
+        elif self.application_generate_entity.single_iteration_run or self.application_generate_entity.single_loop_run:
+            graph, variable_pool, graph_runtime_state = self._prepare_single_node_execution(
+                workflow=self._workflow,
+                single_iteration_run=self.application_generate_entity.single_iteration_run,
+                single_loop_run=self.application_generate_entity.single_loop_run,
+                user_id=self.application_generate_entity.user_id,
+            )
+        else:
+            inputs = self.application_generate_entity.inputs
+            query = self.application_generate_entity.query
+
+            stop, new_inputs, new_query = self.handle_input_moderation(
+                app_record=self._app,
+                app_generate_entity=self.application_generate_entity,
+                inputs=inputs,
+                query=query,
+                message_id=self.message.id,
+            )
+            if stop:
+                return
+
+            self.application_generate_entity.inputs = new_inputs
+            self.application_generate_entity.query = new_query
+            system_inputs = build_system_variables(
+                system_variables_to_mapping(system_inputs),
+                query=new_query,
+            )
+
+            if self.handle_annotation_reply(
+                app_record=self._app,
+                message=self.message,
+                query=new_query,
+                app_generate_entity=self.application_generate_entity,
+            ):
+                return
+
+            conversation_variables = self._initialize_conversation_variables()
+
+            variable_pool = VariablePool()
+            add_variables_to_pool(
+                variable_pool,
+                build_bootstrap_variables(
+                    system_variables=system_inputs,
+                    environment_variables=self._workflow.environment_variables,
+                    conversation_variables=conversation_variables,
+                ),
+            )
+            root_node_id = get_default_root_node_id(self._workflow.graph_dict)
+            add_node_inputs_to_pool(variable_pool, node_id=root_node_id, inputs=new_inputs)
+
+            graph_runtime_state = GraphRuntimeState(variable_pool=variable_pool, start_at=time.time())
+            graph = self._init_graph(
+                graph_config=self._workflow.graph_dict,
+                graph_runtime_state=graph_runtime_state,
+                workflow_id=self._workflow.id,
+                tenant_id=self._workflow.tenant_id,
+                user_id=self.application_generate_entity.user_id,
+                user_from=user_from,
+                invoke_from=invoke_from,
+                root_node_id=root_node_id,
+            )
+
+        _ = db.session.close()
+
+        task_id = self.application_generate_entity.task_id
+        channel_key = f"workflow:{task_id}:commands"
+        command_channel = RedisChannel(redis_client, channel_key)
+
+        workflow_entry = WorkflowEntry(
+            tenant_id=self._workflow.tenant_id,
+            app_id=self._workflow.app_id,
+            workflow_id=self._workflow.id,
+            graph=graph,
+            graph_config=self._workflow.graph_dict,
+            user_id=self.application_generate_entity.user_id,
+            user_from=user_from,
+            invoke_from=invoke_from,
+            call_depth=self.application_generate_entity.call_depth,
+            variable_pool=variable_pool,
+            graph_runtime_state=graph_runtime_state,
+            command_channel=command_channel,
+        )
+
+        self._queue_manager.graph_runtime_state = graph_runtime_state
+
+        persistence_layer = WorkflowPersistenceLayer(
+            application_generate_entity=self.application_generate_entity,
+            workflow_info=PersistenceWorkflowInfo(
+                workflow_id=self._workflow.id,
+                workflow_type=WorkflowType(self._workflow.type),
+                version=self._workflow.version,
+                graph_data=self._workflow.graph_dict,
+            ),
+            workflow_execution_repository=self._workflow_execution_repository,
+            workflow_node_execution_repository=self._workflow_node_execution_repository,
+        )
+
+        workflow_entry.graph_engine.layer(persistence_layer)
+        conversation_variable_layer = ConversationVariablePersistenceLayer(
+            ConversationVariableUpdater(session_factory.get_session_maker())
+        )
+        workflow_entry.graph_engine.layer(conversation_variable_layer)
+        for layer in self._graph_engine_layers:
+            workflow_entry.graph_engine.layer(layer)
+
+        async for event in workflow_entry.run_async():
+            self._handle_event(workflow_entry, event)
+            yield event
 
     def handle_input_moderation(
         self,
@@ -363,7 +512,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         :return: List of conversation variables ready for use
         """
-        with sessionmaker(bind=db.engine).begin() as session:
+        with sessionmaker(bind=cast(Any, db.engine)).begin() as session:
             existing_variables = self._load_existing_conversation_variables(session)
 
             if not existing_variables:

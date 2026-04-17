@@ -79,6 +79,7 @@ Done
 - Added an async-native completion/chat generation service in `api_server/services/generation.py`.
 - Extended the async-native generation service to support completion `more-like-this`.
 - Added async event emission APIs on `EventManager`, `GraphEngine`, and `WorkflowEntry` as the execution-engine path forward for the remaining workflow runtime port.
+- Added async runner entrypoints on `WorkflowAppRunner` and `AdvancedChatAppRunner` to consume the new async graph-event surface.
 - Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
 - Added local async human-input form models in `api_server/models/human_input.py` for public form token access without the legacy Flask repositories.
 - Added a FastAPI-native human-input form service in `api_server/services/human_input_forms.py`.
@@ -183,6 +184,7 @@ Current status
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Advanced-chat/workflow generation routes still return `generation_backend_unavailable` until their async-native domain services are ported.
 - The execution engine now has an async event-emission surface, but advanced-chat/workflow still need an async-native app service built on top of it.
+- The workflow runners now expose async entrypoints, but advanced-chat/workflow still need async-native persistence and response services built on top of them.
 
 Immediate blockers
 ------------------
