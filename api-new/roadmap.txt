@@ -12,6 +12,7 @@ Done
 - Replaced the Flask database bootstrap with an async SQLAlchemy manager in `extensions/ext_database.py`.
 - Added a FastAPI-native exception layer in `api_server/errors.py`.
 - Added FastAPI-native JWT/passport helpers in `api_server/auth.py`.
+- Switched the active public webapp auth extractors to `fastapi.security` helpers instead of Flask-Login-style request parsing.
 - Added a FastAPI-local ORM base and SQLAlchemy types in `api_server/db.py` to avoid importing the legacy `models` package.
 - Replaced eager `models/__init__.py` imports with a lazy loader so the package no longer imports the full Flask-era ORM graph at import time.
 - Removed Flask compatibility dependencies from `api-new` after confirming the active FastAPI slice does not need them.
@@ -69,6 +70,7 @@ Done
 - Added a local async `WorkflowRun` model in `api_server/models/workflow.py` for workflow event replay without importing the legacy ORM graph.
 - Added a FastAPI-native workflow event replay service in `api_server/services/workflow_events.py`.
 - Added a FastAPI-native public generation bridge in `api_server/services/generation_bridge.py`.
+- Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
 - Initialized Redis pub/sub for the FastAPI app lifespan via the existing Redis extension bootstrap.
 - Mounted public generation endpoints on FastAPI route handlers:
   - `POST /api/completion-messages`
@@ -77,9 +79,10 @@ Done
 - Ported public workflow event replay endpoint:
   - `GET /api/workflow/{task_id}/events`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
+- Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Installed the new project environment with `uv sync`.
 - Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
-- Current active FastAPI runtime tests pass: `26 passed`.
+- Current active FastAPI runtime tests pass: `28 passed`.
 
 Current status
 --------------
@@ -134,7 +137,8 @@ Current status
 - The active `api-new` dependency set no longer includes Flask, `flask-login`, or `flask-restx`.
 - The previous import-time blocker from `models/__init__.py` has been removed for the new runtime slice.
 - Workflow event replay now stays on local FastAPI models/services; it no longer imports Flask response objects or legacy workflow controllers.
-- Public generation routes now live on FastAPI and validate/authenticate in the new runtime; authenticated execution still uses a lazy bridge because the underlying generation engine remains tied to legacy imports.
+- Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
+- Public generation routes now live on FastAPI and validate/authenticate in the new runtime without importing the legacy Flask generation service; authenticated execution currently returns `generation_backend_unavailable` until a native backend is ported.
 
 Immediate blockers
 ------------------
@@ -143,12 +147,13 @@ Immediate blockers
   - Flask-Login
   - sync SQLAlchemy sessions via `db.session`
   - Flask-specific controllers and decorators
+- The remaining generation backend is still tied to legacy models/services and eager imports from the copied tree, so `/api/completion-messages`, `/api/chat-messages`, and `/api/workflows/run` are mounted but intentionally unimplemented in the active FastAPI runtime.
 - Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
 
 Next steps
 ----------
 1. Continue porting the next public route family.
-   - Candidate next slice: replace the lazy generation bridge with FastAPI-native execution services for `/chat-messages`, `/completion-messages`, and `/workflows/run`.
+   - Candidate next slice: implement FastAPI-native execution services for `/chat-messages`, `/completion-messages`, and `/workflows/run`.
    - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
 
 2. Expand the FastAPI-native domain layer.

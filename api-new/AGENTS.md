@@ -12,7 +12,7 @@ always use full type python, don't just return Mapping, return TypedDict instead
 
 use TypeBase.
 
-DONT introduce flask-login, werkzeug libraries, use fastapi libraries instead.
+DONT introduce flask-login, werkzeug libraries, use fastapi.security .
 
 ---
 

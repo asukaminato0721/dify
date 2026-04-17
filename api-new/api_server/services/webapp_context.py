@@ -27,7 +27,7 @@ class WebappContextService:
     @staticmethod
     async def resolve(request: Request, expected_user_id: str | None = None) -> WebappContext:
         header_app_code = request.headers.get("X-App-Code")
-        passport = extract_webapp_passport(header_app_code or "", request)
+        passport = await extract_webapp_passport(header_app_code or "", request)
         if not passport:
             raise unauthorized("missing_passport", "App token is missing.")
 

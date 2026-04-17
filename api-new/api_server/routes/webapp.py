@@ -363,7 +363,7 @@ async def get_passport(
     if not app_code:
         raise unauthorized("missing_app_code", "X-App-Code header is missing.")
 
-    access_token = extract_webapp_access_token(request)
+    access_token = await extract_webapp_access_token(request)
     enterprise_payload = _decode_webapp_access_token(access_token) if access_token else None
 
     if bool(getattr(dify_config, "ENTERPRISE_ENABLED", False)):
@@ -382,7 +382,7 @@ async def get_login_status(
     app_code: str | None = Query(default=None, description="Application code"),
     user_id: str | None = Query(default=None, description="Browser session identifier"),
 ) -> LoginStatusResponseDict:
-    token = extract_webapp_access_token(request)
+    token = await extract_webapp_access_token(request)
     if not app_code:
         return {"logged_in": bool(token), "app_logged_in": False}
 

@@ -1,22 +1,20 @@
-"""FastAPI bridge for public generation endpoints.
+"""FastAPI-native validation layer for public generation endpoints.
 
-This layer keeps the active route surface on FastAPI while the underlying
-generation engine is still being migrated away from Flask-era imports.
-Generation backends are imported lazily so authentication, validation, and
-route wiring no longer depend on the full legacy stack being import-clean.
+The public generation routes remain mounted so the FastAPI surface area stays
+stable, but they no longer import the legacy Flask execution stack on demand.
+Authentication and request validation now stay entirely inside the FastAPI
+runtime until a native generation backend is ported.
 """
 
 from __future__ import annotations
 
-import importlib
-from collections.abc import Generator, Mapping
 from typing import Any
 
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from api_server.errors import bad_request, forbidden, service_unavailable
-from api_server.models.app import App, AppMode, EndUser
+from api_server.errors import forbidden, service_unavailable
+from api_server.models.app import AppMode
 from api_server.services.webapp_context import WebappContext
 
 
@@ -78,7 +76,7 @@ class WorkflowRunPayload(BaseModel):
 
 
 class PublicGenerationBridge:
-    """Thin adapter from FastAPI requests to the legacy generation engine."""
+    """Validate public generation requests without importing legacy auth/runtime code."""
 
     @classmethod
     def ensure_mode(cls, *, app_mode: AppMode, expected_modes: set[AppMode], error_code: str, message: str) -> None:
@@ -101,8 +99,6 @@ class PublicGenerationBridge:
         args = payload.model_dump(exclude_none=True)
         args["auto_generate_name"] = False
         return cls._run(
-            app=context.app,
-            end_user=context.end_user,
             args=args,
             streaming=payload.response_mode == "streaming",
         )
@@ -123,8 +119,6 @@ class PublicGenerationBridge:
         args = payload.model_dump(exclude_none=True)
         args["auto_generate_name"] = False
         return cls._run(
-            app=context.app,
-            end_user=context.end_user,
             args=args,
             streaming=payload.response_mode == "streaming",
         )
@@ -143,8 +137,6 @@ class PublicGenerationBridge:
             message="Please check if your Workflow app mode matches the right API route.",
         )
         return cls._run(
-            app=context.app,
-            end_user=context.end_user,
             args=payload.model_dump(exclude_none=True),
             streaming=payload.response_mode == "streaming",
         )
@@ -153,42 +145,11 @@ class PublicGenerationBridge:
     def _run(
         cls,
         *,
-        app: App,
-        end_user: EndUser,
         args: dict[str, Any],
         streaming: bool,
     ) -> JSONResponse | StreamingResponse:
-        try:
-            service_module = importlib.import_module("services.app_generate_service")
-            invoke_module = importlib.import_module("core.app.entities.app_invoke_entities")
-            response = service_module.AppGenerateService.generate(
-                app_model=app,
-                user=end_user,
-                args=args,
-                invoke_from=invoke_module.InvokeFrom.WEB_APP,
-                streaming=streaming,
-            )
-        except ModuleNotFoundError as exc:
-            raise service_unavailable(
-                "generation_backend_unavailable",
-                "The generation backend is not ported to the FastAPI runtime yet.",
-            ) from exc
-        except ValueError as exc:
-            raise bad_request("invalid_argument", str(exc)) from exc
-
-        return cls._to_fastapi_response(response)
-
-    @staticmethod
-    def _to_fastapi_response(
-        response: Mapping[str, Any] | Generator[str, None, None] | Any,
-    ) -> JSONResponse | StreamingResponse:
-        if isinstance(response, Mapping):
-            return JSONResponse(content=dict(response))
-        return StreamingResponse(
-            response,
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
+        del args, streaming
+        raise service_unavailable(
+            "generation_backend_unavailable",
+            "Public generation is not ported to the FastAPI runtime yet.",
         )

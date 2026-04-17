@@ -294,7 +294,7 @@ async def get_webapp_permission(
     if access_mode.access_mode not in {"private", "private_all"}:
         return AppPermissionResponse(result=True)
 
-    passport = extract_webapp_passport(app_code, request)
+    passport = await extract_webapp_passport(app_code, request)
     if not passport:
         raise unauthorized("missing_passport", "Access token is missing.")
 
