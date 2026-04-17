@@ -1,6 +1,6 @@
 import logging
 import time
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Generator, Mapping, Sequence
 from typing import Any, TypedDict
 
 from configs import dify_config
@@ -223,6 +223,19 @@ class WorkflowEntry:
             yield from generator
         except GenerateTaskStoppedError:
             pass
+        except Exception as e:
+            logger.exception("Unknown Error when workflow entry running")
+            yield GraphRunFailedEvent(error=str(e))
+            return
+
+    async def run_async(self) -> AsyncGenerator[GraphEngineEvent, None]:
+        graph_engine = self.graph_engine
+
+        try:
+            async for event in graph_engine.run_async():
+                yield event
+        except GenerateTaskStoppedError:
+            return
         except Exception as e:
             logger.exception("Unknown Error when workflow entry running")
             yield GraphRunFailedEvent(error=str(e))

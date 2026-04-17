@@ -2,10 +2,11 @@
 Unified event manager for collecting and emitting events.
 """
 
+import asyncio
 import logging
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from typing import final
 
@@ -171,6 +172,23 @@ class EventManager:
             # Small sleep to avoid busy waiting
             if not self._execution_complete.is_set() and not new_events:
                 time.sleep(0.001)
+
+    async def emit_events_async(self) -> AsyncGenerator[GraphEngineEvent, None]:
+        """Async generator variant of `emit_events` for async runtimes."""
+
+        yielded_count = 0
+
+        while (
+            not self._execution_complete.is_set() or yielded_count < self._event_count()
+        ):
+            new_events = self._get_new_events(yielded_count)
+
+            for event in new_events:
+                yield event
+                yielded_count += 1
+
+            if not self._execution_complete.is_set() and not new_events:
+                await asyncio.sleep(0.001)
 
     def _notify_layers(self, event: GraphEngineEvent) -> None:
         """

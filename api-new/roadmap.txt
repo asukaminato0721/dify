@@ -78,6 +78,7 @@ Done
 - Added a FastAPI-native public generation bridge in `api_server/services/generation_bridge.py`.
 - Added an async-native completion/chat generation service in `api_server/services/generation.py`.
 - Extended the async-native generation service to support completion `more-like-this`.
+- Added async event emission APIs on `EventManager`, `GraphEngine`, and `WorkflowEntry` as the execution-engine path forward for the remaining workflow runtime port.
 - Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
 - Added local async human-input form models in `api_server/models/human_input.py` for public form token access without the legacy Flask repositories.
 - Added a FastAPI-native human-input form service in `api_server/services/human_input_forms.py`.
@@ -110,9 +111,11 @@ Done
 - Added focused suggested-questions route tests in `tests/test_suggested_questions_route.py`.
 - Added focused `more-like-this` route coverage in `tests/test_suggested_questions_route.py`.
 - Added focused generation bridge tests in `tests/test_generation_bridge.py`.
+- Added focused generation route tests in `tests/test_generation_routes.py`.
+- Added focused async graph-engine event tests in `tests/test_graph_engine_async.py`.
 - Installed the new project environment with `uv sync`.
 - Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
-- Current active FastAPI runtime tests pass: `41 passed`.
+- Current active FastAPI runtime tests pass: `45 passed`.
 
 Current status
 --------------
@@ -179,6 +182,7 @@ Current status
 - Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Advanced-chat/workflow generation routes still return `generation_backend_unavailable` until their async-native domain services are ported.
+- The execution engine now has an async event-emission surface, but advanced-chat/workflow still need an async-native app service built on top of it.
 
 Immediate blockers
 ------------------
@@ -190,6 +194,7 @@ Immediate blockers
 - Advanced-chat/workflow generation are still unimplemented in the active FastAPI runtime.
 - Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
 - Model-provider resolution and the broader generation feature set still depend on copied legacy domain code in places, so the async-native generation slice is only partially ported compared with the original Flask feature set.
+- The remaining unfinished work is concentrated in replacing the sync advanced-chat/workflow generators with services that persist workflow runs, emit graph events, and resume pauses on the new async execution surface.
 
 Next steps
 ----------
