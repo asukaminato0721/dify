@@ -277,6 +277,149 @@ class QuestionClassifierNode(Node[QuestionClassifierNodeData]):
                 llm_usage=usage,
             )
 
+    async def _run_async(self):
+        node_data = self.node_data
+        variable_pool = self.graph_runtime_state.variable_pool
+
+        variable = (
+            variable_pool.get(node_data.query_variable_selector)
+            if node_data.query_variable_selector
+            else None
+        )
+        query = variable.value if variable else None
+        variables = {"query": query}
+
+        model_instance = self._model_instance
+        model_instance.parameters = llm_utils.resolve_completion_params_variables(
+            model_instance.parameters, variable_pool
+        )
+        memory = self._memory
+        node_data.instruction = node_data.instruction or ""
+        node_data.instruction = variable_pool.convert_template(node_data.instruction).text
+        files = (
+            llm_utils.fetch_files(
+                variable_pool=variable_pool,
+                selector=node_data.vision.configs.variable_selector,
+            )
+            if node_data.vision.enabled
+            else []
+        )
+
+        rest_token = await self._calculate_rest_token_async(
+            node_data=node_data,
+            query=query or "",
+            model_instance=model_instance,
+            context="",
+        )
+        prompt_template = self._get_prompt_template(
+            node_data=node_data,
+            query=query or "",
+            memory=memory,
+            max_token_limit=rest_token,
+        )
+        prompt_messages, stop = llm_utils.fetch_prompt_messages(
+            prompt_template=prompt_template,
+            sys_query="",
+            memory=memory,
+            model_instance=model_instance,
+            stop=model_instance.stop,
+            sys_files=files,
+            vision_enabled=node_data.vision.enabled,
+            vision_detail=node_data.vision.configs.detail,
+            variable_pool=variable_pool,
+            jinja2_variables=[],
+            template_renderer=self._template_renderer,
+        )
+
+        result_text = ""
+        usage = LLMUsage.empty_usage()
+        finish_reason = None
+        try:
+            agen = LLMNode.ainvoke_llm(
+                model_instance=model_instance,
+                prompt_messages=prompt_messages,
+                stop=stop,
+                structured_output_enabled=False,
+                structured_output=None,
+                file_saver=self._llm_file_saver,
+                file_outputs=self._file_outputs,
+                node_id=self._node_id,
+                node_type=self.node_type,
+            )
+
+            async for event in agen:
+                if isinstance(event, ModelInvokeCompletedEvent):
+                    result_text = event.text
+                    usage = event.usage
+                    finish_reason = event.finish_reason
+                    break
+
+            rendered_classes = [
+                c.model_copy(update={"name": variable_pool.convert_template(c.name).text})
+                for c in node_data.classes
+            ]
+
+            category_name = rendered_classes[0].name
+            category_id = rendered_classes[0].id
+            if "<think>" in result_text:
+                result_text = re.sub(
+                    r"<think[^>]*>[\s\S]*?</think>",
+                    "",
+                    result_text,
+                    flags=re.IGNORECASE,
+                )
+            result_text_json = parse_and_check_json_markdown(result_text, [])
+            if "category_name" in result_text_json and "category_id" in result_text_json:
+                category_id_result = result_text_json["category_id"]
+                classes = rendered_classes
+                classes_map = {class_.id: class_.name for class_ in classes}
+                category_ids = [_class.id for _class in classes]
+                if category_id_result in category_ids:
+                    category_name = classes_map[category_id_result]
+                    category_id = category_id_result
+            process_data = {
+                "model_mode": node_data.model.mode,
+                "prompts": self._prompt_message_serializer.serialize(
+                    model_mode=node_data.model.mode, prompt_messages=prompt_messages
+                ),
+                "usage": jsonable_encoder(usage),
+                "finish_reason": finish_reason,
+                "model_provider": model_instance.provider,
+                "model_name": model_instance.model_name,
+            }
+            outputs = {
+                "class_name": category_name,
+                "class_id": category_id,
+                "usage": jsonable_encoder(usage),
+            }
+
+            return NodeRunResult(
+                status=WorkflowNodeExecutionStatus.SUCCEEDED,
+                inputs=variables,
+                process_data=process_data,
+                outputs=outputs,
+                edge_source_handle=category_id,
+                metadata={
+                    WorkflowNodeExecutionMetadataKey.TOTAL_TOKENS: usage.total_tokens,
+                    WorkflowNodeExecutionMetadataKey.TOTAL_PRICE: usage.total_price,
+                    WorkflowNodeExecutionMetadataKey.CURRENCY: usage.currency,
+                },
+                llm_usage=usage,
+            )
+        except ValueError as e:
+            return NodeRunResult(
+                status=WorkflowNodeExecutionStatus.FAILED,
+                inputs=variables,
+                error=str(e),
+                error_type=type(e).__name__,
+                metadata={
+                    WorkflowNodeExecutionMetadataKey.TOTAL_TOKENS: usage.total_tokens,
+                    WorkflowNodeExecutionMetadataKey.TOTAL_PRICE: usage.total_price,
+                    WorkflowNodeExecutionMetadataKey.CURRENCY: usage.currency,
+                },
+                llm_usage=usage,
+            )
+
     @property
     def model_instance(self) -> PreparedLLMProtocol:
         return self._model_instance
@@ -367,6 +510,49 @@ class QuestionClassifierNode(Node[QuestionClassifierNodeData]):
                         or model_instance.parameters.get(
                             parameter_rule.use_template or ""
                         )
+                    ) or 0
+
+            rest_tokens = model_context_tokens - max_tokens - curr_message_tokens
+            rest_tokens = max(rest_tokens, 0)
+
+        return rest_tokens
+
+    async def _calculate_rest_token_async(
+        self,
+        node_data: QuestionClassifierNodeData,
+        query: str,
+        model_instance: PreparedLLMProtocol,
+        context: str | None,
+    ) -> int:
+        model_schema = await model_instance.aget_model_schema()
+        prompt_template = self._get_prompt_template(node_data, query, None, 2000)
+        prompt_messages, _ = llm_utils.fetch_prompt_messages(
+            prompt_template=prompt_template,
+            sys_query="",
+            sys_files=[],
+            context=context or "",
+            memory=None,
+            model_instance=model_instance,
+            stop=model_instance.stop,
+            memory_config=node_data.memory,
+            vision_enabled=False,
+            vision_detail=node_data.vision.configs.detail,
+            variable_pool=self.graph_runtime_state.variable_pool,
+            jinja2_variables=[],
+            template_renderer=self._template_renderer,
+        )
+        rest_tokens = 2000
+        model_context_tokens = model_schema.model_properties.get(ModelPropertyKey.CONTEXT_SIZE)
+        if model_context_tokens:
+            curr_message_tokens = await model_instance.aget_llm_num_tokens(prompt_messages)
+            max_tokens = 0
+            for parameter_rule in model_schema.parameter_rules:
+                if parameter_rule.name == "max_tokens" or (
+                    parameter_rule.use_template and parameter_rule.use_template == "max_tokens"
+                ):
+                    max_tokens = (
+                        model_instance.parameters.get(parameter_rule.name)
+                        or model_instance.parameters.get(parameter_rule.use_template or "")
                     ) or 0
 
             rest_tokens = model_context_tokens - max_tokens - curr_message_tokens

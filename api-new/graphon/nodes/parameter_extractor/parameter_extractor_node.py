@@ -310,6 +310,146 @@ class ParameterExtractorNode(Node[ParameterExtractorNodeData]):
             llm_usage=usage,
         )
 
+    async def _run_async(self):
+        node_data = self.node_data
+        variable = self.graph_runtime_state.variable_pool.get(node_data.query)
+        query = variable.text if variable else ""
+
+        variable_pool = self.graph_runtime_state.variable_pool
+
+        files = (
+            llm_utils.fetch_files(
+                variable_pool=variable_pool,
+                selector=node_data.vision.configs.variable_selector,
+            )
+            if node_data.vision.enabled
+            else []
+        )
+
+        model_instance = self._model_instance
+        model_instance.parameters = llm_utils.resolve_completion_params_variables(
+            model_instance.parameters, variable_pool
+        )
+        try:
+            model_schema = await model_instance.aget_model_schema()
+        except ValueError as exc:
+            raise ModelSchemaNotFoundError("Model schema not found") from exc
+        if model_schema.model_type != ModelType.LLM:
+            raise InvalidModelTypeError("Model is not a Large Language Model")
+        memory = self._memory
+
+        if (
+            set(model_schema.features or [])
+            & {ModelFeature.TOOL_CALL, ModelFeature.MULTI_TOOL_CALL}
+            and node_data.reasoning_mode == "function_call"
+        ):
+            prompt_messages, prompt_message_tools = self._generate_function_call_prompt(
+                node_data=node_data,
+                query=query,
+                variable_pool=self.graph_runtime_state.variable_pool,
+                model_instance=model_instance,
+                memory=memory,
+                files=files,
+                vision_detail=node_data.vision.configs.detail,
+            )
+        else:
+            prompt_messages = self._generate_prompt_engineering_prompt(
+                data=node_data,
+                query=query,
+                variable_pool=self.graph_runtime_state.variable_pool,
+                model_instance=model_instance,
+                memory=memory,
+                files=files,
+                vision_detail=node_data.vision.configs.detail,
+            )
+            prompt_message_tools = []
+
+        inputs = {
+            "query": query,
+            "files": [f.to_dict() for f in files],
+            "parameters": jsonable_encoder(node_data.parameters),
+            "instruction": jsonable_encoder(node_data.instruction),
+        }
+
+        process_data = {
+            "model_mode": node_data.model.mode,
+            "prompts": self._prompt_message_serializer.serialize(
+                model_mode=node_data.model.mode,
+                prompt_messages=prompt_messages,
+            ),
+            "usage": None,
+            "function": {} if not prompt_message_tools else jsonable_encoder(prompt_message_tools[0]),
+            "tool_call": None,
+            "model_provider": model_instance.provider,
+            "model_name": model_instance.model_name,
+        }
+
+        try:
+            text, usage, tool_call = await self._invoke_async(
+                model_instance=model_instance,
+                prompt_messages=prompt_messages,
+                tools=prompt_message_tools,
+                stop=model_instance.stop,
+            )
+            process_data["usage"] = jsonable_encoder(usage)
+            process_data["tool_call"] = jsonable_encoder(tool_call)
+            process_data["llm_text"] = text
+        except ParameterExtractorNodeError as e:
+            return NodeRunResult(
+                status=WorkflowNodeExecutionStatus.FAILED,
+                inputs=inputs,
+                process_data=process_data,
+                outputs={"__is_success": 0, "__reason": str(e)},
+                error=str(e),
+                metadata={},
+            )
+        except Exception as e:
+            return NodeRunResult(
+                status=WorkflowNodeExecutionStatus.FAILED,
+                inputs=inputs,
+                process_data=process_data,
+                outputs={"__is_success": 0, "__reason": "Failed to invoke model", "__error": str(e)},
+                error=str(e),
+                metadata={},
+            )
+
+        error = None
+        if tool_call:
+            result = self._extract_json_from_tool_call(tool_call)
+        else:
+            result = self._extract_complete_json_response(text)
+            if not result:
+                result = self._generate_default_result(node_data)
+                error = (
+                    "Failed to extract result from function call or text response, "
+                    "using empty result."
+                )
+
+        try:
+            result = self._validate_result(data=node_data, result=result or {})
+        except ParameterExtractorNodeError as e:
+            error = str(e)
+
+        result = self._transform_result(data=node_data, result=result or {})
+
+        return NodeRunResult(
+            status=WorkflowNodeExecutionStatus.SUCCEEDED,
+            inputs=inputs,
+            process_data=process_data,
+            outputs={
+                "__is_success": 1 if not error else 0,
+                "__reason": error,
+                "__usage": jsonable_encoder(usage),
+                **result,
+            },
+            metadata={
+                WorkflowNodeExecutionMetadataKey.TOTAL_TOKENS: usage.total_tokens,
+                WorkflowNodeExecutionMetadataKey.TOTAL_PRICE: usage.total_price,
+                WorkflowNodeExecutionMetadataKey.CURRENCY: usage.currency,
+            },
+            llm_usage=usage,
+        )
+
     def _invoke(
         self,
         model_instance: PreparedLLMProtocol,
@@ -343,6 +483,34 @@ class ParameterExtractorNode(Node[ParameterExtractorNodeData]):
             else None
         )
 
+        return text, usage, tool_call
+
+    async def _invoke_async(
+        self,
+        model_instance: PreparedLLMProtocol,
+        prompt_messages: list[PromptMessage],
+        tools: list[PromptMessageTool],
+        stop: Sequence[str] | None,
+    ) -> tuple[str, LLMUsage, AssistantPromptMessage.ToolCall | None]:
+        invoke_result = cast(
+            "LLMResult",
+            await model_instance.ainvoke_llm(
+                prompt_messages=prompt_messages,
+                model_parameters=dict(model_instance.parameters),
+                tools=tools or None,
+                stop=stop,
+                stream=False,
+            ),
+        )
+
+        text = invoke_result.message.get_text_content()
+        if not isinstance(text, str):
+            raise InvalidTextContentTypeError(
+                f"Invalid text content type: {type(text)}. Expected str."
+            )
+
+        usage = invoke_result.usage
+        tool_call = invoke_result.message.tool_calls[0] if invoke_result.message.tool_calls else None
         return text, usage, tool_call
 
     def _generate_function_call_prompt(
@@ -878,6 +1046,50 @@ class ParameterExtractorNode(Node[ParameterExtractorNodeData]):
                         or model_instance.parameters.get(
                             parameter_rule.use_template or ""
                         )
+                    ) or 0
+
+            rest_tokens = model_context_tokens - max_tokens - curr_message_tokens
+            rest_tokens = max(rest_tokens, 0)
+
+        return rest_tokens
+
+    async def _calculate_rest_token_async(
+        self,
+        node_data: ParameterExtractorNodeData,
+        query: str,
+        variable_pool: VariablePool,
+        model_instance: PreparedLLMProtocol,
+        context: str | None,
+    ) -> int:
+        try:
+            model_schema = await model_instance.aget_model_schema()
+        except ValueError as exc:
+            raise ModelSchemaNotFoundError("Model schema not found") from exc
+
+        if set(model_schema.features or []) & {ModelFeature.TOOL_CALL, ModelFeature.MULTI_TOOL_CALL}:
+            prompt_template = self._get_function_calling_prompt_template(node_data, query, variable_pool, None, 2000)
+        else:
+            prompt_template = self._get_prompt_engineering_prompt_template(node_data, query, variable_pool, None, 2000)
+
+        prompt_messages = self._compile_prompt_messages(
+            model_instance=model_instance,
+            prompt_template=prompt_template,
+            files=[],
+            vision_enabled=False,
+            context=context,
+        )
+        rest_tokens = 2000
+        model_context_tokens = model_schema.model_properties.get(ModelPropertyKey.CONTEXT_SIZE)
+        if model_context_tokens:
+            curr_message_tokens = await model_instance.aget_llm_num_tokens(prompt_messages) + 1000
+            max_tokens = 0
+            for parameter_rule in model_schema.parameter_rules:
+                if parameter_rule.name == "max_tokens" or (
+                    parameter_rule.use_template and parameter_rule.use_template == "max_tokens"
+                ):
+                    max_tokens = (
+                        model_instance.parameters.get(parameter_rule.name)
+                        or model_instance.parameters.get(parameter_rule.use_template or "")
                     ) or 0
 
             rest_tokens = model_context_tokens - max_tokens - curr_message_tokens
