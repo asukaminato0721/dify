@@ -1,4 +1,5 @@
 import decimal
+from typing import Any
 
 from graphon.model_runtime.entities.common_entities import I18nObject
 from graphon.model_runtime.entities.defaults import PARAMETER_RULE_TEMPLATE
@@ -171,6 +172,17 @@ class AIModel:
         :return: model schema
         """
         return self.model_runtime.get_model_schema(
+            provider=self.provider,
+            model_type=self.model_type,
+            model=model,
+            credentials=credentials or {},
+        )
+
+    async def aget_model_schema(
+        self, model: str, credentials: dict | None = None
+    ) -> AIModelEntity | None:
+        """Async schema lookup variant."""
+        return await self.model_runtime.aget_model_schema(
             provider=self.provider,
             model_type=self.model_type,
             model=model,

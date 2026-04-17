@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Generator, Iterable, Mapping, Sequence
 from typing import IO, Any, Literal, Optional, Union, cast, overload
 
 from configs import dify_config
@@ -53,6 +53,13 @@ class ModelInstance:
     def get_model_schema(self) -> AIModelEntity:
         """Return the resolved schema for the current model instance."""
         model_schema = self.model_type_instance.get_model_schema(self.model_name, self.credentials)
+        if model_schema is None:
+            raise ValueError(f"model schema not found for {self.model_name}")
+        return model_schema
+
+    async def aget_model_schema(self) -> AIModelEntity:
+        """Async variant of schema lookup."""
+        model_schema = await self.model_type_instance.aget_model_schema(self.model_name, self.credentials)
         if model_schema is None:
             raise ValueError(f"model schema not found for {self.model_name}")
         return model_schema
@@ -168,7 +175,7 @@ class ModelInstance:
         return cast(
             Union[LLMResult, Generator],
             self._round_robin_invoke(
-                function=self.model_type_instance.invoke,
+                self.model_type_instance.invoke,
                 model=self.model_name,
                 credentials=self.credentials,
                 prompt_messages=list(prompt_messages),
@@ -177,6 +184,32 @@ class ModelInstance:
                 stop=list(stop) if stop else None,
                 stream=stream,
                 callbacks=callbacks,
+            ),
+        )
+
+    async def ainvoke_llm(
+        self,
+        prompt_messages: Sequence[PromptMessage],
+        model_parameters: dict[str, Any] | None = None,
+        tools: Sequence[PromptMessageTool] | None = None,
+        stop: Sequence[str] | None = None,
+        stream: bool = True,
+        callbacks: list[Callback] | None = None,
+    ) -> Union[LLMResult, AsyncGenerator]:
+        del callbacks
+        if not isinstance(self.model_type_instance, LargeLanguageModel):
+            raise Exception("Model type instance is not LargeLanguageModel")
+        return cast(
+            Union[LLMResult, AsyncGenerator],
+            await self._around_robin_ainvoke(
+                self.model_type_instance.ainvoke,
+                model=self.model_name,
+                credentials=self.credentials,
+                prompt_messages=list(prompt_messages),
+                model_parameters=model_parameters,
+                tools=list(tools) if tools else None,
+                stop=list(stop) if stop else None,
+                stream=stream,
             ),
         )
 
@@ -193,7 +226,20 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, LargeLanguageModel):
             raise Exception("Model type instance is not LargeLanguageModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.get_num_tokens,
+            self.model_type_instance.get_num_tokens,
+            model=self.model_name,
+            credentials=self.credentials,
+            prompt_messages=list(prompt_messages),
+            tools=list(tools) if tools else None,
+        )
+
+    async def aget_llm_num_tokens(
+        self, prompt_messages: Sequence[PromptMessage], tools: Sequence[PromptMessageTool] | None = None
+    ) -> int:
+        if not isinstance(self.model_type_instance, LargeLanguageModel):
+            raise Exception("Model type instance is not LargeLanguageModel")
+        return await self._around_robin_ainvoke(
+            self.model_type_instance.aget_num_tokens,
             model=self.model_name,
             credentials=self.credentials,
             prompt_messages=list(prompt_messages),
@@ -213,7 +259,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, TextEmbeddingModel):
             raise Exception("Model type instance is not TextEmbeddingModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.invoke,
+            self.model_type_instance.invoke,
             model=self.model_name,
             credentials=self.credentials,
             texts=texts,
@@ -235,7 +281,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, TextEmbeddingModel):
             raise Exception("Model type instance is not TextEmbeddingModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.invoke,
+            self.model_type_instance.invoke,
             model=self.model_name,
             credentials=self.credentials,
             multimodel_documents=multimodel_documents,
@@ -252,7 +298,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, TextEmbeddingModel):
             raise Exception("Model type instance is not TextEmbeddingModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.get_num_tokens,
+            self.model_type_instance.get_num_tokens,
             model=self.model_name,
             credentials=self.credentials,
             texts=texts,
@@ -277,7 +323,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, RerankModel):
             raise Exception("Model type instance is not RerankModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.invoke,
+            self.model_type_instance.invoke,
             model=self.model_name,
             credentials=self.credentials,
             query=query,
@@ -305,7 +351,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, RerankModel):
             raise Exception("Model type instance is not RerankModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.invoke_multimodal_rerank,
+            self.model_type_instance.invoke_multimodal_rerank,
             model=self.model_name,
             credentials=self.credentials,
             query=query,
@@ -324,7 +370,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, ModerationModel):
             raise Exception("Model type instance is not ModerationModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.invoke,
+            self.model_type_instance.invoke,
             model=self.model_name,
             credentials=self.credentials,
             text=text,
@@ -340,7 +386,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, Speech2TextModel):
             raise Exception("Model type instance is not Speech2TextModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.invoke,
+            self.model_type_instance.invoke,
             model=self.model_name,
             credentials=self.credentials,
             file=file,
@@ -357,7 +403,7 @@ class ModelInstance:
         if not isinstance(self.model_type_instance, TTSModel):
             raise Exception("Model type instance is not TTSModel")
         return self._round_robin_invoke(
-            function=self.model_type_instance.invoke,
+            self.model_type_instance.invoke,
             model=self.model_name,
             credentials=self.credentials,
             content_text=content_text,
@@ -416,6 +462,48 @@ class ModelInstance:
                 continue
             except Exception as e:
                 raise e
+
+    async def _around_robin_ainvoke[**P, R](self, function: Callable[P, Any], *args: P.args, **kwargs: P.kwargs) -> R:
+        if not self.load_balancing_manager:
+            return await function(*args, **kwargs)
+
+        last_exception: Union[InvokeRateLimitError, InvokeAuthorizationError, InvokeConnectionError, None] = None
+        while True:
+            lb_config = self.load_balancing_manager.fetch_next()
+            if not lb_config:
+                if not last_exception:
+                    raise ProviderTokenNotInitError("Model credentials is not initialized.")
+                raise last_exception
+
+            try:
+                from core.helper.credential_utils import check_credential_policy_compliance
+
+                if lb_config.credential_id:
+                    check_credential_policy_compliance(
+                        credential_id=lb_config.credential_id,
+                        provider=self.provider,
+                        credential_type=PluginCredentialType.MODEL,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Load balancing config %s failed policy compliance check in async round-robin: %s",
+                    lb_config.id,
+                    str(e),
+                )
+                self.load_balancing_manager.cooldown(lb_config, expire=60)
+                continue
+
+            try:
+                kwargs["credentials"] = lb_config.credentials
+                return await function(*args, **kwargs)
+            except InvokeRateLimitError as e:
+                self.load_balancing_manager.cooldown(lb_config, expire=60)
+                last_exception = e
+                continue
+            except (InvokeAuthorizationError, InvokeConnectionError) as e:
+                self.load_balancing_manager.cooldown(lb_config, expire=10)
+                last_exception = e
+                continue
 
     def get_tts_voices(self, language: str | None = None):
         """

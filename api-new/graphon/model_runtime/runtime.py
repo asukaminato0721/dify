@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator, Iterable, Sequence
+from collections.abc import AsyncGenerator, Generator, Iterable, Sequence
 from typing import IO, Any, Protocol, runtime_checkable
 
 from graphon.model_runtime.entities.llm_entities import LLMResult, LLMResultChunk
@@ -57,6 +57,15 @@ class ModelRuntime(Protocol):
         credentials: dict[str, Any],
     ) -> AIModelEntity | None: ...
 
+    async def aget_model_schema(
+        self,
+        *,
+        provider: str,
+        model_type: ModelType,
+        model: str,
+        credentials: dict[str, Any],
+    ) -> AIModelEntity | None: ...
+
     def invoke_llm(
         self,
         *,
@@ -70,7 +79,31 @@ class ModelRuntime(Protocol):
         stream: bool,
     ) -> LLMResult | Generator[LLMResultChunk, None, None]: ...
 
+    async def ainvoke_llm(
+        self,
+        *,
+        provider: str,
+        model: str,
+        credentials: dict[str, Any],
+        model_parameters: dict[str, Any],
+        prompt_messages: Sequence[PromptMessage],
+        tools: list[PromptMessageTool] | None,
+        stop: Sequence[str] | None,
+        stream: bool,
+    ) -> LLMResult | AsyncGenerator[LLMResultChunk, None]: ...
+
     def get_llm_num_tokens(
+        self,
+        *,
+        provider: str,
+        model_type: ModelType,
+        model: str,
+        credentials: dict[str, Any],
+        prompt_messages: Sequence[PromptMessage],
+        tools: Sequence[PromptMessageTool] | None,
+    ) -> int: ...
+
+    async def aget_llm_num_tokens(
         self,
         *,
         provider: str,

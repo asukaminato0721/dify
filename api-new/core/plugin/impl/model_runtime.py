@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Generator, Iterable, Sequence
+from collections.abc import AsyncGenerator, Generator, Iterable, Sequence
 from threading import Lock
 from typing import IO, Any, Union
 
@@ -195,6 +195,71 @@ class PluginModelRuntime(ModelRuntime):
 
         return schema
 
+    async def aget_model_schema(
+        self,
+        *,
+        provider: str,
+        model_type: ModelType,
+        model: str,
+        credentials: dict[str, Any],
+    ) -> AIModelEntity | None:
+        cache_key = self._get_schema_cache_key(
+            provider=provider,
+            model_type=model_type,
+            model=model,
+            credentials=credentials,
+        )
+
+        cached_schema_json = None
+        try:
+            cached_schema_json = redis_client.get(cache_key)
+        except (RedisError, RuntimeError) as exc:
+            logger.warning(
+                "Failed to read plugin model schema cache for model %s: %s",
+                model,
+                str(exc),
+                exc_info=True,
+            )
+
+        if cached_schema_json:
+            try:
+                return AIModelEntity.model_validate_json(cached_schema_json)
+            except ValidationError:
+                logger.warning("Failed to validate cached plugin model schema for model %s", model, exc_info=True)
+                try:
+                    redis_client.delete(cache_key)
+                except (RedisError, RuntimeError) as exc:
+                    logger.warning(
+                        "Failed to delete invalid plugin model schema cache for model %s: %s",
+                        model,
+                        str(exc),
+                        exc_info=True,
+                    )
+
+        plugin_id, provider_name = self._split_provider(provider)
+        schema = await self.client.aget_model_schema(
+            tenant_id=self.tenant_id,
+            user_id=self.user_id,
+            plugin_id=plugin_id,
+            provider=provider_name,
+            model_type=model_type.value,
+            model=model,
+            credentials=credentials,
+        )
+
+        if schema:
+            try:
+                redis_client.setex(cache_key, dify_config.PLUGIN_MODEL_SCHEMA_CACHE_TTL, schema.model_dump_json())
+            except (RedisError, RuntimeError) as exc:
+                logger.warning(
+                    "Failed to write plugin model schema cache for model %s: %s",
+                    model,
+                    str(exc),
+                    exc_info=True,
+                )
+
+        return schema
+
     def invoke_llm(
         self,
         *,
@@ -222,6 +287,63 @@ class PluginModelRuntime(ModelRuntime):
             stream=stream,
         )
 
+    async def ainvoke_llm(
+        self,
+        *,
+        provider: str,
+        model: str,
+        credentials: dict[str, Any],
+        model_parameters: dict[str, Any],
+        prompt_messages: Sequence[PromptMessage],
+        tools: list[PromptMessageTool] | None,
+        stop: Sequence[str] | None,
+        stream: bool,
+    ) -> Union[LLMResult, AsyncGenerator[LLMResultChunk, None]]:
+        plugin_id, provider_name = self._split_provider(provider)
+        if stream:
+            return self.client.ainvoke_llm(
+                tenant_id=self.tenant_id,
+                user_id=self.user_id,
+                plugin_id=plugin_id,
+                provider=provider_name,
+                model=model,
+                credentials=credentials,
+                model_parameters=model_parameters,
+                prompt_messages=list(prompt_messages),
+                tools=tools,
+                stop=list(stop) if stop else None,
+                stream=stream,
+            )
+
+        chunks: list[LLMResultChunk] = []
+        async for chunk in self.client.ainvoke_llm(
+            tenant_id=self.tenant_id,
+            user_id=self.user_id,
+            plugin_id=plugin_id,
+            provider=provider_name,
+            model=model,
+            credentials=credentials,
+            model_parameters=model_parameters,
+            prompt_messages=list(prompt_messages),
+            tools=tools,
+            stop=list(stop) if stop else None,
+            stream=stream,
+        ):
+            chunks.append(chunk)
+
+        if not chunks:
+            raise ValueError("Failed to invoke llm")
+
+        content = "".join(chunk.delta.message.get_text_content() for chunk in chunks)
+        usage = next((chunk.delta.usage for chunk in reversed(chunks) if chunk.delta.usage is not None), None)
+        return LLMResult(
+            model=model,
+            prompt_messages=list(prompt_messages),
+            message=chunks[-1].delta.message if content == "" else chunks[-1].delta.message.model_copy(update={"content": content}),
+            usage=usage or chunks[-1].delta.usage or chunks[-1].delta.usage.empty_usage(),  # type: ignore[union-attr]
+            system_fingerprint=chunks[-1].system_fingerprint,
+        )
+
     def get_llm_num_tokens(
         self,
         *,
@@ -237,6 +359,32 @@ class PluginModelRuntime(ModelRuntime):
 
         plugin_id, provider_name = self._split_provider(provider)
         return self.client.get_llm_num_tokens(
+            tenant_id=self.tenant_id,
+            user_id=self.user_id,
+            plugin_id=plugin_id,
+            provider=provider_name,
+            model_type=model_type.value,
+            model=model,
+            credentials=credentials,
+            prompt_messages=list(prompt_messages),
+            tools=list(tools) if tools else None,
+        )
+
+    async def aget_llm_num_tokens(
+        self,
+        *,
+        provider: str,
+        model_type: ModelType,
+        model: str,
+        credentials: dict[str, Any],
+        prompt_messages: Sequence[PromptMessage],
+        tools: Sequence[PromptMessageTool] | None,
+    ) -> int:
+        if not dify_config.PLUGIN_BASED_TOKEN_COUNTING_ENABLED:
+            return 0
+
+        plugin_id, provider_name = self._split_provider(provider)
+        return await self.client.aget_llm_num_tokens(
             tenant_id=self.tenant_id,
             user_id=self.user_id,
             plugin_id=plugin_id,

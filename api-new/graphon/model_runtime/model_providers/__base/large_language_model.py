@@ -1,7 +1,7 @@
 import logging
 import time
 import uuid
-from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Generator, Iterator, Mapping, Sequence
 
 from graphon.model_runtime.callbacks.base_callback import Callback
 from graphon.model_runtime.callbacks.logging_callback import LoggingCallback
@@ -199,6 +199,46 @@ def _normalize_non_stream_runtime_result(
     )
 
 
+async def _anormalize_non_stream_runtime_result(
+    model: str,
+    prompt_messages: Sequence[PromptMessage],
+    result: LLMResult | AsyncGenerator[LLMResultChunk, None],
+) -> LLMResult:
+    if isinstance(result, LLMResult):
+        return result
+
+    content = ""
+    content_list: list[PromptMessageContentUnionTypes] = []
+    usage = LLMUsage.empty_usage()
+    system_fingerprint: str | None = None
+    tools_calls: list[AssistantPromptMessage.ToolCall] = []
+
+    async for chunk in result:
+        if isinstance(chunk.delta.message.content, str):
+            content += chunk.delta.message.content
+        elif isinstance(chunk.delta.message.content, list):
+            content_list.extend(chunk.delta.message.content)
+
+        if chunk.delta.message.tool_calls:
+            _increase_tool_call(chunk.delta.message.tool_calls, tools_calls)
+
+        if chunk.delta.usage:
+            usage = chunk.delta.usage
+        if chunk.system_fingerprint:
+            system_fingerprint = chunk.system_fingerprint
+
+    return LLMResult(
+        model=model,
+        prompt_messages=prompt_messages,
+        message=AssistantPromptMessage(
+            content=content or content_list,
+            tool_calls=tools_calls,
+        ),
+        usage=usage,
+        system_fingerprint=system_fingerprint,
+    )
+
+
 def _increase_tool_call(
     new_tool_calls: list[AssistantPromptMessage.ToolCall],
     existing_tools_calls: list[AssistantPromptMessage.ToolCall],
@@ -339,6 +379,140 @@ class LargeLanguageModel(AIModel):
             return result
         raise NotImplementedError("unsupported invoke result type", type(result))
 
+    async def ainvoke(
+        self,
+        model: str,
+        credentials: dict,
+        prompt_messages: list[PromptMessage],
+        model_parameters: dict | None = None,
+        tools: list[PromptMessageTool] | None = None,
+        stop: list[str] | None = None,
+        stream: bool = True,
+        callbacks: list[Callback] | None = None,
+    ) -> LLMResult | AsyncGenerator[LLMResultChunk, None]:
+        if model_parameters is None:
+            model_parameters = {}
+
+        self.started_at = time.perf_counter()
+        callbacks = callbacks or []
+        if logger.isEnabledFor(logging.DEBUG):
+            callbacks.append(LoggingCallback())
+
+        self._trigger_before_invoke_callbacks(
+            model=model,
+            credentials=credentials,
+            prompt_messages=prompt_messages,
+            model_parameters=model_parameters,
+            tools=tools,
+            stop=stop,
+            stream=stream,
+            callbacks=callbacks,
+        )
+
+        try:
+            result = await self.model_runtime.ainvoke_llm(
+                provider=self.provider,
+                model=model,
+                credentials=credentials,
+                model_parameters=model_parameters,
+                prompt_messages=list(prompt_messages),
+                tools=tools,
+                stop=stop,
+                stream=stream,
+            )
+
+            if not stream:
+                result = await _anormalize_non_stream_runtime_result(
+                    model=model,
+                    prompt_messages=prompt_messages,
+                    result=result,
+                )
+        except Exception as e:
+            self._trigger_invoke_error_callbacks(
+                model=model,
+                ex=e,
+                credentials=credentials,
+                prompt_messages=prompt_messages,
+                model_parameters=model_parameters,
+                tools=tools,
+                stop=stop,
+                stream=stream,
+                callbacks=callbacks,
+            )
+            raise self._transform_invoke_error(e)
+
+        if stream and not isinstance(result, LLMResult):
+            async def _stream_result() -> AsyncGenerator[LLMResultChunk, None]:
+                message_content: list[PromptMessageContentUnionTypes] = []
+                usage = None
+                system_fingerprint = None
+                real_model = model
+                try:
+                    async for chunk in result:
+                        chunk.prompt_messages = prompt_messages
+                        yield chunk
+                        self._trigger_new_chunk_callbacks(
+                            chunk=chunk,
+                            model=model,
+                            credentials=credentials,
+                            prompt_messages=prompt_messages,
+                            model_parameters=model_parameters,
+                            tools=tools,
+                            stop=stop,
+                            stream=stream,
+                            invocation_context=None,
+                            callbacks=callbacks,
+                        )
+                        if isinstance(chunk.delta.message.content, list):
+                            message_content.extend(chunk.delta.message.content)
+                        elif isinstance(chunk.delta.message.content, str):
+                            message_content.append(TextPromptMessageContent(data=chunk.delta.message.content))
+                        real_model = chunk.model
+                        if chunk.delta.usage:
+                            usage = chunk.delta.usage
+                        if chunk.system_fingerprint:
+                            system_fingerprint = chunk.system_fingerprint
+                except Exception as e:
+                    raise self._transform_invoke_error(e)
+
+                assistant_message = AssistantPromptMessage(content=message_content)
+                self._trigger_after_invoke_callbacks(
+                    model=model,
+                    result=LLMResult(
+                        model=real_model,
+                        prompt_messages=prompt_messages,
+                        message=assistant_message,
+                        usage=usage or LLMUsage.empty_usage(),
+                        system_fingerprint=system_fingerprint,
+                    ),
+                    credentials=credentials,
+                    prompt_messages=prompt_messages,
+                    model_parameters=model_parameters,
+                    tools=tools,
+                    stop=stop,
+                    stream=stream,
+                    invocation_context=None,
+                    callbacks=callbacks,
+                )
+
+            return _stream_result()
+
+        if isinstance(result, LLMResult):
+            self._trigger_after_invoke_callbacks(
+                model=model,
+                result=result,
+                credentials=credentials,
+                prompt_messages=prompt_messages,
+                model_parameters=model_parameters,
+                tools=tools,
+                stop=stop,
+                stream=stream,
+                callbacks=callbacks,
+            )
+            result.prompt_messages = prompt_messages
+            return result
+        raise NotImplementedError("unsupported invoke result type", type(result))
+
     def _invoke_result_generator(
         self,
         model: str,
@@ -446,6 +620,22 @@ class LargeLanguageModel(AIModel):
         :return:
         """
         return self.model_runtime.get_llm_num_tokens(
+            provider=self.provider,
+            model_type=self.model_type,
+            model=model,
+            credentials=credentials,
+            prompt_messages=prompt_messages,
+            tools=tools,
+        )
+
+    async def aget_num_tokens(
+        self,
+        model: str,
+        credentials: dict,
+        prompt_messages: list[PromptMessage],
+        tools: list[PromptMessageTool] | None = None,
+    ) -> int:
+        return await self.model_runtime.aget_llm_num_tokens(
             provider=self.provider,
             model_type=self.model_type,
             model=model,
