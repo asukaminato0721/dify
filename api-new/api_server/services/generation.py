@@ -1,14 +1,20 @@
-"""Async-native public generation service for the FastAPI runtime."""
+"""Public generation services for the FastAPI runtime.
+
+Completion and plain-chat requests are handled natively in this module.
+Workflow-backed public modes still depend on the copied execution stack, so
+they currently cross a narrow compatibility bridge while the async-native
+workflow port continues.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from sqlalchemy import select
 
@@ -22,6 +28,7 @@ from core.app.app_config.easy_ui_based_app.model_config.converter import ModelCo
 from core.app.app_config.easy_ui_based_app.model_config.manager import ModelConfigManager
 from core.app.app_config.easy_ui_based_app.prompt_template.manager import PromptTemplateConfigManager
 from core.app.app_config.easy_ui_based_app.variables.manager import BasicVariablesConfigManager
+from core.app.entities.app_invoke_entities import InvokeFrom
 from core.app.apps.chat.app_config_manager import ChatAppConfig
 from core.app.apps.completion.app_config_manager import CompletionAppConfig
 from core.app.entities.app_invoke_entities import ModelConfigWithCredentialsEntity
@@ -45,9 +52,12 @@ from graphon.model_runtime.entities.message_entities import (
     PromptMessage,
     UserPromptMessage,
 )
+from libs.flask_utils import set_login_user
 from libs.orjson import orjson_dumps
+from models.model import App as LegacyApp
 from models.model import AppMode as LegacyAppMode
 from models.model import AppModelConfigDict
+from models.model import EndUser as LegacyEndUser
 
 
 def _timestamp(value: datetime | None) -> int:
@@ -70,6 +80,29 @@ class _HistoryMessage:
     query: str
     answer: str
     parent_message_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _LegacyAppProxy:
+    """Minimal app view required by the copied compatibility generators."""
+
+    id: str
+    tenant_id: str
+    mode: str
+    workflow_id: str | None
+    is_agent: bool
+    max_active_requests: int | None
+
+
+class _CompatibilityGenerationArgs(TypedDict, total=False):
+    """Public generation payload passed into the copied execution bridge."""
+
+    inputs: dict[str, Any]
+    query: str
+    files: list[dict[str, Any]]
+    conversation_id: str
+    parent_message_id: str
+    auto_generate_name: bool
 
 
 class _ConversationMemoryAdapter:
@@ -189,6 +222,55 @@ def _ensure_supported_features(*, files: list[dict[str, Any]] | None, dataset_en
             "external_data_tools_unavailable",
             "External data tool generation is not ported to the FastAPI runtime yet.",
         )
+
+
+def _build_legacy_app_proxy(context: WebappContext) -> _LegacyAppProxy:
+    return _LegacyAppProxy(
+        id=context.app.id,
+        tenant_id=context.app.tenant_id,
+        mode=str(context.app.mode),
+        workflow_id=context.app.workflow_id,
+        is_agent=context.app.mode == context.app.mode.AGENT_CHAT,
+        max_active_requests=None,
+    )
+
+
+def _run_compat_public_generation_blocking(
+    *,
+    context: WebappContext,
+    args: _CompatibilityGenerationArgs,
+    streaming: bool,
+) -> Mapping[str, Any] | Iterator[str]:
+    """Run the copied workflow-capable generators inside the local Flask shim."""
+
+    from flask import Flask
+    from services.app_generate_service import AppGenerateService
+
+    compat_app = Flask("fastapi-public-generation")
+    with compat_app.app_context():
+        set_login_user(context.end_user)
+        response = AppGenerateService.generate(
+            app_model=cast(LegacyApp, _build_legacy_app_proxy(context)),
+            user=cast(LegacyEndUser, context.end_user),
+            args=args,
+            invoke_from=InvokeFrom.WEB_APP,
+            streaming=streaming,
+        )
+    return cast(Mapping[str, Any] | Iterator[str], response)
+
+
+async def _run_compat_public_generation(
+    *,
+    context: WebappContext,
+    args: _CompatibilityGenerationArgs,
+    streaming: bool,
+) -> Mapping[str, Any] | Iterator[str]:
+    return await asyncio.to_thread(
+        _run_compat_public_generation_blocking,
+        context=context,
+        args=args,
+        streaming=streaming,
+    )
 
 
 async def _create_chat_records(
@@ -594,70 +676,109 @@ class AsyncWebGenerationService:
         conversation_id: str | None,
         parent_message_id: str | None,
         streaming: bool,
-    ) -> ChatbotAppBlockingResponse | CompletionAppBlockingResponse | AsyncIterator[str]:
-        if context.app.mode != context.app.mode.CHAT:
-            raise service_unavailable(
-                "generation_backend_unavailable",
-                "Async-native chat generation is only ported for chat apps so far.",
+    ) -> ChatbotAppBlockingResponse | CompletionAppBlockingResponse | AsyncIterator[str] | Mapping[str, Any] | Iterator[str]:
+        if context.app.mode == context.app.mode.CHAT:
+            app_config = _build_chat_config(context)
+            _ensure_supported_features(
+                files=files,
+                dataset_enabled=bool(app_config.dataset and app_config.dataset.dataset_ids),
+                external_tools_enabled=bool(app_config.external_data_variables),
             )
-        app_config = _build_chat_config(context)
-        _ensure_supported_features(
-            files=files,
-            dataset_enabled=bool(app_config.dataset and app_config.dataset.dataset_ids),
-            external_tools_enabled=bool(app_config.external_data_variables),
-        )
-        model_conf = await asyncio.to_thread(ModelConfigConverter.convert, app_config)
-        conversation, message = await _create_chat_records(
-            context=context,
-            app_model_config_id=app_config.app_model_config_id,
-            query=query,
-            inputs=inputs,
-            conversation_id=conversation_id,
-            parent_message_id=parent_message_id,
-            introduction=app_config.additional_features.opening_statement if app_config.additional_features else None,
-        )
-        history_messages = await _load_chat_history(conversation_id=conversation.id)
-        prompt_messages, stop = _build_chat_prompt_messages(
-            app_config=app_config,
-            model_conf=model_conf,
-            inputs=inputs,
-            query=query,
-            history_messages=history_messages,
-        )
-        task_id = str(uuid.uuid4())
+            model_conf = await asyncio.to_thread(ModelConfigConverter.convert, app_config)
+            conversation, message = await _create_chat_records(
+                context=context,
+                app_model_config_id=app_config.app_model_config_id,
+                query=query,
+                inputs=inputs,
+                conversation_id=conversation_id,
+                parent_message_id=parent_message_id,
+                introduction=app_config.additional_features.opening_statement if app_config.additional_features else None,
+            )
+            history_messages = await _load_chat_history(conversation_id=conversation.id)
+            prompt_messages, stop = _build_chat_prompt_messages(
+                app_config=app_config,
+                model_conf=model_conf,
+                inputs=inputs,
+                query=query,
+                history_messages=history_messages,
+            )
+            task_id = str(uuid.uuid4())
 
-        if not streaming:
-            llm_result = await asyncio.to_thread(
-                cls._invoke_blocking,
-                model_conf,
-                prompt_messages,
-                stop,
-            )
-            await _save_message_result(
-                message_id=message.id,
-                answer=llm_result.message.get_text_content(),
-                usage=llm_result.usage,
-            )
-            return ChatbotAppBlockingResponse(
-                task_id=task_id,
-                data=ChatbotAppBlockingResponse.Data(
-                    id=message.id,
-                    mode="chat",
-                    conversation_id=conversation.id,
+            if not streaming:
+                llm_result = await asyncio.to_thread(
+                    cls._invoke_blocking,
+                    model_conf,
+                    prompt_messages,
+                    stop,
+                )
+                await _save_message_result(
                     message_id=message.id,
                     answer=llm_result.message.get_text_content(),
-                    metadata={"usage": llm_result.usage.model_dump(mode="json")},
-                    created_at=_timestamp(message.created_at),
-                ),
+                    usage=llm_result.usage,
+                )
+                return ChatbotAppBlockingResponse(
+                    task_id=task_id,
+                    data=ChatbotAppBlockingResponse.Data(
+                        id=message.id,
+                        mode="chat",
+                        conversation_id=conversation.id,
+                        message_id=message.id,
+                        answer=llm_result.message.get_text_content(),
+                        metadata={"usage": llm_result.usage.model_dump(mode="json")},
+                        created_at=_timestamp(message.created_at),
+                    ),
+                )
+
+            return cls._stream_chat(
+                task_id=task_id,
+                conversation=conversation,
+                message=message,
+                model_conf=model_conf,
+                prompt_messages=prompt_messages,
+                stop=stop,
             )
 
-        return cls._stream_chat(
-            task_id=task_id,
-            conversation=conversation,
-            message=message,
-            model_conf=model_conf,
-            prompt_messages=prompt_messages,
-            stop=stop,
+        if context.app.mode in {context.app.mode.ADVANCED_CHAT, context.app.mode.AGENT_CHAT}:
+            compatibility_args: _CompatibilityGenerationArgs = {
+                "inputs": inputs,
+                "query": query,
+                "auto_generate_name": False,
+            }
+            if files:
+                compatibility_args["files"] = files
+            if conversation_id is not None:
+                compatibility_args["conversation_id"] = conversation_id
+            if parent_message_id is not None:
+                compatibility_args["parent_message_id"] = parent_message_id
+            return await _run_compat_public_generation(
+                context=context,
+                args=compatibility_args,
+                streaming=streaming,
+            )
+
+        raise service_unavailable(
+            "generation_backend_unavailable",
+            "Async-native chat generation is only ported for chat apps so far.",
+        )
+
+    @classmethod
+    async def run_workflow(
+        cls,
+        *,
+        context: WebappContext,
+        inputs: dict[str, Any],
+        files: list[dict[str, Any]] | None,
+        streaming: bool,
+    ) -> Mapping[str, Any] | Iterator[str]:
+        compatibility_args: _CompatibilityGenerationArgs = {
+            "inputs": inputs,
+        }
+        if files:
+            compatibility_args["files"] = files
+        return await _run_compat_public_generation(
+            context=context,
+            args=compatibility_args,
+            streaming=streaming,
         )
 
     @staticmethod

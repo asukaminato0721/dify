@@ -64,15 +64,28 @@ async def test_generation_bridge_returns_streaming_response_for_chat() -> None:
     assert isinstance(response, StreamingResponse)
 
 
-async def test_generation_bridge_keeps_workflow_unavailable() -> None:
+async def test_generation_bridge_returns_json_response_for_advanced_chat_mapping() -> None:
+    context = _ContextStub("advanced-chat")
+    payload = ChatMessagePayload(inputs={}, query="hello", response_mode="blocking")
+    with patch(
+        "api_server.services.generation_bridge.AsyncWebGenerationService.run_chat",
+        new=AsyncMock(return_value={"answer": "hi"}),
+    ):
+        response = await PublicGenerationBridge.run_chat(context=cast(Any, context), payload=payload)
+
+    assert isinstance(response, JSONResponse)
+
+
+async def test_generation_bridge_returns_json_response_for_workflow_mapping() -> None:
     context = _ContextStub("workflow")
     payload = WorkflowRunPayload(inputs={}, response_mode="blocking")
-    try:
-        await PublicGenerationBridge.run_workflow(context=cast(Any, context), payload=payload)
-    except Exception as exc:
-        assert getattr(exc, "code", None) == "generation_backend_unavailable"
-    else:
-        raise AssertionError("expected workflow generation to remain unavailable")
+    with patch(
+        "api_server.services.generation_bridge.AsyncWebGenerationService.run_workflow",
+        new=AsyncMock(return_value={"workflow_run_id": "run-1"}),
+    ):
+        response = await PublicGenerationBridge.run_workflow(context=cast(Any, context), payload=payload)
+
+    assert isinstance(response, JSONResponse)
 
 
 async def test_generation_bridge_returns_json_response_for_more_like_this() -> None:

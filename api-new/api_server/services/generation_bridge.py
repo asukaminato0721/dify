@@ -1,19 +1,19 @@
-"""FastAPI-native validation layer for public generation endpoints.
+"""FastAPI validation layer for public generation endpoints.
 
-The public generation routes remain mounted so the FastAPI surface area stays
-stable, but they no longer import the legacy Flask execution stack on demand.
-Authentication and request validation now stay entirely inside the FastAPI
-runtime until a native generation backend is ported.
+Authentication and request validation stay inside the FastAPI runtime. Native
+completion/plain-chat execution also stays local, while workflow-backed modes
+currently bridge into the copied execution stack behind the service layer.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from api_server.errors import forbidden, service_unavailable
+from api_server.errors import forbidden
 from api_server.models.app import AppMode
 from api_server.services.generation import AsyncWebGenerationService
 from api_server.services.webapp_context import WebappContext
@@ -147,10 +147,13 @@ class PublicGenerationBridge:
             error_code="not_workflow_app",
             message="Please check if your Workflow app mode matches the right API route.",
         )
-        raise service_unavailable(
-            "generation_backend_unavailable",
-            "Workflow generation is not ported to the FastAPI runtime yet.",
+        response = await AsyncWebGenerationService.run_workflow(
+            context=context,
+            inputs=payload.inputs,
+            files=payload.files,
+            streaming=payload.response_mode == "streaming",
         )
+        return cls.to_fastapi_response(response)
 
     @classmethod
     async def run_more_like_this(
@@ -177,6 +180,8 @@ class PublicGenerationBridge:
     def to_fastapi_response(response: Any) -> JSONResponse | StreamingResponse:
         if hasattr(response, "model_dump"):
             return JSONResponse(content=response.model_dump(mode="json"))
+        if isinstance(response, Mapping):
+            return JSONResponse(content=dict(response))
         return StreamingResponse(
             response,
             media_type="text/event-stream",

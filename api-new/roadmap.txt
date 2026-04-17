@@ -100,6 +100,8 @@ Done
   - `POST /api/chat-messages`
   - `POST /api/workflows/run`
 - Rewired public completion/chat generation endpoints through the async-native FastAPI generation service.
+- Replaced the public workflow route's hard-coded `generation_backend_unavailable` stub with a compatibility bridge into the copied workflow execution stack.
+- Replaced the public advanced-chat and agent-chat route-level `generation_backend_unavailable` path with the same compatibility bridge.
 - Rewired public completion `more-like-this` through the async-native FastAPI generation service.
 - Ported public workflow event replay endpoint:
   - `GET /api/workflow/{task_id}/events`
@@ -121,12 +123,15 @@ Done
 - Added focused `more-like-this` route coverage in `tests/test_suggested_questions_route.py`.
 - Added focused generation bridge tests in `tests/test_generation_bridge.py`.
 - Added focused generation route tests in `tests/test_generation_routes.py`.
+- Added focused generation compatibility tests in `tests/test_generation_service.py`.
 - Added focused async graph-engine event tests in `tests/test_graph_engine_async.py`.
 - Added focused async ready-queue tests in `tests/test_async_ready_queue.py`.
 - Added focused async node execution tests in `tests/test_node_async.py`.
 - Installed the new project environment with `uv sync`.
 - Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
 - Current active FastAPI runtime tests pass: `49 passed`.
+- The expanded generation-focused verification slice now also passes: `36 passed`.
+- Targeted `pyrefly` is clean for the updated generation bridge/service test slice.
 
 Current status
 --------------
@@ -192,7 +197,7 @@ Current status
 - Public `more-like-this` now routes through the async-native completion generation service.
 - Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
-- Advanced-chat/workflow generation routes still return `generation_backend_unavailable` until their async-native domain services are ported.
+- Public advanced-chat, agent-chat, and workflow generation routes no longer hard-fail at the route layer; they now bridge into the copied workflow-capable execution stack behind the FastAPI service layer.
 - The execution engine now has an async event-emission surface, but advanced-chat/workflow still need an async-native app service built on top of it.
 - The workflow runners now expose async entrypoints, but advanced-chat/workflow still need async-native persistence and response services built on top of them.
 - The graph engine now has async-native queue/control-plane primitives, but node execution and workflow persistence still are not fully ported end to end.
@@ -208,15 +213,15 @@ Immediate blockers
   - Flask-Login
   - sync SQLAlchemy sessions via `db.session`
   - Flask-specific controllers and decorators
-- Advanced-chat/workflow generation are still unimplemented in the active FastAPI runtime.
+- Advanced-chat/workflow generation now execute through a compatibility bridge, but the active FastAPI runtime still lacks a fully async-native workflow-backed generation service.
 - Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
 - Model-provider resolution and the broader generation feature set still depend on copied legacy domain code in places, so the async-native generation slice is only partially ported compared with the original Flask feature set.
-- The remaining unfinished work is concentrated in replacing the sync advanced-chat/workflow generators with services that persist workflow runs, emit graph events, and resume pauses on the new async execution surface.
+- The remaining unfinished work is concentrated in replacing the compatibility workflow-backed generators with services that persist workflow runs, emit graph events, and resume pauses on the new async execution surface.
 
 Next steps
 ----------
 1. Continue porting the next public route family.
-   - Candidate next slice: finish async-native generation for advanced-chat and workflows.
+   - Candidate next slice: replace the new compatibility bridge for advanced-chat and workflows with async-native execution/persistence services.
    - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
 
 2. Expand the FastAPI-native domain layer.
