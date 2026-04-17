@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Generator, Mapping, Sequence
 from typing import Any, Protocol
 
 from graphon.file.models import File
@@ -38,7 +38,11 @@ class PreparedLLMProtocol(Protocol):
 
     def get_model_schema(self) -> AIModelEntity: ...
 
+    async def aget_model_schema(self) -> AIModelEntity: ...
+
     def get_llm_num_tokens(self, prompt_messages: Sequence[PromptMessage]) -> int: ...
+
+    async def aget_llm_num_tokens(self, prompt_messages: Sequence[PromptMessage]) -> int: ...
 
     def invoke_llm(
         self,
@@ -49,6 +53,16 @@ class PreparedLLMProtocol(Protocol):
         stop: Sequence[str] | None,
         stream: bool,
     ) -> LLMResult | Generator[LLMResultChunk, None, None]: ...
+
+    async def ainvoke_llm(
+        self,
+        *,
+        prompt_messages: Sequence[PromptMessage],
+        model_parameters: Mapping[str, Any],
+        tools: Sequence[PromptMessageTool] | None,
+        stop: Sequence[str] | None,
+        stream: bool,
+    ) -> LLMResult | AsyncGenerator[LLMResultChunk, None]: ...
 
     def invoke_llm_with_structured_output(
         self,

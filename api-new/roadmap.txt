@@ -84,6 +84,7 @@ Done
 - Added async node execution entrypoints on the graph node base class and switched the async worker pool to consume them.
 - Added async pooled HTTP client support and async plugin model-client methods for the lower model/provider runtime layer.
 - Added async model-runtime/model-instance methods for schema lookup, LLM invoke, and token counting in the lower runtime abstraction layer.
+- Added async LLM-node execution hooks on the lower runtime stack, including an async node entrypoint and async LLM-node invoke path.
 - Removed the active FastAPI generation route dependency on the legacy Flask generation stack; authenticated generation now returns an explicit FastAPI-side `503` until a native backend is ported.
 - Added local async human-input form models in `api_server/models/human_input.py` for public form token access without the legacy Flask repositories.
 - Added a FastAPI-native human-input form service in `api_server/services/human_input_forms.py`.
@@ -195,6 +196,7 @@ Current status
 - The graph nodes now expose an async execution entrypoint, but most node implementations still execute synchronously behind that interface and workflow persistence is still not async-native end to end.
 - The plugin/model client now has async request surfaces for key LLM operations, but the node/model runtime stack still needs to consume those async methods end to end.
 - The lower model-runtime/model-instance abstractions now expose async methods, but concrete nodes still need to switch from sync invokes to those async paths end to end.
+- The LLM node now has an async execution path for non-structured-output invocation, but the broader node/runtime layer still needs the same treatment.
 
 Immediate blockers
 ------------------

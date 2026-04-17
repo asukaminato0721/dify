@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import operator
 from abc import abstractmethod
@@ -363,7 +364,7 @@ class Node(Generic[NodeDataT]):
         """
         raise NotImplementedError
 
-    async def _run_async(self) -> NodeRunResult | Generator[NodeEventBase, None, None] | AsyncGenerator[NodeEventBase, None]:
+    def _run_async(self) -> NodeRunResult | Generator[NodeEventBase, None, None] | AsyncGenerator[NodeEventBase, None] | Any:
         """Async node execution hook.
 
         Subclasses can override this to provide true async node execution.
@@ -464,7 +465,9 @@ class Node(Generic[NodeDataT]):
         yield start_event
 
         try:
-            result = await self._run_async()
+            result = self._run_async()
+            if inspect.isawaitable(result):
+                result = await result
 
             if isinstance(result, NodeRunResult):
                 yield self._convert_node_run_result_to_graph_node_event(result)
