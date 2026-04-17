@@ -380,3 +380,100 @@ class UploadFile(Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     hash: Mapped[str | None] = mapped_column(String(255), default=None)
     source_url: Mapped[str] = mapped_column(LongText, default="")
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="conversation_pkey"),
+        sa.Index("conversation_app_from_user_idx", "app_id", "from_source", "from_end_user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    app_model_config_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    mode: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255))
+    inputs: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
+    introduction: Mapped[str | None] = mapped_column(LongText, default=None)
+    status: Mapped[str] = mapped_column(String(255), default="normal")
+    invoke_from: Mapped[str | None] = mapped_column(String(255), default=None)
+    from_source: Mapped[str] = mapped_column(String(255))
+    from_end_user_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    from_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    is_deleted: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
+
+
+class PinnedConversation(Base):
+    __tablename__ = "pinned_conversations"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="pinned_conversation_pkey"),
+        sa.Index("pinned_conversation_conversation_idx", "app_id", "conversation_id", "created_by_role", "created_by"),
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    conversation_id: Mapped[str] = mapped_column(StringUUID)
+    created_by_role: Mapped[str] = mapped_column(String(255), default=CreatorUserRole.END_USER.value)
+    created_by: Mapped[str] = mapped_column(StringUUID)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="message_pkey"),
+        sa.Index("message_conversation_id_idx", "conversation_id"),
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    conversation_id: Mapped[str] = mapped_column(StringUUID)
+    inputs: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
+    query: Mapped[str] = mapped_column(LongText)
+    answer: Mapped[str] = mapped_column(LongText)
+    parent_message_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    status: Mapped[str] = mapped_column(String(255), default="normal")
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
+    message_metadata: Mapped[str | None] = mapped_column(LongText, default=None)
+    from_source: Mapped[str] = mapped_column(String(255))
+    from_end_user_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    from_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+
+class MessageFeedback(Base):
+    __tablename__ = "message_feedbacks"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="message_feedback_pkey"),
+        sa.Index("message_feedback_message_idx", "message_id", "from_source"),
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    conversation_id: Mapped[str] = mapped_column(StringUUID)
+    message_id: Mapped[str] = mapped_column(StringUUID)
+    rating: Mapped[str] = mapped_column(String(255))
+    from_source: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str | None] = mapped_column(LongText, default=None)
+    from_end_user_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    from_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+
+class SavedMessage(Base):
+    __tablename__ = "saved_messages"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="saved_message_pkey"),
+        sa.Index("saved_message_message_idx", "app_id", "message_id", "created_by_role", "created_by"),
+        sa.Index("saved_message_message_id_idx", "message_id"),
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    message_id: Mapped[str] = mapped_column(StringUUID)
+    created_by_role: Mapped[str] = mapped_column(String(255), default=CreatorUserRole.END_USER.value)
+    created_by: Mapped[str] = mapped_column(StringUUID)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())

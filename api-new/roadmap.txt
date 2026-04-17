@@ -45,6 +45,19 @@ Done
   - `GET /api/remote-files/{url}`
   - `POST /api/remote-files/upload`
   - `POST /api/files/upload`
+  - `GET /api/conversations`
+  - `DELETE /api/conversations/{conversation_id}`
+  - `POST /api/conversations/{conversation_id}/name`
+  - `PATCH /api/conversations/{conversation_id}/pin`
+  - `PATCH /api/conversations/{conversation_id}/unpin`
+  - `GET /api/messages`
+  - `POST /api/messages/{message_id}/feedbacks`
+  - `GET /api/saved-messages`
+  - `POST /api/saved-messages`
+  - `DELETE /api/saved-messages/{message_id}`
+  - `POST /api/completion-messages/{task_id}/stop`
+  - `POST /api/chat-messages/{task_id}/stop`
+  - `POST /api/workflows/tasks/{task_id}/stop`
 - Added an async bootstrap service in `api_server/services/bootstrap.py` for first-time setup and init validation.
 - Added a minimal async app/site lookup service in `api_server/services/app_lookup.py`.
 - Added a FastAPI-native webapp context service in `api_server/services/webapp_context.py`.
@@ -52,7 +65,7 @@ Done
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Installed the new project environment with `uv sync`.
 - Ran targeted type checks with `pyrefly` on the new FastAPI runtime slice; current targeted result is clean.
-- Current active FastAPI runtime tests pass: `14 passed`.
+- Current active FastAPI runtime tests pass: `18 passed`.
 
 Current status
 --------------
@@ -84,6 +97,18 @@ Current status
   - `/api/remote-files/{url}`
   - `/api/remote-files/upload`
   - `/api/files/upload`
+  - `/api/conversations`
+  - `/api/conversations/{conversation_id}`
+  - `/api/conversations/{conversation_id}/name`
+  - `/api/conversations/{conversation_id}/pin`
+  - `/api/conversations/{conversation_id}/unpin`
+  - `/api/messages`
+  - `/api/messages/{message_id}/feedbacks`
+  - `/api/saved-messages`
+  - `/api/saved-messages/{message_id}`
+  - `/api/completion-messages/{task_id}/stop`
+  - `/api/chat-messages/{task_id}/stop`
+  - `/api/workflows/tasks/{task_id}/stop`
 - The copied legacy tree is not ported yet; it still contains Flask-specific imports and synchronous `db.session` usage.
 - The previous import-time blocker from `models/__init__.py` has been removed for the new runtime slice.
 
@@ -99,7 +124,7 @@ Immediate blockers
 Next steps
 ----------
 1. Continue porting the next public route family.
-   - Candidate next slice: conversation/message APIs or workflow run APIs.
+   - Candidate next slice: workflow run APIs or the remaining generation endpoints (`/chat-messages`, `/completion-messages`, `/workflows/run`).
    - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
 
 2. Expand the FastAPI-native domain layer.

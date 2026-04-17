@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from httpx import ASGITransport, AsyncClient
+from uuid import uuid4
 
 from main import app
 
@@ -81,6 +82,38 @@ async def test_file_upload_requires_passport() -> None:
             "/api/files/upload",
             files={"file": ("test.txt", b"hello", "text/plain")},
         )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_conversation_list_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/api/conversations")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_message_list_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/api/messages", params={"conversation_id": str(uuid4())})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_saved_messages_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/api/saved-messages")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "missing_passport"
+
+
+async def test_stop_chat_task_requires_passport() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.post("/api/chat-messages/test-task/stop")
 
     assert response.status_code == 401
     assert response.json()["code"] == "missing_passport"
