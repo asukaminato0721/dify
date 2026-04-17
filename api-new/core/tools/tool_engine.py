@@ -1,7 +1,7 @@
 import contextlib
 import json
 import logging
-from collections.abc import Generator, Iterable
+from collections.abc import AsyncGenerator, Generator, Iterable
 from copy import deepcopy
 from datetime import UTC, datetime
 from mimetypes import guess_type
@@ -199,6 +199,39 @@ class ToolEngine:
             raise e
 
     @staticmethod
+    async def ageneric_invoke(
+        tool: Tool,
+        tool_parameters: dict[str, Any],
+        user_id: str,
+        workflow_tool_callback: DifyWorkflowCallbackHandler,
+        workflow_call_depth: int,
+        conversation_id: str | None = None,
+        app_id: str | None = None,
+        message_id: str | None = None,
+    ) -> AsyncGenerator[ToolInvokeMessage, None]:
+        try:
+            workflow_tool_callback.on_tool_start(tool_name=tool.entity.identity.name, tool_inputs=tool_parameters)
+
+            if isinstance(tool, WorkflowTool):
+                tool.workflow_call_depth = workflow_call_depth + 1
+
+            if tool.runtime and tool.runtime.runtime_parameters:
+                tool_parameters = {**tool.runtime.runtime_parameters, **tool_parameters}
+
+            response = tool.ainvoke(
+                user_id=user_id,
+                tool_parameters=tool_parameters,
+                conversation_id=conversation_id,
+                app_id=app_id,
+                message_id=message_id,
+            )
+            async for message in response:
+                yield message
+        except Exception as e:
+            workflow_tool_callback.on_tool_error(e)
+            raise e
+
+    @staticmethod
     def _invoke(
         tool: Tool,
         tool_parameters: dict[str, Any],
@@ -366,11 +399,11 @@ class ToolEngine:
             )
 
             db.session.add(message_file)
-            db.session.commit()
-            db.session.refresh(message_file)
+            _ = db.session.commit()
+            _ = db.session.refresh(message_file)
 
             result.append(message_file.id)
 
-        db.session.close()
+        _ = db.session.close()
 
         return result

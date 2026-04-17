@@ -1,4 +1,4 @@
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Generator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from graphon.entities.graph_config import NodeConfigDict
@@ -162,6 +162,85 @@ class ToolNode(Node[ToolNodeData]):
                 node_id=self._node_id,
                 tool_runtime=tool_runtime,
             )
+        except ToolNodeError as e:
+            yield StreamCompletedEvent(
+                node_run_result=NodeRunResult(
+                    status=WorkflowNodeExecutionStatus.FAILED,
+                    inputs=parameters_for_log,
+                    metadata={WorkflowNodeExecutionMetadataKey.TOOL_INFO: tool_info},
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+            )
+
+    async def _run_async(self) -> AsyncGenerator[NodeEventBase, None]:
+        tool_info = {
+            "provider_type": self.node_data.provider_type.value,
+            "provider_id": self.node_data.provider_id,
+            "plugin_unique_identifier": self.node_data.plugin_unique_identifier,
+        }
+
+        try:
+            variable_pool = None
+            if self.node_data.version != "1" or self.node_data.tool_node_version is not None:
+                variable_pool = self.graph_runtime_state.variable_pool
+            tool_runtime = self._runtime.get_runtime(
+                node_id=self._node_id,
+                node_data=self.node_data,
+                variable_pool=variable_pool,
+            )
+        except ToolNodeError as e:
+            yield StreamCompletedEvent(
+                node_run_result=NodeRunResult(
+                    status=WorkflowNodeExecutionStatus.FAILED,
+                    inputs={},
+                    metadata={WorkflowNodeExecutionMetadataKey.TOOL_INFO: tool_info},
+                    error=f"Failed to get tool runtime: {e!s}",
+                    error_type=type(e).__name__,
+                )
+            )
+            return
+
+        tool_parameters = self._runtime.get_runtime_parameters(tool_runtime=tool_runtime)
+        parameters = self._generate_parameters(
+            tool_parameters=tool_parameters,
+            variable_pool=self.graph_runtime_state.variable_pool,
+            node_data=self.node_data,
+        )
+        parameters_for_log = self._generate_parameters(
+            tool_parameters=tool_parameters,
+            variable_pool=self.graph_runtime_state.variable_pool,
+            node_data=self.node_data,
+            for_log=True,
+        )
+        try:
+            message_stream = self._runtime.ainvoke(
+                tool_runtime=tool_runtime,
+                tool_parameters=parameters,
+                workflow_call_depth=self.workflow_call_depth,
+                provider_name=self.node_data.provider_name,
+            )
+        except ToolNodeError as e:
+            yield StreamCompletedEvent(
+                node_run_result=NodeRunResult(
+                    status=WorkflowNodeExecutionStatus.FAILED,
+                    inputs=parameters_for_log,
+                    metadata={WorkflowNodeExecutionMetadataKey.TOOL_INFO: tool_info},
+                    error=f"Failed to invoke tool: {e!s}",
+                    error_type=type(e).__name__,
+                )
+            )
+            return
+
+        try:
+            async for event in self._atransform_message(
+                messages=message_stream,
+                tool_info=tool_info,
+                parameters_for_log=parameters_for_log,
+                node_id=self._node_id,
+                tool_runtime=tool_runtime,
+            ):
+                yield event
         except ToolNodeError as e:
             yield StreamCompletedEvent(
                 node_run_result=NodeRunResult(
@@ -438,6 +517,132 @@ class ToolNode(Node[ToolNodeData]):
         )
 
         return usage
+
+    async def _atransform_message(
+        self,
+        messages: AsyncGenerator[ToolRuntimeMessage, None],
+        tool_info: Mapping[str, Any],
+        parameters_for_log: dict[str, Any],
+        node_id: str,
+        tool_runtime: ToolRuntimeHandle,
+        **_: Any,
+    ) -> AsyncGenerator[NodeEventBase, None]:
+        text = ""
+        files: list[File] = []
+        json: list[dict | list] = []
+        variables: dict[str, Any] = {}
+
+        async for message in messages:
+            if message.type in {
+                ToolRuntimeMessage.MessageType.IMAGE_LINK,
+                ToolRuntimeMessage.MessageType.BINARY_LINK,
+                ToolRuntimeMessage.MessageType.IMAGE,
+            }:
+                assert isinstance(message.message, ToolRuntimeMessage.TextMessage)
+                url = message.message.text
+                if message.meta:
+                    transfer_method = message.meta.get("transfer_method", FileTransferMethod.TOOL_FILE)
+                    tool_file_id = message.meta.get("tool_file_id")
+                else:
+                    transfer_method = FileTransferMethod.TOOL_FILE
+                    tool_file_id = None
+                if not isinstance(tool_file_id, str) or not tool_file_id:
+                    raise ToolFileError("tool message is missing tool_file_id metadata")
+                _stream, tool_file = self._tool_file_manager_factory.get_file_generator_by_tool_file_id(tool_file_id)
+                if not tool_file:
+                    raise ToolFileError(f"tool file {tool_file_id} not found")
+                if tool_file.mime_type is None:
+                    raise ToolFileError(f"tool file {tool_file_id} is missing mime type")
+                file_mapping: dict[str, Any] = {
+                    "tool_file_id": tool_file_id,
+                    "type": get_file_type_by_mime_type(tool_file.mime_type),
+                    "transfer_method": transfer_method,
+                    "url": url,
+                }
+                file = self._runtime.build_file_reference(mapping=file_mapping)
+                files.append(file)
+            elif message.type == ToolRuntimeMessage.MessageType.BLOB:
+                assert isinstance(message.message, ToolRuntimeMessage.TextMessage)
+                assert message.meta
+                tool_file_id = message.meta.get("tool_file_id")
+                if not isinstance(tool_file_id, str) or not tool_file_id:
+                    raise ToolFileError("tool blob message is missing tool_file_id metadata")
+                _stream, tool_file = self._tool_file_manager_factory.get_file_generator_by_tool_file_id(tool_file_id)
+                if not tool_file:
+                    raise ToolFileError(f"tool file {tool_file_id} not exists")
+                blob_file_mapping: dict[str, Any] = {
+                    "tool_file_id": tool_file_id,
+                    "transfer_method": FileTransferMethod.TOOL_FILE,
+                }
+                files.append(self._runtime.build_file_reference(mapping=blob_file_mapping))
+            elif message.type == ToolRuntimeMessage.MessageType.TEXT:
+                assert isinstance(message.message, ToolRuntimeMessage.TextMessage)
+                text += message.message.text
+                yield StreamChunkEvent(selector=[node_id, "text"], chunk=message.message.text, is_final=False)
+            elif message.type == ToolRuntimeMessage.MessageType.JSON:
+                assert isinstance(message.message, ToolRuntimeMessage.JsonMessage)
+                if message.message.json_object:
+                    json.append(message.message.json_object)
+            elif message.type == ToolRuntimeMessage.MessageType.LINK:
+                assert isinstance(message.message, ToolRuntimeMessage.TextMessage)
+                file_obj = (message.meta or {}).get("file")
+                if isinstance(file_obj, File):
+                    files.append(file_obj)
+                    stream_text = f"File: {message.message.text}\n"
+                else:
+                    stream_text = f"Link: {message.message.text}\n"
+                text += stream_text
+                yield StreamChunkEvent(selector=[node_id, "text"], chunk=stream_text, is_final=False)
+            elif message.type == ToolRuntimeMessage.MessageType.VARIABLE:
+                assert isinstance(message.message, ToolRuntimeMessage.VariableMessage)
+                variable_name = message.message.variable_name
+                variable_value = message.message.variable_value
+                if message.message.stream:
+                    if not isinstance(variable_value, str):
+                        raise ToolNodeError("When 'stream' is True, 'variable_value' must be a string.")
+                    if variable_name not in variables:
+                        variables[variable_name] = ""
+                    variables[variable_name] += variable_value
+                    yield StreamChunkEvent(selector=[node_id, variable_name], chunk=variable_value, is_final=False)
+                else:
+                    variables[variable_name] = variable_value
+            elif message.type == ToolRuntimeMessage.MessageType.FILE:
+                assert message.meta is not None
+                assert isinstance(message.meta, dict)
+                if "file" not in message.meta:
+                    raise ToolNodeError("File message is missing 'file' key in meta")
+                files.append(message.meta["file"])
+            elif message.type == ToolRuntimeMessage.MessageType.LOG:
+                continue
+
+        json_output: list[dict[str, Any] | list[Any]] = []
+        if json:
+            json_output.extend(json)
+        else:
+            json_output.append({"data": []})
+
+        yield StreamChunkEvent(selector=[self._node_id, "text"], chunk="", is_final=True)
+        for var_name in variables:
+            yield StreamChunkEvent(selector=[self._node_id, var_name], chunk="", is_final=True)
+
+        usage = self._runtime.get_usage(tool_runtime=tool_runtime)
+        metadata: dict[WorkflowNodeExecutionMetadataKey, Any] = {
+            WorkflowNodeExecutionMetadataKey.TOOL_INFO: tool_info,
+        }
+        if isinstance(usage.total_tokens, int) and usage.total_tokens > 0:
+            metadata[WorkflowNodeExecutionMetadataKey.TOTAL_TOKENS] = usage.total_tokens
+            metadata[WorkflowNodeExecutionMetadataKey.TOTAL_PRICE] = usage.total_price
+            metadata[WorkflowNodeExecutionMetadataKey.CURRENCY] = usage.currency
+
+        yield StreamCompletedEvent(
+            node_run_result=NodeRunResult(
+                status=WorkflowNodeExecutionStatus.SUCCEEDED,
+                outputs={"text": text, "files": ArrayFileSegment(value=files), "json": json_output, **variables},
+                metadata=metadata,
+                inputs=parameters_for_log,
+                llm_usage=usage,
+            )
+        )
 
     @classmethod
     def _extract_variable_selector_to_variable_mapping(

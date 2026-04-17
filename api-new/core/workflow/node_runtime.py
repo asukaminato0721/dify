@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -234,7 +234,7 @@ class DifyRetrieverAttachmentLoader(RetrieverAttachmentLoaderProtocol):
         self._file_reference_factory = file_reference_factory
 
     def load(self, *, segment_id: str) -> Sequence[File]:
-        with Session(db.engine, expire_on_commit=False) as session:
+        with Session(cast(Any, db.engine), expire_on_commit=False) as session:
             attachments_with_bindings = session.execute(
                 select(SegmentAttachmentBinding, UploadFile)
                 .join(UploadFile, UploadFile.id == SegmentAttachmentBinding.attachment_id)
@@ -400,6 +400,37 @@ class DifyToolNodeRuntime(ToolNodeRuntimeProtocol):
 
         return self._adapt_messages(transformed_messages, provider_name=provider_name)
 
+    def ainvoke(
+        self,
+        *,
+        tool_runtime: ToolRuntimeHandle,
+        tool_parameters: Mapping[str, Any],
+        workflow_call_depth: int,
+        provider_name: str,
+    ) -> AsyncGenerator[ToolRuntimeMessage, None]:
+        async def _generator() -> AsyncGenerator[ToolRuntimeMessage, None]:
+            runtime_binding = self._binding_from_handle(tool_runtime)
+            tool = runtime_binding.tool
+            callback = DifyWorkflowCallbackHandler()
+
+            try:
+                messages = ToolEngine.ageneric_invoke(
+                    tool=tool,
+                    tool_parameters=dict(tool_parameters),
+                    user_id=self._run_context.user_id,
+                    workflow_tool_callback=callback,
+                    workflow_call_depth=workflow_call_depth,
+                    app_id=self._run_context.app_id,
+                    conversation_id=runtime_binding.conversation_id,
+                )
+            except Exception as exc:
+                raise self._map_invocation_exception(exc, provider_name=provider_name) from exc
+
+            async for message in self._aadapt_messages(messages, provider_name=provider_name):
+                yield message
+
+        return _generator()
+
     def get_usage(
         self,
         *,
@@ -473,6 +504,18 @@ class DifyToolNodeRuntime(ToolNodeRuntimeProtocol):
     ) -> Generator[ToolRuntimeMessage, None, None]:
         try:
             for message in messages:
+                yield self._convert_message(message)
+        except Exception as exc:
+            raise self._map_invocation_exception(exc, provider_name=provider_name) from exc
+
+    async def _aadapt_messages(
+        self,
+        messages: AsyncGenerator[CoreToolInvokeMessage, None],
+        *,
+        provider_name: str,
+    ) -> AsyncGenerator[ToolRuntimeMessage, None]:
+        try:
+            async for message in messages:
                 yield self._convert_message(message)
         except Exception as exc:
             raise self._map_invocation_exception(exc, provider_name=provider_name) from exc

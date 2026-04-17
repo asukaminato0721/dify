@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Generator, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -47,6 +47,15 @@ class ToolNodeRuntimeProtocol(Protocol):
         workflow_call_depth: int,
         provider_name: str,
     ) -> Generator[ToolRuntimeMessage, None, None]: ...
+
+    def ainvoke(
+        self,
+        *,
+        tool_runtime: ToolRuntimeHandle,
+        tool_parameters: Mapping[str, Any],
+        workflow_call_depth: int,
+        provider_name: str,
+    ) -> AsyncGenerator[ToolRuntimeMessage, None] | Any: ...
 
     def get_usage(
         self,
