@@ -1,11 +1,9 @@
-import contextvars
 import logging
 import threading
 import uuid
 from collections.abc import Generator, Mapping
 from typing import Any, Literal, overload
 
-from flask import Flask, copy_current_request_context, current_app
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -165,20 +163,14 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
                 message_id=message.id,
             )
 
-            context = contextvars.copy_context()
-
-            # new thread with request context
-            @copy_current_request_context
-            def worker_with_context():
-                return context.run(
-                    self._generate_worker,
-                    flask_app=current_app._get_current_object(),  # type: ignore
-                    application_generate_entity=application_generate_entity,
-                    queue_manager=queue_manager,
-                    message_id=message.id,
-                )
-
-            worker_thread = threading.Thread(target=worker_with_context)
+            worker_thread = threading.Thread(
+                target=self._generate_worker,
+                kwargs={
+                    "application_generate_entity": application_generate_entity,
+                    "queue_manager": queue_manager,
+                    "message_id": message.id,
+                },
+            )
 
             worker_thread.start()
 
@@ -196,49 +188,42 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
 
     def _generate_worker(
         self,
-        flask_app: Flask,
         application_generate_entity: CompletionAppGenerateEntity,
         queue_manager: AppQueueManager,
         message_id: str,
     ):
         """
         Generate worker in a new thread.
-        :param flask_app: Flask app
         :param application_generate_entity: application generate entity
         :param queue_manager: queue manager
         :param message_id: message ID
         :return:
         """
-        with flask_app.app_context():
-            try:
-                # get message
-                message = self._get_message(message_id)
+        try:
+            message = self._get_message(message_id)
 
-                # chatbot app
-                runner = CompletionAppRunner()
-                runner.run(
-                    application_generate_entity=application_generate_entity,
-                    queue_manager=queue_manager,
-                    message=message,
-                )
-            except GenerateTaskStoppedError:
-                pass
-            except InvokeAuthorizationError:
-                queue_manager.publish_error(
-                    InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
-                )
-            except ValidationError as e:
-                logger.exception("Validation Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except ValueError as e:
-                if dify_config.DEBUG:
-                    logger.exception("Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except Exception as e:
-                logger.exception("Unknown Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            finally:
-                db.session.close()
+            runner = CompletionAppRunner()
+            runner.run(
+                application_generate_entity=application_generate_entity,
+                queue_manager=queue_manager,
+                message=message,
+            )
+        except GenerateTaskStoppedError:
+            pass
+        except InvokeAuthorizationError:
+            queue_manager.publish_error(
+                InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
+            )
+        except ValidationError as e:
+            logger.exception("Validation Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except ValueError as e:
+            if dify_config.DEBUG:
+                logger.exception("Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except Exception as e:
+            logger.exception("Unknown Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
 
     def generate_more_like_this(
         self,

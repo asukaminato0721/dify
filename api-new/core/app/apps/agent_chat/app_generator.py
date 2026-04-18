@@ -1,11 +1,9 @@
-import contextvars
 import logging
 import threading
 import uuid
 from collections.abc import Generator, Mapping
 from typing import Any, Literal, overload
 
-from flask import Flask, current_app
 from pydantic import ValidationError
 
 from configs import dify_config
@@ -21,10 +19,8 @@ from core.app.apps.message_based_app_generator import MessageBasedAppGenerator
 from core.app.apps.message_based_app_queue_manager import MessageBasedAppQueueManager
 from core.app.entities.app_invoke_entities import AgentChatAppGenerateEntity, InvokeFrom
 from core.ops.ops_trace_manager import TraceQueueManager
-from extensions.ext_database import db
 from factories import file_factory
 from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
-from libs.flask_utils import preserve_flask_contexts
 from models import Account, App, EndUser
 from services.conversation_service import ConversationService
 
@@ -189,14 +185,9 @@ class AgentChatAppGenerator(MessageBasedAppGenerator):
                 message_id=message.id,
             )
 
-            # new thread with request context and contextvars
-            context = contextvars.copy_context()
-
             worker_thread = threading.Thread(
                 target=self._generate_worker,
                 kwargs={
-                    "flask_app": current_app._get_current_object(),  # type: ignore
-                    "context": context,
                     "application_generate_entity": application_generate_entity,
                     "queue_manager": queue_manager,
                     "conversation_id": conversation.id,
@@ -219,8 +210,6 @@ class AgentChatAppGenerator(MessageBasedAppGenerator):
 
     def _generate_worker(
         self,
-        flask_app: Flask,
-        context: contextvars.Context,
         application_generate_entity: AgentChatAppGenerateEntity,
         queue_manager: AppQueueManager,
         conversation_id: str,
@@ -228,43 +217,36 @@ class AgentChatAppGenerator(MessageBasedAppGenerator):
     ):
         """
         Generate worker in a new thread.
-        :param flask_app: Flask app
         :param application_generate_entity: application generate entity
         :param queue_manager: queue manager
         :param conversation_id: conversation ID
         :param message_id: message ID
         :return:
         """
+        try:
+            conversation = self._get_conversation(conversation_id)
+            message = self._get_message(message_id)
 
-        with preserve_flask_contexts(flask_app, context_vars=context):
-            try:
-                # get conversation and message
-                conversation = self._get_conversation(conversation_id)
-                message = self._get_message(message_id)
-
-                # chatbot app
-                runner = AgentChatAppRunner()
-                runner.run(
-                    application_generate_entity=application_generate_entity,
-                    queue_manager=queue_manager,
-                    conversation=conversation,
-                    message=message,
-                )
-            except GenerateTaskStoppedError:
-                pass
-            except InvokeAuthorizationError:
-                queue_manager.publish_error(
-                    InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
-                )
-            except ValidationError as e:
-                logger.exception("Validation Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except ValueError as e:
-                if dify_config.DEBUG:
-                    logger.exception("Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except Exception as e:
-                logger.exception("Unknown Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            finally:
-                db.session.close()
+            runner = AgentChatAppRunner()
+            runner.run(
+                application_generate_entity=application_generate_entity,
+                queue_manager=queue_manager,
+                conversation=conversation,
+                message=message,
+            )
+        except GenerateTaskStoppedError:
+            pass
+        except InvokeAuthorizationError:
+            queue_manager.publish_error(
+                InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
+            )
+        except ValidationError as e:
+            logger.exception("Validation Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except ValueError as e:
+            if dify_config.DEBUG:
+                logger.exception("Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except Exception as e:
+            logger.exception("Unknown Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)

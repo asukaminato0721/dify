@@ -112,6 +112,8 @@ Done
 - Removed the active message-cycle conversation-name worker's Flask app-context dependency from the public generation path.
 - Switched the shared workflow response/pipeline fallback helpers off ad hoc `db.engine.sync_engine` probing and onto the configured sync companion session factory.
 - Switched the copied message-based generator helpers and the copied workflow/advanced-chat generators off direct `db.engine`/`db.session` assumptions and onto the configured sync companion session factory.
+- Removed the copied workflow and advanced-chat generator workers' Flask request-context dependency; those workers now run from explicit arguments plus the configured session factory.
+- Removed the copied agent and chat generator workers' Flask request-context dependency, and switched the copied chat/completion runners to the configured sync session factory for app lookups.
 - Rewired public completion `more-like-this` through the async-native FastAPI generation service.
 - Ported public workflow event replay endpoint:
   - `GET /api/workflow/{task_id}/events`
@@ -222,7 +224,8 @@ Current status
 - The main LLM-backed nodes, `http_request`, and `tool` now have async execution paths, but the broader node/runtime layer still needs the same treatment for any remaining concrete nodes on real workflow paths.
 - The copied workflow/advanced-chat/agent-chat runtime still contains sync-only persistence and helper paths; the active public generation seams now use the sync companion engine explicitly instead of assuming Flask's global session state.
 - The shared workflow response/pipeline helpers used by the active FastAPI runtime now rely on the configured sync session factory instead of probing the async engine directly.
-- The copied workflow and advanced-chat generator layers now also use the configured sync session factory at the database boundary, though they still depend on Flask request-context helpers and are not part of the active FastAPI route surface.
+- The copied workflow and advanced-chat generator layers now also use the configured sync session factory at the database boundary and no longer depend on Flask request-context helpers, though they are still sync-first and not part of the active FastAPI route surface.
+- The copied agent and chat generator layers also no longer depend on Flask request-context helpers, but the copied completion `more_like_this` worker path and the pipeline stack still do.
 - The remaining Flask imports are concentrated in copied legacy generator/controller paths that are no longer on the active public FastAPI route surface.
 
 Immediate blockers

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextvars
 import logging
 import threading
 import uuid
@@ -13,7 +12,6 @@ from sqlalchemy import select
 import contexts
 from configs import dify_config
 from constants import UUID_NIL
-from flask import Flask, current_app
 
 if TYPE_CHECKING:
     from controllers.console.app.workflow import LoopNodeRunPayload
@@ -45,7 +43,6 @@ from graphon.graph_engine.layers import GraphEngineLayer
 from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
 from graphon.runtime import GraphRuntimeState
 from graphon.variable_loader import DUMMY_VARIABLE_LOADER, VariableLoader
-from libs.flask_utils import preserve_flask_contexts
 from models import Account, App, Conversation, EndUser, Message, Workflow, WorkflowNodeExecutionTriggeredFrom
 from models.enums import WorkflowRunTriggeredFrom
 from services.conversation_service import ConversationService
@@ -508,18 +505,13 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
                     )
                 )
 
-            # new thread with request context and contextvars
-            context = contextvars.copy_context()
-
             worker_thread = threading.Thread(
                 target=self._generate_worker,
                 kwargs={
-                    "flask_app": current_app._get_current_object(),  # type: ignore
                     "application_generate_entity": application_generate_entity,
                     "queue_manager": queue_manager,
                     "conversation_id": conversation.id,
                     "message_id": message.id,
-                    "context": context,
                     "variable_loader": variable_loader,
                     "workflow_execution_repository": workflow_execution_repository,
                     "workflow_node_execution_repository": workflow_node_execution_repository,
@@ -551,12 +543,10 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
 
     def _generate_worker(
         self,
-        flask_app: Flask,
         application_generate_entity: AdvancedChatAppGenerateEntity,
         queue_manager: AppQueueManager,
         conversation_id: str,
         message_id: str,
-        context: contextvars.Context,
         variable_loader: VariableLoader,
         workflow_execution_repository: WorkflowExecutionRepository,
         workflow_node_execution_repository: WorkflowNodeExecutionRepository,
@@ -565,84 +555,78 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
     ):
         """
         Generate worker in a new thread.
-        :param flask_app: Flask app
         :param application_generate_entity: application generate entity
         :param queue_manager: queue manager
         :param conversation_id: conversation ID
         :param message_id: message ID
         :return:
         """
+        conversation = self._get_conversation(conversation_id)
+        message = self._get_message(message_id)
 
-        with preserve_flask_contexts(flask_app, context_vars=context):
-            # get conversation and message
-            conversation = self._get_conversation(conversation_id)
-            message = self._get_message(message_id)
-
-            with session_factory.create_session() as session:
-                workflow = session.scalar(
-                    select(Workflow).where(
-                        Workflow.tenant_id == application_generate_entity.app_config.tenant_id,
-                        Workflow.app_id == application_generate_entity.app_config.app_id,
-                        Workflow.id == application_generate_entity.app_config.workflow_id,
-                    )
+        with session_factory.create_session() as session:
+            workflow = session.scalar(
+                select(Workflow).where(
+                    Workflow.tenant_id == application_generate_entity.app_config.tenant_id,
+                    Workflow.app_id == application_generate_entity.app_config.app_id,
+                    Workflow.id == application_generate_entity.app_config.workflow_id,
                 )
-                if workflow is None:
-                    raise ValueError("Workflow not found")
-
-                # Determine system_user_id based on invocation source
-                is_external_api_call = application_generate_entity.invoke_from in {
-                    InvokeFrom.WEB_APP,
-                    InvokeFrom.SERVICE_API,
-                }
-
-                if is_external_api_call:
-                    # For external API calls, use end user's session ID
-                    end_user = session.scalar(select(EndUser).where(EndUser.id == application_generate_entity.user_id))
-                    system_user_id = end_user.session_id if end_user else ""
-                else:
-                    # For internal calls, use the original user ID
-                    system_user_id = application_generate_entity.user_id
-
-                app = session.scalar(select(App).where(App.id == application_generate_entity.app_config.app_id))
-                if app is None:
-                    raise ValueError("App not found")
-
-            runner = AdvancedChatAppRunner(
-                application_generate_entity=application_generate_entity,
-                queue_manager=queue_manager,
-                conversation=conversation,
-                message=message,
-                dialogue_count=self._dialogue_count,
-                variable_loader=variable_loader,
-                workflow=workflow,
-                system_user_id=system_user_id,
-                app=app,
-                workflow_execution_repository=workflow_execution_repository,
-                workflow_node_execution_repository=workflow_node_execution_repository,
-                graph_engine_layers=graph_engine_layers,
-                graph_runtime_state=graph_runtime_state,
             )
+            if workflow is None:
+                raise ValueError("Workflow not found")
 
-            try:
-                runner.run()
-            except GenerateTaskStoppedError:
-                pass
-            except InvokeAuthorizationError:
-                queue_manager.publish_error(
-                    InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
-                )
-            except ValidationError as e:
-                logger.exception("Validation Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except ValueError as e:
-                if dify_config.DEBUG:
-                    logger.exception("Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except Exception as e:
-                logger.exception("Unknown Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            finally:
-                pass
+            # Determine system_user_id based on invocation source
+            is_external_api_call = application_generate_entity.invoke_from in {
+                InvokeFrom.WEB_APP,
+                InvokeFrom.SERVICE_API,
+            }
+
+            if is_external_api_call:
+                # For external API calls, use end user's session ID
+                end_user = session.scalar(select(EndUser).where(EndUser.id == application_generate_entity.user_id))
+                system_user_id = end_user.session_id if end_user else ""
+            else:
+                # For internal calls, use the original user ID
+                system_user_id = application_generate_entity.user_id
+
+            app = session.scalar(select(App).where(App.id == application_generate_entity.app_config.app_id))
+            if app is None:
+                raise ValueError("App not found")
+
+        runner = AdvancedChatAppRunner(
+            application_generate_entity=application_generate_entity,
+            queue_manager=queue_manager,
+            conversation=conversation,
+            message=message,
+            dialogue_count=self._dialogue_count,
+            variable_loader=variable_loader,
+            workflow=workflow,
+            system_user_id=system_user_id,
+            app=app,
+            workflow_execution_repository=workflow_execution_repository,
+            workflow_node_execution_repository=workflow_node_execution_repository,
+            graph_engine_layers=graph_engine_layers,
+            graph_runtime_state=graph_runtime_state,
+        )
+
+        try:
+            runner.run()
+        except GenerateTaskStoppedError:
+            pass
+        except InvokeAuthorizationError:
+            queue_manager.publish_error(
+                InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
+            )
+        except ValidationError as e:
+            logger.exception("Validation Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except ValueError as e:
+            if dify_config.DEBUG:
+                logger.exception("Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except Exception as e:
+            logger.exception("Unknown Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
 
     def _handle_advanced_chat_response(
         self,
