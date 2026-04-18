@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from typing import Any
 
+from api_server.models.app import AppMode as FastAPIAppMode
 from core.app.app_config.entities import AppAdditionalFeatures
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
 from core.app.app_config.features.more_like_this.manager import MoreLikeThisConfigManager
@@ -16,7 +17,9 @@ from models.model import AppMode
 
 class BaseAppConfigManager:
     @classmethod
-    def convert_features(cls, config_dict: Mapping[str, Any], app_mode: AppMode) -> AppAdditionalFeatures:
+    def convert_features(
+        cls, config_dict: Mapping[str, Any], app_mode: AppMode | FastAPIAppMode
+    ) -> AppAdditionalFeatures:
         """
         Convert app config to app model config
 
@@ -29,7 +32,8 @@ class BaseAppConfigManager:
         additional_features.show_retrieve_source = RetrievalResourceConfigManager.convert(config=config_dict)
 
         additional_features.file_upload = FileUploadConfigManager.convert(
-            config=config_dict, is_vision=app_mode in {AppMode.CHAT, AppMode.COMPLETION, AppMode.AGENT_CHAT}
+            config=config_dict,
+            is_vision=str(app_mode) in {AppMode.CHAT.value, AppMode.COMPLETION.value, AppMode.AGENT_CHAT.value},
         )
 
         additional_features.opening_statement, additional_features.suggested_questions = (

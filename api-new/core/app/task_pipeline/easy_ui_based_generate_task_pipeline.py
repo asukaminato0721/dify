@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session
 
 from api_server.models.app import Conversation as FastAPIConversation
 from api_server.models.app import Message as FastAPIMessage
+from api_server.models.app import MessageAgentThought as FastAPIMessageAgentThought
+from api_server.models.app import MessageFile as FastAPIMessageFile
+from api_server.models.app import UploadFile as FastAPIUploadFile
 from constants.tts_auto_play_timeout import TTS_AUTO_PLAY_TIMEOUT, TTS_AUTO_PLAY_YIELD_CPU_TIME
 from core.app.apps.base_app_queue_manager import AppQueueManager, PublishFrom
 from core.app.entities.app_invoke_entities import (
@@ -63,7 +66,7 @@ from graphon.model_runtime.entities.message_entities import (
 )
 from graphon.model_runtime.model_providers.__base.large_language_model import LargeLanguageModel
 from libs.datetime_utils import naive_utc_now
-from models.model import AppMode, Conversation, Message, MessageAgentThought, MessageFile, UploadFile
+from models.model import AppMode, Conversation, Message
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +77,6 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
     """
 
     _task_state: EasyUITaskState
-    _application_generate_entity: ChatAppGenerateEntity | CompletionAppGenerateEntity | AgentChatAppGenerateEntity
     _precomputed_event_type: StreamEvent | None = None
 
     def __init__(
@@ -97,7 +99,8 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         self._conversation_mode = conversation.mode
 
         self._message_id = message.id
-        self._message_created_at = int(message.created_at.timestamp())
+        created_at = message.created_at or naive_utc_now()
+        self._message_created_at = int(created_at.timestamp())
 
         self._task_state = EasyUITaskState(
             llm_result=LLMResult(
@@ -123,9 +126,10 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         | Generator[ChatbotAppStreamResponse | CompletionAppStreamResponse, None, None]
     ):
         if self._application_generate_entity.app_config.app_mode != AppMode.COMPLETION:
+            query = cast(Any, self._application_generate_entity).query
             # start generate conversation name thread
             self._conversation_name_generate_thread = self._message_cycle_manager.generate_conversation_name(
-                conversation_id=self._conversation_id, query=self._application_generate_entity.query
+                conversation_id=self._conversation_id, query=query
             )
 
         generator = self._wrapper_process_stream_response(trace_manager=self._application_generate_entity.trace_manager)
@@ -314,15 +318,15 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
                 if delta_text is None:
                     continue
                 if isinstance(chunk.delta.message.content, list):
-                    delta_text = ""
+                    delta_text_str = ""
                     for content in chunk.delta.message.content:
                         logger.debug(
                             "The content type %s in LLM chunk delta message content.: %r", type(content), content
                         )
                         if isinstance(content, TextPromptMessageContent):
-                            delta_text += content.data
+                            delta_text_str += content.data
                         elif isinstance(content, str):
-                            delta_text += content  # failback to str
+                            delta_text_str += content  # failback to str
                         else:
                             logger.warning(
                                 "Unsupported content type %s in LLM chunk delta message content.: %r",
@@ -330,6 +334,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
                                 content,
                             )
                             continue
+                    delta_text = delta_text_str
 
                 if not self._task_state.llm_result.prompt_messages:
                     self._task_state.llm_result.prompt_messages = chunk.prompt_messages
@@ -387,8 +392,11 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         if not conversation:
             raise ValueError(f"Conversation {self._conversation_id} not found")
 
-        message.message = PromptMessageUtil.prompt_messages_to_prompt_for_saving(
-            self._model_config.mode, self._task_state.llm_result.prompt_messages
+        message.message = cast(
+            Any,
+            PromptMessageUtil.prompt_messages_to_prompt_for_saving(
+                self._model_config.mode, self._task_state.llm_result.prompt_messages
+            ),
         )
         message.message_tokens = usage.prompt_tokens
         message.message_unit_price = usage.prompt_unit_price
@@ -461,7 +469,9 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         # Fetch files associated with this message
         files = None
         with session_factory.create_session() as session:
-            message_files = session.scalars(select(MessageFile).where(MessageFile.message_id == self._message_id)).all()
+            message_files = session.scalars(
+                select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == self._message_id)
+            ).all()
 
             if message_files:
                 # Fetch all required UploadFile objects in a single query to avoid N+1 problem
@@ -474,12 +484,14 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
                 )
                 upload_files_map = {}
                 if upload_file_ids:
-                    upload_files = session.scalars(select(UploadFile).where(UploadFile.id.in_(upload_file_ids))).all()
+                    upload_files = session.scalars(
+                        select(FastAPIUploadFile).where(FastAPIUploadFile.id.in_(upload_file_ids))
+                    ).all()
                     upload_files_map = {uf.id: uf for uf in upload_files}
 
                 files_list = []
                 for message_file in message_files:
-                    file_dict = prepare_file_dict(message_file, upload_files_map)
+                    file_dict = prepare_file_dict(message_file, cast(Any, upload_files_map))
                     files_list.append(file_dict)
 
                 files = files_list or None
@@ -509,8 +521,8 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         :return:
         """
         with session_factory.create_session() as session:
-            agent_thought: MessageAgentThought | None = session.scalar(
-                select(MessageAgentThought).where(MessageAgentThought.id == event.agent_thought_id).limit(1)
+            agent_thought: FastAPIMessageAgentThought | None = session.scalar(
+                select(FastAPIMessageAgentThought).where(FastAPIMessageAgentThought.id == event.agent_thought_id).limit(1)
             )
 
         if agent_thought:

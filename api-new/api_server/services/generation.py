@@ -26,6 +26,7 @@ from api_server.errors import bad_request, forbidden, not_found, service_unavail
 from api_server.models.app import (
     App as FastAPIApp,
     AppModelConfig,
+    AppMode,
     Conversation,
     EndUser as FastAPIEndUser,
     Message,
@@ -107,15 +108,7 @@ from graphon.variable_loader import DUMMY_VARIABLE_LOADER
 from libs.datetime_utils import naive_utc_now
 from libs.orjson import orjson_dumps
 from models.enums import ConversationFromSource, CreatorUserRole, MessageFileBelongsTo, WorkflowRunTriggeredFrom
-from models.model import App as LegacyApp
-from models.model import AppMode as LegacyAppMode
-from models.model import AppModelConfig as LegacyAppModelConfig
 from models.model import AppModelConfigDict
-from models.model import Conversation as LegacyConversation
-from models.model import EndUser as LegacyEndUser
-from models.model import Message as LegacyMessage
-from models.model import MessageFile as LegacyMessageFile
-from models.workflow import Workflow as LegacyWorkflow
 from models.workflow import WorkflowNodeExecutionTriggeredFrom
 
 
@@ -206,7 +199,7 @@ def _build_completion_config(
         raise bad_request("app_unavailable", "App unavailable, please check your app configurations.")
 
     config_dict = config_dict_override or _config_dict(context.app_model_config)
-    app_mode = LegacyAppMode.value_of(str(context.app.mode))
+    app_mode = AppMode(str(context.app.mode))
     app_config = CompletionAppConfig(
         tenant_id=context.app.tenant_id,
         app_id=context.app.id,
@@ -229,7 +222,7 @@ def _build_chat_config(context: WebappContext) -> ChatAppConfig:
         raise bad_request("app_unavailable", "App unavailable, please check your app configurations.")
 
     config_dict = _config_dict(context.app_model_config)
-    app_mode = LegacyAppMode.value_of(str(context.app.mode))
+    app_mode = AppMode(str(context.app.mode))
     app_config = ChatAppConfig(
         tenant_id=context.app.tenant_id,
         app_id=context.app.id,
@@ -279,9 +272,9 @@ def _get_legacy_sync_session_maker() -> sessionmaker[Session]:
 
 def _prepare_workflow_generation_entity(
     *,
-    app_model: LegacyApp | FastAPIApp,
-    workflow: LegacyWorkflow | FastAPIWorkflow,
-    end_user: LegacyEndUser | FastAPIEndUser,
+    app_model: FastAPIApp,
+    workflow: FastAPIWorkflow,
+    end_user: FastAPIEndUser,
     inputs: dict[str, Any],
     files: list[dict[str, Any]] | None,
     streaming: bool,
@@ -328,8 +321,8 @@ def _prepare_workflow_generation_entity(
 def _run_workflow_runner(
     *,
     application_generate_entity: WorkflowAppGenerateEntity,
-    workflow: LegacyWorkflow | FastAPIWorkflow,
-    end_user: LegacyEndUser | FastAPIEndUser,
+    workflow: FastAPIWorkflow,
+    end_user: FastAPIEndUser,
     queue_manager: WorkflowAppQueueManager,
     workflow_execution_repository: Any,
     workflow_node_execution_repository: Any,
@@ -378,9 +371,9 @@ def _run_workflow_runner(
 
 def _prepare_advanced_chat_generation_entity(
     *,
-    app_model: LegacyApp | FastAPIApp,
-    workflow: LegacyWorkflow | FastAPIWorkflow,
-    end_user: LegacyEndUser | FastAPIEndUser,
+    app_model: FastAPIApp,
+    workflow: FastAPIWorkflow,
+    end_user: FastAPIEndUser,
     inputs: dict[str, Any],
     query: str,
     files: list[dict[str, Any]] | None,
@@ -432,10 +425,10 @@ def _prepare_advanced_chat_generation_entity(
 
 def _prepare_agent_chat_generation_entity(
     *,
-    app_model: LegacyApp | FastAPIApp,
-    app_model_config: LegacyAppModelConfig | AppModelConfig,
-    end_user: LegacyEndUser | FastAPIEndUser,
-    conversation: LegacyConversation | Conversation | None,
+    app_model: FastAPIApp,
+    app_model_config: AppModelConfig,
+    end_user: FastAPIEndUser,
+    conversation: Conversation | None,
     inputs: dict[str, Any],
     query: str,
     files: list[dict[str, Any]] | None,
@@ -506,29 +499,6 @@ def _render_message_based_conversation_introduction(
         except KeyError:
             pass
     return introduction or ""
-
-
-def _load_owned_legacy_conversation(
-    *,
-    session: Session,
-    app_id: str,
-    end_user_id: str,
-    conversation_id: str,
-) -> LegacyConversation:
-    """Return an existing public conversation only when it belongs to the caller."""
-
-    conversation = session.scalar(
-        select(LegacyConversation).where(
-            LegacyConversation.id == conversation_id,
-            LegacyConversation.app_id == app_id,
-            LegacyConversation.from_source == ConversationFromSource.API,
-            LegacyConversation.from_end_user_id == end_user_id,
-            LegacyConversation.is_deleted.is_(False),
-        )
-    )
-    if conversation is None:
-        raise bad_request("conversation_not_exists", "Conversation Not Exists.")
-    return conversation
 
 
 def _load_owned_fastapi_conversation(
@@ -742,7 +712,7 @@ def _init_advanced_chat_records(
     return conversation, message
 
 
-def _load_thread_messages_length(*, session: Session, conversation_id: str, message_model: type[LegacyMessage] | type[Message]) -> int:
+def _load_thread_messages_length(*, session: Session, conversation_id: str, message_model: type[Message]) -> int:
     """Mirror legacy thread counting without relying on Flask-scoped sessions."""
 
     messages = session.scalars(
@@ -759,9 +729,9 @@ def _load_thread_messages_length(*, session: Session, conversation_id: str, mess
 def _run_advanced_chat_runner(
     *,
     application_generate_entity: AdvancedChatAppGenerateEntity,
-    workflow: LegacyWorkflow | FastAPIWorkflow,
-    app_model: LegacyApp | FastAPIApp,
-    end_user: LegacyEndUser | FastAPIEndUser,
+    workflow: FastAPIWorkflow,
+    app_model: FastAPIApp,
+    end_user: FastAPIEndUser,
     conversation_id: str,
     message_id: str,
     dialogue_count: int,

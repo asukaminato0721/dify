@@ -1,5 +1,7 @@
 from typing import TypedDict
 
+from api_server.models.app import MessageFile as FastAPIMessageFile
+from api_server.models.app import UploadFile as FastAPIUploadFile
 from core.tools.signature import sign_tool_file
 from graphon.file import FileTransferMethod
 from graphon.file import helpers as file_helpers
@@ -21,7 +23,10 @@ class MessageFileInfoDict(TypedDict):
     remote_url: str | None
 
 
-def prepare_file_dict(message_file: MessageFile, upload_files_map: dict[str, UploadFile]) -> MessageFileInfoDict:
+def prepare_file_dict(
+    message_file: MessageFile | FastAPIMessageFile,
+    upload_files_map: dict[str, UploadFile | FastAPIUploadFile],
+) -> MessageFileInfoDict:
     """
     Prepare file dictionary for message end stream response.
 
@@ -78,7 +83,8 @@ def prepare_file_dict(message_file: MessageFile, upload_files_map: dict[str, Upl
         case FileTransferMethod.TOOL_FILE | FileTransferMethod.DATASOURCE_FILE:
             pass
 
-    transfer_method_value = message_file.transfer_method.value
+    transfer_method = message_file.transfer_method
+    transfer_method_value = transfer_method.value if hasattr(transfer_method, "value") else str(transfer_method)
     remote_url = message_file.url if message_file.transfer_method == FileTransferMethod.REMOTE_URL else ""
     return {
         "related_id": message_file.id,

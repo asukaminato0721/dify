@@ -4,7 +4,7 @@ import json
 from typing import Any, cast
 
 import api_server.models.app as app_models
-from api_server.models.app import AppMode, AppModelConfig, Conversation, Message
+from api_server.models.app import AppMode, AppModelConfig, Conversation, Message, MessageAgentThought
 
 
 def test_local_conversation_model_config_uses_app_model_config_when_no_override() -> None:
@@ -138,3 +138,37 @@ def test_local_message_metadata_dict_matches_legacy_shape() -> None:
     )
 
     assert message.message_metadata_dict == {"retriever_resources": []}
+
+
+def test_local_message_agent_thought_helpers_match_legacy_shape() -> None:
+    thought = MessageAgentThought(
+        id="thought-1",
+        message_id="message-1",
+        position=1,
+        created_by_role="end_user",
+        created_by="end-user-1",
+        message_chain_id=None,
+        thought="thinking",
+        tool="search;lookup",
+        tool_labels_str=json.dumps({"search": {"en_US": "Search"}}),
+        tool_meta_str="{}",
+        tool_input=None,
+        observation=None,
+        tool_process_data=None,
+        message=None,
+        message_token=None,
+        message_unit_price=None,
+        message_price_unit=None,
+        message_files=json.dumps(["file-1"]),
+        answer=None,
+        answer_token=None,
+        answer_unit_price=None,
+        answer_price_unit=None,
+        tokens=None,
+        total_price=None,
+        currency=None,
+        latency=None,
+    )
+
+    assert thought.files == ["file-1"]
+    assert thought.tool_labels == {"search": {"en_US": "Search"}}

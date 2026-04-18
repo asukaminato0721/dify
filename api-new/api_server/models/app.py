@@ -625,7 +625,7 @@ class Message(Base):
     conversation_id: Mapped[str] = mapped_column(StringUUID)
     inputs: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
     query: Mapped[str] = mapped_column(LongText)
-    message: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON, default=None)
+    message: Mapped[Any] = mapped_column(sa.JSON, default=None)
     message_tokens: Mapped[int] = mapped_column(sa.Integer, server_default=sa.text("0"), default=0)
     message_unit_price: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 4), default=None)
     message_price_unit: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 7), default=None)
@@ -657,6 +657,16 @@ class Message(Base):
     @property
     def message_metadata_dict(self) -> dict[str, Any]:
         return json.loads(self.message_metadata) if self.message_metadata else {}
+
+    @property
+    def app_model_config(self) -> AppModelConfig | None:
+        if not self.conversation_id:
+            return None
+        with configured_sync_session_factory.create_session() as session:
+            conversation = session.scalar(select(Conversation).where(Conversation.id == self.conversation_id))
+            if conversation is None or conversation.app_model_config_id is None:
+                return None
+            return session.scalar(select(AppModelConfig).where(AppModelConfig.id == conversation.app_model_config_id))
 
 
 class MessageFile(Base):
@@ -762,6 +772,55 @@ class MessageAnnotation(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+
+class MessageAgentThought(Base):
+    __tablename__ = "message_agent_thoughts"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="message_agent_thought_pkey"),
+        sa.Index("message_agent_thought_message_id_idx", "message_id"),
+        sa.Index("message_agent_thought_message_chain_id_idx", "message_chain_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    message_id: Mapped[str] = mapped_column(StringUUID)
+    position: Mapped[int] = mapped_column(sa.Integer)
+    created_by_role: Mapped[str] = mapped_column(String(255))
+    created_by: Mapped[str] = mapped_column(StringUUID)
+    message_chain_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    thought: Mapped[str | None] = mapped_column(LongText, default=None)
+    tool: Mapped[str | None] = mapped_column(LongText, default=None)
+    tool_labels_str: Mapped[str] = mapped_column(LongText, default="{}")
+    tool_meta_str: Mapped[str] = mapped_column(LongText, default="{}")
+    tool_input: Mapped[str | None] = mapped_column(LongText, default=None)
+    observation: Mapped[str | None] = mapped_column(LongText, default=None)
+    tool_process_data: Mapped[str | None] = mapped_column(LongText, default=None)
+    message: Mapped[str | None] = mapped_column(LongText, default=None)
+    message_token: Mapped[int | None] = mapped_column(sa.Integer, default=None)
+    message_unit_price: Mapped[Decimal | None] = mapped_column(sa.Numeric, default=None)
+    message_price_unit: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 7), default=None)
+    message_files: Mapped[str | None] = mapped_column(LongText, default=None)
+    answer: Mapped[str | None] = mapped_column(LongText, default=None)
+    answer_token: Mapped[int | None] = mapped_column(sa.Integer, default=None)
+    answer_unit_price: Mapped[Decimal | None] = mapped_column(sa.Numeric, default=None)
+    answer_price_unit: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 7), default=None)
+    tokens: Mapped[int | None] = mapped_column(sa.Integer, default=None)
+    total_price: Mapped[Decimal | None] = mapped_column(sa.Numeric, default=None)
+    currency: Mapped[str | None] = mapped_column(String(255), default=None)
+    latency: Mapped[float | None] = mapped_column(sa.Float, default=None)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    @property
+    def files(self) -> list[Any]:
+        return json.loads(self.message_files) if self.message_files else []
+
+    @property
+    def tool_labels(self) -> dict[str, Any]:
+        try:
+            return json.loads(self.tool_labels_str) if self.tool_labels_str else {}
+        except Exception:
+            return {}
 
 
 class AppAnnotationHitHistory(Base):

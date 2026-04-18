@@ -8,6 +8,9 @@ from sqlalchemy import func, select
 
 from api_server.models.app import Conversation as FastAPIConversation
 from api_server.models.app import Message as FastAPIMessage
+from api_server.models.app import MessageAgentThought as FastAPIMessageAgentThought
+from api_server.models.app import MessageFile as FastAPIMessageFile
+from api_server.models.app import AppModelConfig as FastAPIAppModelConfig
 from core.agent.entities import AgentEntity, AgentToolEntity
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
 from core.app.apps.agent_chat.app_config_manager import AgentChatAppConfig
@@ -29,7 +32,7 @@ from core.tools.entities.tool_entities import (
 )
 from core.tools.tool_manager import ToolManager
 from core.tools.utils.dataset_retriever_tool import DatasetRetrieverTool
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from factories import file_factory
 from graphon.file import file_manager
 from graphon.model_runtime.entities import (
@@ -46,7 +49,7 @@ from graphon.model_runtime.entities.message_entities import ImagePromptMessageCo
 from graphon.model_runtime.entities.model_entities import ModelFeature
 from graphon.model_runtime.model_providers.__base.large_language_model import LargeLanguageModel
 from models.enums import CreatorUserRole
-from models.model import Conversation, Message, MessageAgentThought, MessageFile
+from models.model import Conversation, Message, MessageFile
 
 logger = logging.getLogger(__name__)
 _file_access_controller = DatabaseFileAccessController()
@@ -105,17 +108,15 @@ class BaseAgentRunner(AppRunner):
             inputs=cast(dict, application_generate_entity.inputs),
         )
         # get how many agent thoughts have been created
-        self.agent_thought_count = (
-            db.session.scalar(
-                select(func.count())
-                .select_from(MessageAgentThought)
-                .where(
-                    MessageAgentThought.message_id == self.message.id,
+        with session_factory.create_session() as session:
+            self.agent_thought_count = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(FastAPIMessageAgentThought)
+                    .where(FastAPIMessageAgentThought.message_id == self.message.id)
                 )
+                or 0
             )
-            or 0
-        )
-        db.session.close()
 
         # check if model supports stream tool call
         llm_model = cast(LargeLanguageModel, model_instance.model_type_instance)
@@ -296,7 +297,7 @@ class BaseAgentRunner(AppRunner):
         """
         Create agent thought
         """
-        thought = MessageAgentThought(
+        thought = FastAPIMessageAgentThought(
             message_id=message_id,
             message_chain_id=None,
             tool_process_data=None,
@@ -324,11 +325,11 @@ class BaseAgentRunner(AppRunner):
             created_by=self.user_id,
         )
 
-        db.session.add(thought)
-        db.session.commit()
-        agent_thought_id = str(thought.id)
+        with session_factory.get_session_maker().begin() as session:
+            session.add(thought)
+            session.flush()
+            agent_thought_id = str(thought.id)
         self.agent_thought_count += 1
-        db.session.close()
 
         return agent_thought_id
 
@@ -347,78 +348,75 @@ class BaseAgentRunner(AppRunner):
         """
         Save agent thought
         """
-        stmt = select(MessageAgentThought).where(MessageAgentThought.id == agent_thought_id)
-        agent_thought = db.session.scalar(stmt)
-        if not agent_thought:
-            raise ValueError("agent thought not found")
+        with session_factory.get_session_maker().begin() as session:
+            stmt = select(FastAPIMessageAgentThought).where(FastAPIMessageAgentThought.id == agent_thought_id)
+            agent_thought = session.scalar(stmt)
+            if not agent_thought:
+                raise ValueError("agent thought not found")
 
-        if thought:
-            existing_thought = agent_thought.thought or ""
-            agent_thought.thought = f"{existing_thought}{thought}"
+            if thought:
+                existing_thought = agent_thought.thought or ""
+                agent_thought.thought = f"{existing_thought}{thought}"
 
-        if tool_name:
-            agent_thought.tool = tool_name
+            if tool_name:
+                agent_thought.tool = tool_name
 
-        if tool_input:
-            if isinstance(tool_input, dict):
-                try:
-                    tool_input = json.dumps(tool_input, ensure_ascii=False)
-                except Exception:
-                    tool_input = json.dumps(tool_input)
+            if tool_input:
+                if isinstance(tool_input, dict):
+                    try:
+                        tool_input = json.dumps(tool_input, ensure_ascii=False)
+                    except Exception:
+                        tool_input = json.dumps(tool_input)
 
-            agent_thought.tool_input = tool_input
+                agent_thought.tool_input = tool_input
 
-        if observation:
-            if isinstance(observation, dict):
-                try:
-                    observation = json.dumps(observation, ensure_ascii=False)
-                except Exception:
-                    observation = json.dumps(observation)
+            if observation:
+                if isinstance(observation, dict):
+                    try:
+                        observation = json.dumps(observation, ensure_ascii=False)
+                    except Exception:
+                        observation = json.dumps(observation)
 
-            agent_thought.observation = observation
+                agent_thought.observation = observation
 
-        if answer:
-            agent_thought.answer = answer
+            if answer:
+                agent_thought.answer = answer
 
-        if messages_ids is not None and len(messages_ids) > 0:
-            agent_thought.message_files = json.dumps(messages_ids)
+            if messages_ids:
+                agent_thought.message_files = json.dumps(messages_ids)
 
-        if llm_usage:
-            agent_thought.message_token = llm_usage.prompt_tokens
-            agent_thought.message_price_unit = llm_usage.prompt_price_unit
-            agent_thought.message_unit_price = llm_usage.prompt_unit_price
-            agent_thought.answer_token = llm_usage.completion_tokens
-            agent_thought.answer_price_unit = llm_usage.completion_price_unit
-            agent_thought.answer_unit_price = llm_usage.completion_unit_price
-            agent_thought.tokens = llm_usage.total_tokens
-            agent_thought.total_price = llm_usage.total_price
+            if llm_usage:
+                agent_thought.message_token = llm_usage.prompt_tokens
+                agent_thought.message_price_unit = llm_usage.prompt_price_unit
+                agent_thought.message_unit_price = llm_usage.prompt_unit_price
+                agent_thought.answer_token = llm_usage.completion_tokens
+                agent_thought.answer_price_unit = llm_usage.completion_price_unit
+                agent_thought.answer_unit_price = llm_usage.completion_unit_price
+                agent_thought.tokens = llm_usage.total_tokens
+                agent_thought.total_price = llm_usage.total_price
 
-        # check if tool labels is not empty
-        labels = agent_thought.tool_labels or {}
-        tools = agent_thought.tool.split(";") if agent_thought.tool else []
-        for tool in tools:
-            if not tool:
-                continue
-            if tool not in labels:
-                tool_label = ToolManager.get_tool_label(tool)
-                if tool_label:
-                    labels[tool] = tool_label.to_dict()
-                else:
-                    labels[tool] = {"en_US": tool, "zh_Hans": tool}
+            labels = agent_thought.tool_labels or {}
+            tools = agent_thought.tool.split(";") if agent_thought.tool else []
+            for tool in tools:
+                if not tool:
+                    continue
+                if tool not in labels:
+                    tool_label = ToolManager.get_tool_label(tool)
+                    if tool_label:
+                        labels[tool] = tool_label.to_dict()
+                    else:
+                        labels[tool] = {"en_US": tool, "zh_Hans": tool}
 
-        agent_thought.tool_labels_str = json.dumps(labels)
+            agent_thought.tool_labels_str = json.dumps(labels)
 
-        if tool_invoke_meta is not None:
-            if isinstance(tool_invoke_meta, dict):
-                try:
-                    tool_invoke_meta = json.dumps(tool_invoke_meta, ensure_ascii=False)
-                except Exception:
-                    tool_invoke_meta = json.dumps(tool_invoke_meta)
+            if tool_invoke_meta is not None:
+                if isinstance(tool_invoke_meta, dict):
+                    try:
+                        tool_invoke_meta = json.dumps(tool_invoke_meta, ensure_ascii=False)
+                    except Exception:
+                        tool_invoke_meta = json.dumps(tool_invoke_meta)
 
-            agent_thought.tool_meta_str = tool_invoke_meta
-
-        db.session.commit()
-        db.session.close()
+                agent_thought.tool_meta_str = tool_invoke_meta
 
     def organize_agent_history(self, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
         """
@@ -430,17 +428,16 @@ class BaseAgentRunner(AppRunner):
             if isinstance(prompt_message, SystemPromptMessage):
                 result.append(prompt_message)
 
-        messages = (
-            (
-                db.session.execute(
-                    select(Message)
-                    .where(Message.conversation_id == self.message.conversation_id)
-                    .order_by(Message.created_at.desc())
+        with session_factory.create_session() as session:
+            messages = (
+                session.execute(
+                    select(FastAPIMessage)
+                    .where(FastAPIMessage.conversation_id == self.message.conversation_id)
+                    .order_by(FastAPIMessage.created_at.desc())
                 )
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
 
         messages = list(reversed(extract_thread_messages(messages)))
 
@@ -449,7 +446,12 @@ class BaseAgentRunner(AppRunner):
                 continue
 
             result.append(self.organize_agent_user_prompt(message))
-            agent_thoughts = message.agent_thoughts
+            with session_factory.create_session() as session:
+                agent_thoughts = session.scalars(
+                    select(FastAPIMessageAgentThought)
+                    .where(FastAPIMessageAgentThought.message_id == message.id)
+                    .order_by(FastAPIMessageAgentThought.position.asc())
+                ).all()
             if agent_thoughts:
                 for agent_thought in agent_thoughts:
                     tool_names_raw = agent_thought.tool
@@ -510,20 +512,25 @@ class BaseAgentRunner(AppRunner):
             else:
                 if message.answer:
                     result.append(AssistantPromptMessage(content=message.answer))
-
-        db.session.close()
-
         return result
 
-    def organize_agent_user_prompt(self, message: Message) -> UserPromptMessage:
-        stmt = select(MessageFile).where(MessageFile.message_id == message.id)
-        files = db.session.scalars(stmt).all()
+    def organize_agent_user_prompt(self, message: Message | FastAPIMessage) -> UserPromptMessage:
+        with session_factory.create_session() as session:
+            stmt = select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == message.id)
+            files = session.scalars(stmt).all()
         if not files:
             return UserPromptMessage(content=message.query)
-        if message.app_model_config:
-            file_extra_config = FileUploadConfigManager.convert(message.app_model_config.to_dict())
-        else:
-            file_extra_config = None
+        file_extra_config = None
+        with session_factory.create_session() as session:
+            conversation = session.scalar(
+                select(FastAPIConversation).where(FastAPIConversation.id == message.conversation_id)
+            )
+            if conversation and conversation.app_model_config_id:
+                app_model_config = session.scalar(
+                    select(FastAPIAppModelConfig).where(FastAPIAppModelConfig.id == conversation.app_model_config_id)
+                )
+                if app_model_config:
+                    file_extra_config = FileUploadConfigManager.convert(app_model_config.to_dict())
 
         if not file_extra_config:
             return UserPromptMessage(content=message.query)

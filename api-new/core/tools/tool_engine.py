@@ -9,6 +9,8 @@ from typing import Any, Union, cast
 
 from yarl import URL
 
+from api_server.models.app import Message as FastAPIMessage
+from api_server.models.app import MessageFile as FastAPIMessageFile
 from core.app.entities.app_invoke_entities import InvokeFrom
 from core.callback_handler.agent_tool_callback_handler import DifyAgentCallbackHandler
 from core.callback_handler.workflow_tool_callback_handler import DifyWorkflowCallbackHandler
@@ -31,10 +33,10 @@ from core.tools.errors import (
 )
 from core.tools.utils.message_transformer import ToolFileMessageTransformer, safe_json_value
 from core.tools.workflow_as_tool.tool import WorkflowTool
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from graphon.file import FileTransferMethod, FileType
 from models.enums import CreatorUserRole, MessageFileBelongsTo
-from models.model import Message, MessageFile
+from models.model import Message
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ class ToolEngine:
         tool_parameters: Union[str, dict[str, Any]],
         user_id: str,
         tenant_id: str,
-        message: Message,
+        message: Message | FastAPIMessage,
         invoke_from: InvokeFrom,
         agent_tool_callback: DifyAgentCallbackHandler,
         trace_manager: TraceQueueManager | None = None,
@@ -358,7 +360,7 @@ class ToolEngine:
     @staticmethod
     def _create_message_files(
         tool_messages: Iterable[ToolInvokeMessageBinary],
-        agent_message: Message,
+        agent_message: Message | FastAPIMessage,
         invoke_from: InvokeFrom,
         user_id: str,
     ) -> list[str]:
@@ -383,7 +385,7 @@ class ToolEngine:
 
             # extract tool file id from url
             tool_file_id = message.url.split("/")[-1].split(".")[0]
-            message_file = MessageFile(
+            message_file = FastAPIMessageFile(
                 message_id=agent_message.id,
                 type=file_type,
                 transfer_method=FileTransferMethod.TOOL_FILE,
@@ -398,12 +400,11 @@ class ToolEngine:
                 created_by=user_id,
             )
 
-            db.session.add(message_file)
-            _ = db.session.commit()
-            _ = db.session.refresh(message_file)
+            with session_factory.get_session_maker().begin() as session:
+                session.add(message_file)
+                session.flush()
+                session.refresh(message_file)
 
             result.append(message_file.id)
-
-        _ = db.session.close()
 
         return result
