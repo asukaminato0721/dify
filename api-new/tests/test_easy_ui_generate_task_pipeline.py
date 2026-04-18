@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
 
+from api_server.models.app import Message
 from core.app.entities.task_entities import EasyUITaskState
 from core.app.task_pipeline.message_cycle_manager import MessageCycleManager
 from core.app.entities.queue_entities import QueueAgentThoughtEvent, QueueMessageFileEvent
@@ -86,3 +87,73 @@ def test_message_end_to_stream_response_uses_cached_files_without_sync_lookup() 
 
     assert response.files is not None
     assert response.files[0]["related_id"] == "file-1"
+
+
+class _SessionUpdateStub:
+    def __init__(self) -> None:
+        self.executed: list[object] = []
+
+    def scalar(self, _stmt: object) -> object:
+        raise AssertionError("session.scalar should not be used")
+
+    def execute(self, stmt: object) -> None:
+        self.executed.append(stmt)
+
+
+def test_save_message_uses_cached_message_without_sync_reload() -> None:
+    pipeline = cast(Any, EasyUIBasedGenerateTaskPipeline.__new__(EasyUIBasedGenerateTaskPipeline))
+    pipeline._message_id = "message-1"
+    pipeline._conversation_id = "conversation-1"
+    pipeline._model_config = SimpleNamespace(mode="chat")
+    pipeline._application_generate_entity = SimpleNamespace(task_id="task-1")
+    pipeline._task_state = EasyUITaskState(
+        llm_result=LLMResult(
+            model="test-model",
+            prompt_messages=[],
+            message=AssistantPromptMessage(content="done"),
+            usage=LLMUsage.empty_usage(),
+        )
+    )
+    pipeline._message = Message(
+        id="message-1",
+        app_id="app-1",
+        model_provider=None,
+        model_id=None,
+        override_model_configs=None,
+        conversation_id="conversation-1",
+        inputs={},
+        query="hello",
+        message={},
+        message_tokens=0,
+        message_unit_price=0,
+        message_price_unit=0,
+        answer="",
+        answer_tokens=0,
+        answer_unit_price=0,
+        answer_price_unit=0,
+        parent_message_id=None,
+        provider_response_latency=0.0,
+        total_price=0,
+        currency="USD",
+        status="normal",
+        error=None,
+        message_metadata=None,
+        invoke_from="web-app",
+        from_source="api",
+        from_end_user_id="end-user-1",
+        from_account_id=None,
+        agent_based=False,
+        workflow_run_id=None,
+        app_mode="chat",
+    )
+    pipeline.start_at = 0.0
+
+    session = _SessionUpdateStub()
+    with patch(
+        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.PromptMessageUtil.prompt_messages_to_prompt_for_saving",
+        return_value={},
+    ):
+        pipeline._save_message(session=session, trace_manager=None)
+
+    assert pipeline._message.answer == "done"
+    assert len(session.executed) == 1

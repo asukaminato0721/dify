@@ -4,7 +4,7 @@ from collections.abc import Generator
 from threading import Thread
 from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from api_server.models.app import Conversation as FastAPIConversation
@@ -96,6 +96,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
 
         self._conversation_id = conversation.id
         self._conversation_mode = conversation.mode
+        self._message = message
 
         self._message_id = message.id
         created_at = message.created_at or naive_utc_now()
@@ -382,38 +383,49 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         llm_result = self._task_state.llm_result
         usage = llm_result.usage
 
-        message_stmt = select(FastAPIMessage).where(FastAPIMessage.id == self._message_id)
-        message = session.scalar(message_stmt)
-        if not message:
-            raise ValueError(f"message {self._message_id} not found")
-        conversation_stmt = select(FastAPIConversation).where(FastAPIConversation.id == self._conversation_id)
-        conversation = session.scalar(conversation_stmt)
-        if not conversation:
-            raise ValueError(f"Conversation {self._conversation_id} not found")
-
-        message.message = cast(
+        self._message.message = cast(
             Any,
             PromptMessageUtil.prompt_messages_to_prompt_for_saving(
                 self._model_config.mode, self._task_state.llm_result.prompt_messages
             ),
         )
-        message.message_tokens = usage.prompt_tokens
-        message.message_unit_price = usage.prompt_unit_price
-        message.message_price_unit = usage.prompt_price_unit
-        message.answer = (
+        self._message.message_tokens = usage.prompt_tokens
+        self._message.message_unit_price = usage.prompt_unit_price
+        self._message.message_price_unit = usage.prompt_price_unit
+        self._message.answer = (
             PromptTemplateParser.remove_template_variables(llm_result.message.get_text_content().strip())
             if llm_result.message.content
             else ""
         )
-        message.updated_at = naive_utc_now()
-        message.answer_tokens = usage.completion_tokens
-        message.answer_unit_price = usage.completion_unit_price
-        message.answer_price_unit = usage.completion_price_unit
-        message.provider_response_latency = time.perf_counter() - self.start_at
-        message.total_price = usage.total_price
-        message.currency = usage.currency
-        self._task_state.llm_result.usage.latency = message.provider_response_latency
-        message.message_metadata = self._task_state.metadata.model_dump_json()
+        self._message.updated_at = naive_utc_now()
+        self._message.answer_tokens = usage.completion_tokens
+        self._message.answer_unit_price = usage.completion_unit_price
+        self._message.answer_price_unit = usage.completion_price_unit
+        self._message.provider_response_latency = time.perf_counter() - self.start_at
+        self._message.total_price = usage.total_price
+        self._message.currency = usage.currency
+        self._task_state.llm_result.usage.latency = self._message.provider_response_latency
+        self._message.message_metadata = self._task_state.metadata.model_dump_json()
+
+        session.execute(
+            update(FastAPIMessage)
+            .where(FastAPIMessage.id == self._message_id)
+            .values(
+                message=self._message.message,
+                message_tokens=self._message.message_tokens,
+                message_unit_price=self._message.message_unit_price,
+                message_price_unit=self._message.message_price_unit,
+                answer=self._message.answer,
+                updated_at=self._message.updated_at,
+                answer_tokens=self._message.answer_tokens,
+                answer_unit_price=self._message.answer_unit_price,
+                answer_price_unit=self._message.answer_price_unit,
+                provider_response_latency=self._message.provider_response_latency,
+                total_price=self._message.total_price,
+                currency=self._message.currency,
+                message_metadata=self._message.message_metadata,
+            )
+        )
 
         if trace_manager:
             trace_manager.add_trace_task(
@@ -423,7 +435,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
             )
 
         message_was_created.send(
-            message,
+            self._message,
             application_generate_entity=self._application_generate_entity,
         )
 
