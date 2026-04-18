@@ -331,6 +331,192 @@ async def test_service_api_documents_metadata_route_uses_dataset_context() -> No
     )
 
 
+async def test_service_api_dataset_tags_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    payload = [{"id": "tag-1", "name": "knowledge", "type": "knowledge", "binding_count": 1}]
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetTagService.list_tags",
+            new=AsyncMock(return_value=payload),
+        ) as tags_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/v1/datasets/tags",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    tags_mock.assert_awaited_once_with(tenant_id="tenant-1")
+
+
+async def test_service_api_dataset_tag_create_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    owner = type("OwnerStub", (), {"id": "owner-1"})()
+    payload = {"id": "tag-1", "name": "knowledge", "type": "knowledge", "binding_count": 0}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_owner_account",
+            new=AsyncMock(return_value=owner),
+        ) as owner_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetTagService.create_tag",
+            new=AsyncMock(return_value=payload),
+        ) as tags_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/datasets/tags",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"name": "knowledge"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    owner_mock.assert_awaited_once_with(tenant_id="tenant-1")
+    tags_mock.assert_awaited_once_with(tenant_id="tenant-1", owner_account_id="owner-1", name="knowledge")
+
+
+async def test_service_api_dataset_tag_update_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    payload = {"id": "tag-1", "name": "knowledge", "type": "knowledge", "binding_count": 2}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetTagService.update_tag",
+            new=AsyncMock(return_value=payload),
+        ) as tags_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.patch(
+                "/v1/datasets/tags",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"tag_id": "tag-1", "name": "knowledge"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    tags_mock.assert_awaited_once_with(tenant_id="tenant-1", tag_id="tag-1", name="knowledge")
+
+
+async def test_service_api_dataset_tag_delete_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetTagService.delete_tag",
+            new=AsyncMock(return_value=None),
+        ) as tags_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.request(
+                "DELETE",
+                "/v1/datasets/tags",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"tag_id": "tag-1"},
+            )
+
+    assert response.status_code == 204
+    auth_mock.assert_awaited_once()
+    tags_mock.assert_awaited_once_with(tenant_id="tenant-1", tag_id="tag-1")
+
+
+async def test_service_api_dataset_tag_binding_routes_use_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    owner = type("OwnerStub", (), {"id": "owner-1"})()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_owner_account",
+            new=AsyncMock(return_value=owner),
+        ) as owner_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetTagService.bind_tags",
+            new=AsyncMock(return_value=None),
+        ) as bind_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetTagService.unbind_tag",
+            new=AsyncMock(return_value=None),
+        ) as unbind_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            bind_response = await client.post(
+                "/v1/datasets/tags/binding",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"tag_ids": ["tag-1"], "target_id": "dataset-1"},
+            )
+            unbind_response = await client.post(
+                "/v1/datasets/tags/unbinding",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"tag_id": "tag-1", "target_id": "dataset-1"},
+            )
+
+    assert bind_response.status_code == 204
+    assert unbind_response.status_code == 204
+    assert auth_mock.await_count == 2
+    owner_mock.assert_awaited_once_with(tenant_id="tenant-1")
+    bind_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        owner_account_id="owner-1",
+        tag_ids=["tag-1"],
+        dataset_id="dataset-1",
+    )
+    unbind_mock.assert_awaited_once_with(tenant_id="tenant-1", tag_id="tag-1", dataset_id="dataset-1")
+
+
+async def test_service_api_dataset_tag_binding_status_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    payload = {"data": [{"id": "tag-1", "name": "knowledge"}], "total": 1}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetTagService.list_dataset_tags",
+            new=AsyncMock(return_value=payload),
+        ) as tags_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/tags",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    tags_mock.assert_awaited_once_with(tenant_id="tenant-1", dataset_id=dataset_id)
+
+
 async def test_service_api_site_route_uses_auth_and_resource_services() -> None:
     with (
         patch(

@@ -46,6 +46,11 @@ from api_server.services.service_api_dataset_metadata import (
     ServiceApiDatasetMetadataService,
     ServiceApiMetadataOperationItemDict,
 )
+from api_server.services.service_api_dataset_tags import (
+    ServiceApiDatasetTagBindingStatusDict,
+    ServiceApiDatasetTagDict,
+    ServiceApiDatasetTagService,
+)
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
@@ -221,6 +226,29 @@ class ServiceApiDocumentMetadataOperationPayload(BaseModel):
 
 class ServiceApiMetadataOperationDataPayload(BaseModel):
     operation_data: list[ServiceApiDocumentMetadataOperationPayload]
+
+
+class ServiceApiDatasetTagCreatePayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+
+
+class ServiceApiDatasetTagUpdatePayload(BaseModel):
+    tag_id: str
+    name: str = Field(..., min_length=1, max_length=50)
+
+
+class ServiceApiDatasetTagDeletePayload(BaseModel):
+    tag_id: str
+
+
+class ServiceApiDatasetTagBindingPayload(BaseModel):
+    tag_ids: list[str]
+    target_id: str
+
+
+class ServiceApiDatasetTagUnbindingPayload(BaseModel):
+    tag_id: str
+    target_id: str
 
 
 class ServiceApiAnnotationCreatePayload(BaseModel):
@@ -401,6 +429,88 @@ async def update_service_api_documents_metadata(
         operation_data=operation_data,
     )
     return {"result": result["result"]}
+
+
+@router.get("/v1/datasets/tags")
+async def list_service_api_dataset_tags(request: Request) -> list[ServiceApiDatasetTagDict]:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetTagService.list_tags(tenant_id=context.tenant.id)
+
+
+@router.post("/v1/datasets/tags")
+async def create_service_api_dataset_tag(
+    request: Request,
+    payload: ServiceApiDatasetTagCreatePayload,
+) -> ServiceApiDatasetTagDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    owner_account = await ServiceApiAuthService.resolve_owner_account(tenant_id=context.tenant.id)
+    return await ServiceApiDatasetTagService.create_tag(
+        tenant_id=context.tenant.id,
+        owner_account_id=owner_account.id,
+        name=payload.name,
+    )
+
+
+@router.patch("/v1/datasets/tags")
+async def update_service_api_dataset_tag(
+    request: Request,
+    payload: ServiceApiDatasetTagUpdatePayload,
+) -> ServiceApiDatasetTagDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetTagService.update_tag(
+        tenant_id=context.tenant.id,
+        tag_id=payload.tag_id,
+        name=payload.name,
+    )
+
+
+@router.delete("/v1/datasets/tags", status_code=204, response_model=None)
+async def delete_service_api_dataset_tag(
+    request: Request,
+    payload: ServiceApiDatasetTagDeletePayload,
+) -> None:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    await ServiceApiDatasetTagService.delete_tag(tenant_id=context.tenant.id, tag_id=payload.tag_id)
+
+
+@router.post("/v1/datasets/tags/binding", status_code=204, response_model=None)
+async def bind_service_api_dataset_tags(
+    request: Request,
+    payload: ServiceApiDatasetTagBindingPayload,
+) -> None:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    owner_account = await ServiceApiAuthService.resolve_owner_account(tenant_id=context.tenant.id)
+    await ServiceApiDatasetTagService.bind_tags(
+        tenant_id=context.tenant.id,
+        owner_account_id=owner_account.id,
+        tag_ids=payload.tag_ids,
+        dataset_id=payload.target_id,
+    )
+
+
+@router.post("/v1/datasets/tags/unbinding", status_code=204, response_model=None)
+async def unbind_service_api_dataset_tag(
+    request: Request,
+    payload: ServiceApiDatasetTagUnbindingPayload,
+) -> None:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    await ServiceApiDatasetTagService.unbind_tag(
+        tenant_id=context.tenant.id,
+        tag_id=payload.tag_id,
+        dataset_id=payload.target_id,
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/tags")
+async def list_service_api_dataset_tag_bindings(
+    request: Request,
+    dataset_id: UUID,
+) -> ServiceApiDatasetTagBindingStatusDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetTagService.list_dataset_tags(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+    )
 
 
 @router.get("/v1/site")
