@@ -56,9 +56,9 @@ from core.app.entities.task_entities import (
 )
 from core.app.task_pipeline.based_generate_task_pipeline import BasedGenerateTaskPipeline
 from core.base.tts import AppGeneratorTTSPublisher, AudioTrunk
+from core.db.session_factory import session_factory as sync_session_factory
 from core.ops.ops_trace_manager import TraceQueueManager
 from core.workflow.system_variables import build_system_variables
-from extensions.ext_database import db
 from graphon.entities import WorkflowStartReason
 from graphon.enums import WorkflowExecutionStatus
 from graphon.runtime import GraphRuntimeState
@@ -265,10 +265,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
             with sessionmaker(bind=session_factory, expire_on_commit=False).begin() as session:
                 yield session
             return
-        sync_engine = getattr(db.engine, "sync_engine", None)
-        if not isinstance(sync_engine, Engine):
-            raise RuntimeError("WorkflowAppGenerateTaskPipeline requires a sync SQLAlchemy engine for workflow logs.")
-        with sessionmaker(bind=sync_engine, expire_on_commit=False).begin() as session:
+        with sync_session_factory.get_session_maker().begin() as session:
             yield session
 
     def _ensure_workflow_initialized(self):

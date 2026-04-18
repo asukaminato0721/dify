@@ -47,6 +47,7 @@ from core.app.entities.task_entities import (
     WorkflowPauseStreamResponse,
     WorkflowStartStreamResponse,
 )
+from core.db.session_factory import session_factory as sync_session_factory
 from core.plugin.impl.datasource import PluginDatasourceManager
 from core.tools.entities.tool_entities import ToolProviderType
 from core.tools.tool_manager import ToolManager
@@ -55,7 +56,6 @@ from core.trigger.trigger_manager import TriggerManager
 from core.workflow.human_input_forms import load_form_tokens_by_form_id
 from core.workflow.system_variables import SystemVariableKey, system_variables_to_mapping
 from core.workflow.workflow_entry import WorkflowEntry
-from extensions.ext_database import db
 from graphon.entities import WorkflowStartReason
 from graphon.entities.pause_reason import HumanInputRequired
 from graphon.enums import (
@@ -139,10 +139,7 @@ class WorkflowResponseConverter:
             return session_factory()
         if isinstance(session_factory, Engine):
             return Session(bind=session_factory)
-        sync_engine = getattr(db.engine, "sync_engine", None)
-        if isinstance(sync_engine, Engine):
-            return Session(bind=sync_engine)
-        raise RuntimeError("WorkflowResponseConverter requires a sync SQLAlchemy engine for pause-form lookups.")
+        return sync_session_factory.create_session()
 
     # ------------------------------------------------------------------
     # Workflow lifecycle helpers
