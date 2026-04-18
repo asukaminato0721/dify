@@ -945,6 +945,55 @@ async def _load_thread_messages_length_async(*, conversation_id: str, message_mo
     return len(thread_messages)
 
 
+async def _prefetch_agent_chat_memory_async(
+    *,
+    session: AsyncSession,
+    conversation: Conversation,
+    app_model: FastAPIApp,
+    app_model_config: AppModelConfig,
+) -> None:
+    """Attach request-stage agent memory state so sync runners avoid reopening sessions on the active path."""
+
+    setattr(conversation, "_cached_app", app_model)
+    setattr(conversation, "_cached_app_model_config", app_model_config)
+
+    history_messages = (
+        await session.scalars(
+            select(Message)
+            .where(Message.conversation_id == conversation.id)
+            .order_by(Message.created_at.desc())
+            .limit(500)
+        )
+    ).all()
+    setattr(conversation, "_cached_history_messages", list(history_messages))
+
+    if not history_messages:
+        return
+
+    message_ids = [message.id for message in history_messages]
+    history_files = (
+        await session.scalars(select(MessageFile).where(MessageFile.message_id.in_(message_ids)))
+    ).all()
+
+    files_by_message_id: dict[str, list[MessageFile]] = {message_id: [] for message_id in message_ids}
+    for message_file in history_files:
+        files_by_message_id.setdefault(message_file.message_id, []).append(message_file)
+
+    for history_message in history_messages:
+        message_files = files_by_message_id.get(history_message.id, [])
+        user_files = [
+            message_file
+            for message_file in message_files
+            if message_file.belongs_to in {None, MessageFileBelongsTo.USER.value}
+        ]
+        assistant_files = [
+            message_file for message_file in message_files if message_file.belongs_to == MessageFileBelongsTo.ASSISTANT.value
+        ]
+        setattr(history_message, "_cached_user_message_files", user_files)
+        setattr(history_message, "_cached_assistant_message_files", assistant_files)
+        setattr(history_message, "_cached_app_model_config", app_model_config)
+
+
 def _run_advanced_chat_runner(
     *,
     application_generate_entity: AdvancedChatAppGenerateEntity,
@@ -1330,9 +1379,13 @@ async def _prepare_native_public_agent_chat(
             end_user=end_user,
             conversation=conversation,
         )
+        await _prefetch_agent_chat_memory_async(
+            session=session,
+            conversation=conversation,
+            app_model=app_model,
+            app_model_config=app_model_config,
+        )
 
-    setattr(conversation, "_cached_app", app_model)
-    setattr(conversation, "_cached_app_model_config", app_model_config)
     setattr(message, "_cached_app_model_config", app_model_config)
 
     return _PreparedAgentChatRun(

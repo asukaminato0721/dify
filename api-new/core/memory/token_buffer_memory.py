@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from typing import cast
 
 from sqlalchemy import select
 from api_server.models.app import App as FastAPIApp
@@ -47,6 +48,66 @@ class TokenBufferMemory:
             )
         return self._workflow_run_repo
 
+    def _load_workflow(self, *, message: FastAPIMessage) -> FastAPIWorkflow:
+        cached_workflow = getattr(message, "_cached_workflow", None)
+        if isinstance(cached_workflow, FastAPIWorkflow):
+            return cached_workflow
+
+        app = self.conversation.app
+        if not app:
+            raise ValueError("App not found for conversation")
+
+        if not message.workflow_run_id:
+            raise ValueError("Workflow run ID not found")
+
+        workflow_run = self.workflow_run_repo.get_workflow_run_by_id(
+            tenant_id=app.tenant_id, app_id=app.id, run_id=message.workflow_run_id
+        )
+        if not workflow_run:
+            raise ValueError(f"Workflow run not found: {message.workflow_run_id}")
+        with session_factory.create_session() as session:
+            workflow = session.scalar(select(FastAPIWorkflow).where(FastAPIWorkflow.id == workflow_run.workflow_id))
+        if not workflow:
+            raise ValueError(f"Workflow not found: {workflow_run.workflow_id}")
+        return workflow
+
+    def _load_history_messages(self, *, message_limit: int) -> list[FastAPIMessage]:
+        cached_messages = getattr(self.conversation, "_cached_history_messages", None)
+        if isinstance(cached_messages, list):
+            return cast(list[FastAPIMessage], cached_messages[:message_limit])
+
+        stmt = (
+            select(FastAPIMessage)
+            .where(FastAPIMessage.conversation_id == self.conversation.id)
+            .order_by(FastAPIMessage.created_at.desc())
+            .limit(message_limit)
+        )
+        with session_factory.create_session() as session:
+            return list(session.scalars(stmt).all())
+
+    def _load_message_files(self, *, message: FastAPIMessage, belongs_to: str) -> list[FastAPIMessageFile]:
+        cache_attr = "_cached_user_message_files" if belongs_to == "user" else "_cached_assistant_message_files"
+        cached_files = getattr(message, cache_attr, None)
+        if isinstance(cached_files, list):
+            return cast(list[FastAPIMessageFile], cached_files)
+
+        with session_factory.create_session() as session:
+            if belongs_to == "user":
+                message_files = session.scalars(
+                    select(FastAPIMessageFile).where(
+                        FastAPIMessageFile.message_id == message.id,
+                        (FastAPIMessageFile.belongs_to == "user") | (FastAPIMessageFile.belongs_to.is_(None)),
+                    )
+                ).all()
+            else:
+                message_files = session.scalars(
+                    select(FastAPIMessageFile).where(
+                        FastAPIMessageFile.message_id == message.id,
+                        FastAPIMessageFile.belongs_to == "assistant",
+                    )
+                ).all()
+        return list(message_files)
+
     def _build_prompt_message_with_files(
         self,
         message_files: Sequence[FastAPIMessageFile],
@@ -69,22 +130,7 @@ class TokenBufferMemory:
             case FastAPIAppMode.AGENT_CHAT | FastAPIAppMode.COMPLETION | FastAPIAppMode.CHAT:
                 file_extra_config = FileUploadConfigManager.convert(self.conversation.model_config)
             case FastAPIAppMode.ADVANCED_CHAT | FastAPIAppMode.WORKFLOW:
-                app = self.conversation.app
-                if not app:
-                    raise ValueError("App not found for conversation")
-
-                if not message.workflow_run_id:
-                    raise ValueError("Workflow run ID not found")
-
-                workflow_run = self.workflow_run_repo.get_workflow_run_by_id(
-                    tenant_id=app.tenant_id, app_id=app.id, run_id=message.workflow_run_id
-                )
-                if not workflow_run:
-                    raise ValueError(f"Workflow run not found: {message.workflow_run_id}")
-                with session_factory.create_session() as session:
-                    workflow = session.scalar(select(FastAPIWorkflow).where(FastAPIWorkflow.id == workflow_run.workflow_id))
-                if not workflow:
-                    raise ValueError(f"Workflow not found: {workflow_run.workflow_id}")
+                workflow = self._load_workflow(message=message)
                 file_extra_config = FileUploadConfigManager.convert(workflow.features_dict, is_vision=False)
             case _:
                 raise AssertionError(f"Invalid app mode: {self.conversation.mode}")
@@ -136,22 +182,12 @@ class TokenBufferMemory:
         """
         app_record = self.conversation.app
 
-        # fetch limited messages, and return reversed
-        stmt = (
-            select(FastAPIMessage)
-            .where(FastAPIMessage.conversation_id == self.conversation.id)
-            .order_by(FastAPIMessage.created_at.desc())
-        )
-
         if message_limit and message_limit > 0:
             message_limit = min(message_limit, 500)
         else:
             message_limit = 500
 
-        msg_limit_stmt = stmt.limit(message_limit)
-
-        with session_factory.create_session() as session:
-            messages = session.scalars(msg_limit_stmt).all()
+        messages = self._load_history_messages(message_limit=message_limit)
 
         # instead of all messages from the conversation, we only need to extract messages
         # that belong to the thread of last message
@@ -167,13 +203,7 @@ class TokenBufferMemory:
         prompt_messages: list[PromptMessage] = []
         for message in messages:
             # Process user message with files
-            with session_factory.create_session() as session:
-                user_files = session.scalars(
-                    select(FastAPIMessageFile).where(
-                    FastAPIMessageFile.message_id == message.id,
-                    (FastAPIMessageFile.belongs_to == "user") | (FastAPIMessageFile.belongs_to.is_(None)),
-                )
-                ).all()
+            user_files = self._load_message_files(message=message, belongs_to="user")
 
             if user_files:
                 user_prompt_message = self._build_prompt_message_with_files(
@@ -188,13 +218,7 @@ class TokenBufferMemory:
                 prompt_messages.append(UserPromptMessage(content=message.query))
 
             # Process assistant message with files
-            with session_factory.create_session() as session:
-                assistant_files = session.scalars(
-                    select(FastAPIMessageFile).where(
-                        FastAPIMessageFile.message_id == message.id,
-                        FastAPIMessageFile.belongs_to == "assistant",
-                    )
-                ).all()
+            assistant_files = self._load_message_files(message=message, belongs_to="assistant")
 
             if assistant_files:
                 assistant_prompt_message = self._build_prompt_message_with_files(
