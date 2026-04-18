@@ -176,6 +176,104 @@ async def test_service_api_datasets_list_route_uses_dataset_context() -> None:
     )
 
 
+async def test_service_api_documents_list_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    payload = {"data": [], "has_more": False, "limit": 20, "total": 0, "page": 1}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDocumentService.list_documents",
+            new=AsyncMock(return_value=payload),
+        ) as document_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/documents",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    document_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        page=1,
+        limit=20,
+        keyword=None,
+        status=None,
+    )
+
+
+async def test_service_api_document_detail_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    document_id = str(uuid4())
+    payload = {"id": document_id, "name": "Doc 1"}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDocumentService.get_document_detail",
+            new=AsyncMock(return_value=payload),
+        ) as document_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/documents/{document_id}",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    document_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        document_id=document_id,
+        metadata="all",
+    )
+
+
+async def test_service_api_document_indexing_status_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    payload = {"data": []}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDocumentService.get_batch_indexing_status",
+            new=AsyncMock(return_value=payload),
+        ) as document_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/documents/batch-1/indexing-status",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    document_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        batch="batch-1",
+    )
+
+
 async def test_service_api_dataset_detail_route_uses_dataset_context() -> None:
     context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
     dataset_id = str(uuid4())

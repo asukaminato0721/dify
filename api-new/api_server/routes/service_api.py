@@ -52,6 +52,11 @@ from api_server.services.service_api_dataset_tags import (
     ServiceApiDatasetTagService,
 )
 from api_server.services.service_api_datasets import ServiceApiDatasetListResponseDict, ServiceApiDatasetService
+from api_server.services.service_api_documents import (
+    ServiceApiDocumentListResponseDict,
+    ServiceApiDocumentService,
+    ServiceApiDocumentStatusResponseDict,
+)
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
@@ -127,6 +132,13 @@ class ServiceApiDatasetListQuery(BaseModel):
     keyword: str | None = Field(default=None)
     include_all: bool = Field(default=False)
     tag_ids: list[str] = Field(default_factory=list)
+
+
+class ServiceApiDocumentListQuery(BaseModel):
+    page: int = Field(default=1)
+    limit: int = Field(default=20)
+    keyword: str | None = Field(default=None)
+    status: str | None = Field(default=None)
 
 
 class ServiceApiMessageFeedbackPayload(BaseModel):
@@ -347,6 +359,56 @@ async def list_service_api_datasets(
         keyword=keyword,
         include_all=include_all,
         tag_ids=tag_ids or [],
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/documents")
+async def list_service_api_documents(
+    request: Request,
+    dataset_id: UUID,
+    page: int = Query(default=1),
+    limit: int = Query(default=20),
+    keyword: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+) -> ServiceApiDocumentListResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDocumentService.list_documents(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        page=page,
+        limit=limit,
+        keyword=keyword,
+        status=status,
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/documents/{batch}/indexing-status")
+async def get_service_api_document_indexing_status(
+    request: Request,
+    dataset_id: UUID,
+    batch: str,
+) -> ServiceApiDocumentStatusResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDocumentService.get_batch_indexing_status(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        batch=batch,
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/documents/{document_id}")
+async def get_service_api_document_detail(
+    request: Request,
+    dataset_id: UUID,
+    document_id: UUID,
+    metadata: str = Query(default="all"),
+) -> dict[str, object]:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDocumentService.get_document_detail(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_id=str(document_id),
+        metadata=metadata,
     )
 
 

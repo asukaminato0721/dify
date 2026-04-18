@@ -104,16 +104,37 @@ class Document(TypeBase):
     id: Mapped[str] = mapped_column(StringUUID, init=False)
     tenant_id: Mapped[str] = mapped_column(StringUUID, init=False)
     dataset_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    position: Mapped[int] = mapped_column(sa.Integer, init=False)
     data_source_type: Mapped[str] = mapped_column(String(255), init=False)
+    data_source_info: Mapped[str | None] = mapped_column(sa.Text, init=False)
+    dataset_process_rule_id: Mapped[str | None] = mapped_column(StringUUID, init=False)
+    batch: Mapped[str] = mapped_column(String(255), init=False)
     name: Mapped[str] = mapped_column(String(255), init=False)
+    created_from: Mapped[str] = mapped_column(String(255), init=False)
     created_by: Mapped[str] = mapped_column(StringUUID, init=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
+    parsing_completed_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
+    cleaning_completed_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
+    splitting_completed_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
+    tokens: Mapped[int | None] = mapped_column(sa.Integer, init=False)
+    indexing_latency: Mapped[float | None] = mapped_column(sa.Float, init=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
+    is_paused: Mapped[bool | None] = mapped_column(sa.Boolean, init=False)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
     word_count: Mapped[int | None] = mapped_column(sa.Integer, init=False)
     indexing_status: Mapped[str] = mapped_column(String(255), init=False)
+    error: Mapped[str | None] = mapped_column(sa.Text, init=False)
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
     enabled: Mapped[bool] = mapped_column(sa.Boolean, init=False)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
+    disabled_by: Mapped[str | None] = mapped_column(StringUUID, init=False)
     archived: Mapped[bool] = mapped_column(sa.Boolean, init=False)
+    doc_type: Mapped[str | None] = mapped_column(String(255), init=False)
     doc_form: Mapped[str] = mapped_column(String(255), init=False)
+    doc_language: Mapped[str | None] = mapped_column(String(255), init=False)
+    need_summary: Mapped[bool] = mapped_column(sa.Boolean, init=False)
     doc_metadata: Mapped[dict[str, object] | None] = mapped_column(sa.JSON, init=False)
 
 
@@ -128,3 +149,17 @@ class AppDatasetJoin(TypeBase):
     id: Mapped[str] = mapped_column(StringUUID, init=False)
     app_id: Mapped[str] = mapped_column(StringUUID, init=False)
     dataset_id: Mapped[str] = mapped_column(StringUUID, init=False)
+
+
+class DocumentSegment(TypeBase):
+    __tablename__ = "document_segments"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="document_segment_pkey"),
+        sa.Index("document_segment_document_id_idx", "document_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID, init=False)
+    document_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, init=False)
+    status: Mapped[str] = mapped_column(String(255), init=False)
