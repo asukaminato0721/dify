@@ -7,7 +7,7 @@ import pytest
 
 from api_server.errors import ApiError
 from api_server.models.app import AppMode
-from api_server.services.generation import AsyncWebGenerationService
+from api_server.services.generation import AsyncWebGenerationService, _get_legacy_sync_session_maker
 
 
 class _AppStub:
@@ -117,3 +117,16 @@ async def test_run_workflow_passes_workflow_id_override() -> None:
         streaming=False,
         workflow_id="workflow-2",
     )
+
+
+def test_get_legacy_sync_session_maker_uses_configured_factory() -> None:
+    expected = object()
+
+    with patch(
+        "api_server.services.generation.configured_sync_session_factory.get_session_maker",
+        return_value=expected,
+    ) as factory_mock:
+        session_maker = _get_legacy_sync_session_maker()
+
+    assert session_maker is expected
+    factory_mock.assert_called_once_with()

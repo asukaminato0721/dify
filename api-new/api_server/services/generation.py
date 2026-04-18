@@ -74,6 +74,7 @@ from core.app.entities.task_entities import (
 )
 from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig, PauseStatePersistenceLayer
 from core.app.task_pipeline.easy_ui_based_generate_task_pipeline import EasyUIBasedGenerateTaskPipeline
+from core.db.session_factory import session_factory as configured_sync_session_factory
 from core.model_manager import ModelInstance
 from core.ops.ops_trace_manager import TraceQueueManager
 from core.prompt.advanced_prompt_transform import AdvancedPromptTransform
@@ -257,11 +258,15 @@ def _ensure_supported_features(
         )
 
 
-def _get_legacy_sync_engine() -> Engine:
-    engine = getattr(db.engine, "sync_engine", None)
-    if isinstance(engine, Engine):
-        return engine
-    raise RuntimeError("Legacy workflow bridge requires an async SQLAlchemy engine with a sync companion engine.")
+def _get_legacy_sync_session_maker() -> sessionmaker[Session]:
+    """Return the configured sync session maker for copied workflow seams.
+
+    The active FastAPI slice still drives a copied sync-first workflow runtime.
+    That runtime should consume the companion session factory configured during
+    async database bootstrap instead of probing `db.engine.sync_engine` ad hoc.
+    """
+
+    return configured_sync_session_factory.get_session_maker()
 
 
 def _prepare_workflow_generation_entity(
@@ -846,8 +851,7 @@ def _run_native_public_advanced_chat_blocking(
     if context.workflow is None:
         raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
 
-    sync_engine = _get_legacy_sync_engine()
-    sync_session_factory = sessionmaker(bind=sync_engine, expire_on_commit=False)
+    sync_session_factory = _get_legacy_sync_session_maker()
 
     with sync_session_factory() as session:
         app_model = session.get(LegacyApp, context.app.id)
@@ -995,8 +999,7 @@ def _run_native_public_agent_chat_streaming_blocking(
 ) -> Iterator[str]:
     """Run public agent-chat directly on the copied runner/task pipeline layer."""
 
-    sync_engine = _get_legacy_sync_engine()
-    sync_session_factory = sessionmaker(bind=sync_engine, expire_on_commit=False)
+    sync_session_factory = _get_legacy_sync_session_maker()
 
     with sync_session_factory() as session:
         app_model = session.get(LegacyApp, context.app.id)
@@ -1097,8 +1100,7 @@ def _run_native_public_workflow_blocking(
 ) -> Mapping[str, Any] | Iterator[str]:
     """Run the public workflow route on the workflow runner without Flask glue."""
 
-    sync_engine = _get_legacy_sync_engine()
-    sync_session_factory = sessionmaker(bind=sync_engine, expire_on_commit=False)
+    sync_session_factory = _get_legacy_sync_session_maker()
 
     with sync_session_factory() as session:
         app_model = session.get(LegacyApp, context.app.id)
