@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, TypedDict
+from typing import Annotated, Literal, TypedDict
 from uuid import UUID
 
 from fastapi import APIRouter, Form, Query, Request
@@ -14,7 +14,13 @@ from pydantic import BaseModel, Field
 from api_server.errors import forbidden
 from api_server.models.app import EndUser, Site
 from api_server.routes.files import _build_file_response
-from api_server.services.conversation_message import ConversationMessageService, MessagePaginationDict, ResultDict
+from api_server.services.conversation_message import (
+    ConversationItemDict,
+    ConversationMessageService,
+    ConversationPaginationDict,
+    MessagePaginationDict,
+    ResultDict,
+)
 from api_server.services.service_api_apps import AppInfoResponseDict, ServiceApiAppService, ToolIconsResponseDict
 from api_server.services.service_api_auth import ServiceApiAuthService
 from api_server.services.service_api_files import ServiceApiFileService
@@ -78,6 +84,12 @@ class ServiceApiMessageFeedbackPayload(BaseModel):
     user: str | None = Field(default=None)
     rating: str | None = Field(default=None)
     content: str | None = Field(default=None)
+
+
+class ServiceApiConversationRenamePayload(BaseModel):
+    user: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    auto_generate: bool = Field(default=False)
 
 
 class ServiceApiSuggestedQuestionsResponseDict(TypedDict):
@@ -234,6 +246,64 @@ async def create_service_api_message_feedback(
         end_user=end_user,
         rating=payload.rating,
         content=payload.content,
+    )
+
+
+@router.get("/v1/conversations")
+async def list_service_api_conversations(
+    request: Request,
+    user: str | None = Query(default=None),
+    last_id: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    sort_by: Literal["created_at", "-created_at", "updated_at", "-updated_at"] = Query(default="-updated_at"),
+) -> ConversationPaginationDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=user)
+    return await ConversationMessageService.list_conversations(
+        app_id=context.app.id,
+        end_user=end_user,
+        last_id=last_id,
+        limit=limit,
+        pinned=None,
+        sort_by=sort_by,
+    )
+
+
+@router.delete("/v1/conversations/{conversation_id}", status_code=204, response_model=None)
+async def delete_service_api_conversation(
+    request: Request,
+    conversation_id: str,
+    user: str | None = Query(default=None),
+) -> None:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=user)
+    await ConversationMessageService.delete_conversation(
+        app_id=context.app.id,
+        conversation_id=conversation_id,
+        end_user=end_user,
+    )
+
+
+@router.post("/v1/conversations/{conversation_id}/name")
+async def rename_service_api_conversation(
+    request: Request,
+    conversation_id: str,
+    payload: ServiceApiConversationRenamePayload,
+) -> ConversationItemDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=payload.user)
+    return await ConversationMessageService.rename_conversation(
+        app_id=context.app.id,
+        conversation_id=conversation_id,
+        end_user=end_user,
+        name=payload.name,
+        auto_generate=payload.auto_generate,
     )
 
 

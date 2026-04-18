@@ -317,6 +317,128 @@ async def test_service_api_message_feedback_route_uses_native_message_service() 
     feedback_mock.assert_awaited_once()
 
 
+async def test_service_api_conversations_route_uses_native_conversation_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+    payload = {"limit": 20, "has_more": False, "data": []}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ConversationMessageService.list_conversations",
+            new=AsyncMock(return_value=payload),
+        ) as conversations_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/v1/conversations",
+                headers={"Authorization": "Bearer app-token"},
+                params={"user": "session-1"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    conversations_mock.assert_awaited_once_with(
+        app_id="app-1",
+        end_user=end_user,
+        last_id=None,
+        limit=20,
+        pinned=None,
+        sort_by="-updated_at",
+    )
+
+
+async def test_service_api_delete_conversation_route_uses_native_conversation_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ConversationMessageService.delete_conversation",
+            new=AsyncMock(return_value={"result": "success"}),
+        ) as delete_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.delete(
+                "/v1/conversations/conversation-1",
+                headers={"Authorization": "Bearer app-token"},
+                params={"user": "session-1"},
+            )
+
+    assert response.status_code == 204
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    delete_mock.assert_awaited_once_with(
+        app_id="app-1",
+        conversation_id="conversation-1",
+        end_user=end_user,
+    )
+
+
+async def test_service_api_rename_conversation_route_uses_native_conversation_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+    payload = {
+        "id": "conversation-1",
+        "name": "Renamed",
+        "inputs": {},
+        "status": "normal",
+        "introduction": None,
+        "created_at": 1710000000,
+        "updated_at": 1710000001,
+    }
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ConversationMessageService.rename_conversation",
+            new=AsyncMock(return_value=payload),
+        ) as rename_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/conversations/conversation-1/name",
+                headers={"Authorization": "Bearer app-token"},
+                json={"user": "session-1", "name": "Renamed", "auto_generate": False},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    rename_mock.assert_awaited_once_with(
+        app_id="app-1",
+        conversation_id="conversation-1",
+        end_user=end_user,
+        name="Renamed",
+        auto_generate=False,
+    )
+
+
 async def test_service_api_suggested_route_uses_native_suggested_service() -> None:
     context = _ServiceApiContextStub()
     end_user = object()
