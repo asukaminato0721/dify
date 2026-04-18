@@ -202,7 +202,7 @@ class ServiceApiWorkflowLogService:
                     "id": log.id,
                     "workflow_run": cls._serialize_workflow_run(workflow_run),
                     "details": None,
-                    "created_from": log.created_from,
+                    "created_from": log.created_from.value,
                     "created_by_role": log.created_by_role.value,
                     "created_by_account": cls._serialize_account(accounts_by_id.get(log.created_by)),
                     "created_by_end_user": cls._serialize_end_user(end_users_by_id.get(log.created_by)),

@@ -12,13 +12,13 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api_server.models.human_input import HumanInputFormRecipient
 from core.db.session_factory import session_factory
-from models.human_input import HumanInputFormRecipient, RecipientType
 
 _FORM_TOKEN_PRIORITY = {
-    RecipientType.BACKSTAGE: 0,
-    RecipientType.CONSOLE: 1,
-    RecipientType.STANDALONE_WEB_APP: 2,
+    "backstage": 0,
+    "console": 1,
+    "standalone_web_app": 2,
 }
 
 

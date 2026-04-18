@@ -23,7 +23,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import contexts
 from api_server.errors import bad_request, forbidden, not_found, service_unavailable
-from api_server.models.app import AppModelConfig, Conversation, Message
+from api_server.models.app import (
+    App as FastAPIApp,
+    AppModelConfig,
+    Conversation,
+    EndUser as FastAPIEndUser,
+    Message,
+    Workflow as FastAPIWorkflow,
+)
 from api_server.services.webapp_context import WebappContext
 from configs import dify_config
 from core.app.app_config.base_app_config_manager import BaseAppConfigManager
@@ -271,9 +278,9 @@ def _get_legacy_sync_session_maker() -> sessionmaker[Session]:
 
 def _prepare_workflow_generation_entity(
     *,
-    app_model: LegacyApp,
-    workflow: LegacyWorkflow,
-    end_user: LegacyEndUser,
+    app_model: LegacyApp | FastAPIApp,
+    workflow: LegacyWorkflow | FastAPIWorkflow,
+    end_user: LegacyEndUser | FastAPIEndUser,
     inputs: dict[str, Any],
     files: list[dict[str, Any]] | None,
     streaming: bool,
@@ -320,8 +327,8 @@ def _prepare_workflow_generation_entity(
 def _run_workflow_runner(
     *,
     application_generate_entity: WorkflowAppGenerateEntity,
-    workflow: LegacyWorkflow,
-    end_user: LegacyEndUser,
+    workflow: LegacyWorkflow | FastAPIWorkflow,
+    end_user: LegacyEndUser | FastAPIEndUser,
     queue_manager: WorkflowAppQueueManager,
     workflow_execution_repository: Any,
     workflow_node_execution_repository: Any,
@@ -1103,14 +1110,14 @@ def _run_native_public_workflow_blocking(
     sync_session_factory = _get_legacy_sync_session_maker()
 
     with sync_session_factory() as session:
-        app_model = session.get(LegacyApp, context.app.id)
+        app_model = session.get(FastAPIApp, context.app.id)
         workflow = session.scalar(
-            select(LegacyWorkflow).where(
-                LegacyWorkflow.id == (workflow_id or context.app.workflow_id),
-                LegacyWorkflow.app_id == context.app.id,
+            select(FastAPIWorkflow).where(
+                FastAPIWorkflow.id == (workflow_id or context.app.workflow_id),
+                FastAPIWorkflow.app_id == context.app.id,
             )
         )
-        end_user = session.get(LegacyEndUser, context.end_user.id)
+        end_user = session.get(FastAPIEndUser, context.end_user.id)
 
     if app_model is None or workflow is None or end_user is None:
         raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
@@ -1143,9 +1150,12 @@ def _run_native_public_workflow_blocking(
         invoke_from=InvokeFrom.WEB_APP,
         app_mode=app_model.mode,
     )
+    workflow_owner_id = workflow.created_by
+    if workflow_owner_id is None:
+        raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
     pause_state_config = PauseStateLayerConfig(
         session_factory=sync_session_factory,
-        state_owner_user_id=workflow.created_by,
+        state_owner_user_id=workflow_owner_id,
     )
 
     worker = threading.Thread(

@@ -4,6 +4,8 @@ from core.app.app_config.entities import WorkflowUIBasedAppConfig
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
 from core.app.app_config.features.text_to_speech.manager import TextToSpeechConfigManager
 from core.app.app_config.workflow_ui_based_app.variables.manager import WorkflowVariablesConfigManager
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import Workflow as FastAPIWorkflow
 from models.model import App, AppMode
 from models.workflow import Workflow
 
@@ -18,10 +20,10 @@ class WorkflowAppConfig(WorkflowUIBasedAppConfig):
 
 class WorkflowAppConfigManager(BaseAppConfigManager):
     @classmethod
-    def get_app_config(cls, app_model: App, workflow: Workflow) -> WorkflowAppConfig:
+    def get_app_config(cls, app_model: App | FastAPIApp, workflow: Workflow | FastAPIWorkflow) -> WorkflowAppConfig:
         features_dict = workflow.features_dict
 
-        app_mode = AppMode.value_of(app_model.mode)
+        app_mode = AppMode.value_of(str(app_model.mode))
         app_config = WorkflowAppConfig(
             tenant_id=app_model.tenant_id,
             app_id=app_model.id,

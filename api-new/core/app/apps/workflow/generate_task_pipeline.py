@@ -7,6 +7,10 @@ from typing import Union
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from api_server.models.app import Account as FastAPIAccount
+from api_server.models.app import EndUser as FastAPIEndUser
+from api_server.models.app import Workflow as FastAPIWorkflow
+from api_server.models.workflow import WorkflowAppLog, WorkflowAppLogCreatedFrom
 from constants.tts_auto_play_timeout import TTS_AUTO_PLAY_TIMEOUT, TTS_AUTO_PLAY_YIELD_CPU_TIME
 from core.app.apps.base_app_queue_manager import AppQueueManager
 from core.app.apps.common.graph_runtime_state_support import GraphRuntimeStateSupport
@@ -65,9 +69,12 @@ from graphon.runtime import GraphRuntimeState
 from models import Account
 from models.enums import CreatorUserRole
 from models.model import EndUser
-from models.workflow import Workflow, WorkflowAppLog, WorkflowAppLogCreatedFrom
+from models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
+
+_ACCOUNT_TYPES = (Account, FastAPIAccount)
+_END_USER_TYPES = (EndUser, FastAPIEndUser)
 
 
 class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
@@ -78,7 +85,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
     def __init__(
         self,
         application_generate_entity: WorkflowAppGenerateEntity,
-        workflow: Workflow,
+        workflow: Workflow | FastAPIWorkflow,
         queue_manager: AppQueueManager,
         user: Union[Account, EndUser],
         stream: bool,
@@ -91,7 +98,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
             stream=stream,
         )
 
-        if isinstance(user, EndUser):
+        if isinstance(user, _END_USER_TYPES):
             self._user_id = user.id
             user_session_id = user.session_id
             self._created_by_role = CreatorUserRole.END_USER

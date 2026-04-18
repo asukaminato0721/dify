@@ -1,5 +1,6 @@
 import re
 
+from api_server.models.app import Workflow as FastAPIWorkflow
 from core.app.app_config.entities import RagPipelineVariableEntity
 from graphon.variables.input_entities import VariableEntity
 from models.workflow import Workflow
@@ -7,7 +8,7 @@ from models.workflow import Workflow
 
 class WorkflowVariablesConfigManager:
     @classmethod
-    def convert(cls, workflow: Workflow) -> list[VariableEntity]:
+    def convert(cls, workflow: Workflow | FastAPIWorkflow) -> list[VariableEntity]:
         """
         Convert workflow start variables to variables
 

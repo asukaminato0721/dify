@@ -3,6 +3,7 @@ import time
 from collections.abc import AsyncGenerator, Sequence
 from typing import cast
 
+from api_server.models.app import Workflow as FastAPIWorkflow
 from core.app.apps.base_app_queue_manager import AppQueueManager
 from core.app.apps.workflow.app_config_manager import WorkflowAppConfig
 from core.app.apps.workflow_app_runner import WorkflowBasedAppRunner
@@ -20,6 +21,8 @@ from graphon.graph_engine.command_channels import RedisChannel
 from graphon.graph_engine.layers import GraphEngineLayer
 from graphon.runtime import GraphRuntimeState, VariablePool
 from graphon.variable_loader import VariableLoader
+from graphon.variables.variables import Variable
+from factories import variable_factory
 from libs.datetime_utils import naive_utc_now
 from models.workflow import Workflow
 
@@ -37,7 +40,7 @@ class WorkflowAppRunner(WorkflowBasedAppRunner):
         application_generate_entity: WorkflowAppGenerateEntity,
         queue_manager: AppQueueManager,
         variable_loader: VariableLoader,
-        workflow: Workflow,
+        workflow: Workflow | FastAPIWorkflow,
         system_user_id: str,
         root_node_id: str | None = None,
         workflow_execution_repository: WorkflowExecutionRepository,
@@ -58,6 +61,17 @@ class WorkflowAppRunner(WorkflowBasedAppRunner):
         self._workflow_execution_repository = workflow_execution_repository
         self._workflow_node_execution_repository = workflow_node_execution_repository
         self._resume_graph_runtime_state = graph_runtime_state
+
+    @staticmethod
+    def _resolve_environment_variables(
+        workflow: Workflow | FastAPIWorkflow,
+    ) -> Sequence[Variable]:
+        if isinstance(workflow, FastAPIWorkflow):
+            return [
+                cast(Variable, variable_factory.build_environment_variable_from_mapping(mapping))
+                for mapping in workflow.environment_variables_list
+            ]
+        return workflow.environment_variables
 
     @trace_span(WorkflowAppRunnerHandler)
     def run(self):
@@ -111,7 +125,7 @@ class WorkflowAppRunner(WorkflowBasedAppRunner):
                 variable_pool,
                 build_bootstrap_variables(
                     system_variables=system_inputs,
-                    environment_variables=self._workflow.environment_variables,
+                    environment_variables=self._resolve_environment_variables(self._workflow),
                 ),
             )
             root_node_id = self._root_node_id or get_default_root_node_id(self._workflow.graph_dict)
@@ -221,7 +235,7 @@ class WorkflowAppRunner(WorkflowBasedAppRunner):
                 variable_pool,
                 build_bootstrap_variables(
                     system_variables=system_inputs,
-                    environment_variables=self._workflow.environment_variables,
+                    environment_variables=self._resolve_environment_variables(self._workflow),
                 ),
             )
             root_node_id = self._root_node_id or get_default_root_node_id(self._workflow.graph_dict)

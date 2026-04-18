@@ -5,6 +5,7 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
+from api_server.models.app import Workflow as FastAPIWorkflow
 from core.app.apps.base_app_queue_manager import AppQueueManager, PublishFrom
 from core.app.entities.agent_strategy import AgentStrategyInfo
 from core.app.entities.app_invoke_entities import InvokeFrom, UserFrom, build_dify_run_context
@@ -166,7 +167,7 @@ class WorkflowBasedAppRunner:
 
     def _prepare_single_node_execution(
         self,
-        workflow: Workflow,
+        workflow: Workflow | FastAPIWorkflow,
         single_iteration_run: Any | None = None,
         single_loop_run: Any | None = None,
         *,

@@ -1,33 +1,37 @@
 """Minimal workflow-run models for the active FastAPI runtime.
 
-These mappings intentionally cover only the columns needed by the public
-workflow event-replay endpoint. Keeping them local avoids importing the
-legacy Flask-era ORM graph while the workflow stack is ported incrementally.
+These mappings intentionally cover only the columns used by the active
+FastAPI workflow slice: public workflow generation, workflow event replay,
+and `/v1` workflow log/detail routes. Keeping them local avoids importing the
+legacy Flask-era ORM graph for read/write paths that are already on the new
+runtime while the broader workflow stack is ported incrementally.
 """
 
 from __future__ import annotations
 
 import json
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
 import sqlalchemy as sa
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api_server.db import EnumText, LongText, StringUUID, TypeBase
-from api_server.models.app import CreatorUserRole
 from graphon.enums import WorkflowExecutionStatus
+from models.enums import CreatorUserRole
 
 
-class WorkflowAppLogCreatedFrom(str, sa.Enum):
+class WorkflowAppLogCreatedFrom(StrEnum):
     SERVICE_API = "service-api"
     WEB_APP = "web-app"
     INSTALLED_APP = "installed-app"
 
 
 class WorkflowRun(TypeBase):
-    """Read-only subset of `workflow_runs` used by FastAPI workflow event routes."""
+    """Subset of `workflow_runs` used by active FastAPI workflow routes and services."""
 
     __tablename__ = "workflow_runs"
     __table_args__ = (
@@ -88,7 +92,12 @@ class WorkflowRun(TypeBase):
 
 
 class WorkflowAppLog(TypeBase):
-    """Subset of `workflow_app_logs` needed by the active FastAPI `/v1` route."""
+    """Subset of `workflow_app_logs` needed by active FastAPI workflow paths.
+
+    The copied sync workflow runtime still inserts app-log rows when a public
+    run starts. Defining the write-compatible subset here keeps that active
+    path off the legacy ORM graph while preserving the existing table shape.
+    """
 
     __tablename__ = "workflow_app_logs"
     __table_args__ = (
@@ -98,17 +107,23 @@ class WorkflowAppLog(TypeBase):
         {"extend_existing": True},
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, init=False)
-    tenant_id: Mapped[str] = mapped_column(StringUUID, init=False)
-    app_id: Mapped[str] = mapped_column(StringUUID, init=False)
-    workflow_id: Mapped[str] = mapped_column(StringUUID, init=False)
-    workflow_run_id: Mapped[str] = mapped_column(StringUUID, init=False)
-    created_from: Mapped[str] = mapped_column(String(255), init=False)
+    id: Mapped[str] = mapped_column(
+        StringUUID,
+        init=False,
+        insert_default=lambda: str(uuid4()),
+        default_factory=lambda: str(uuid4()),
+    )
+    tenant_id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    workflow_id: Mapped[str] = mapped_column(StringUUID)
+    workflow_run_id: Mapped[str] = mapped_column(StringUUID)
+    created_from: Mapped[WorkflowAppLogCreatedFrom] = mapped_column(
+        EnumText(WorkflowAppLogCreatedFrom, length=255),
+    )
     created_by_role: Mapped[CreatorUserRole] = mapped_column(
         EnumText(CreatorUserRole, length=255),
-        init=False,
     )
-    created_by: Mapped[str] = mapped_column(StringUUID, init=False)
+    created_by: Mapped[str] = mapped_column(StringUUID)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         init=False,

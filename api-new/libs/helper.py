@@ -96,26 +96,27 @@ def escape_like_pattern(pattern: str) -> str:
 
 def extract_tenant_id(user: "Account | EndUser") -> str | None:
     """
-    Extract tenant_id from Account or EndUser object.
+    Extract tenant_id from account- or end-user-like objects.
 
     Args:
-        user: Account or EndUser object
+        user: Account or EndUser object from either the copied legacy ORM or
+            the local FastAPI mappings.
 
     Returns:
         tenant_id string if available, None otherwise
 
     Raises:
-        ValueError: If user is neither Account nor EndUser
+        ValueError: If the object does not expose a recognizable tenant field
     """
-    from models import Account
-    from models.model import EndUser
+    current_tenant_id = getattr(user, "current_tenant_id", None)
+    if current_tenant_id:
+        return str(current_tenant_id)
 
-    if isinstance(user, Account):
-        return user.current_tenant_id
-    elif isinstance(user, EndUser):
-        return user.tenant_id
-    else:
-        raise ValueError(f"Invalid user type: {type(user)}. Expected Account or EndUser.")
+    tenant_id = getattr(user, "tenant_id", None)
+    if tenant_id:
+        return str(tenant_id)
+
+    raise ValueError(f"Invalid user type: {type(user)}. Expected an account or end user with tenant context.")
 
 
 def run(script):

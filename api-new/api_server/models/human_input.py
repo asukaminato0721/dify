@@ -1,7 +1,9 @@
 """Local human-input form models for the FastAPI runtime.
 
-These mappings cover the public standalone form endpoints and keep the active
-runtime off the legacy Flask ORM graph while form delivery is ported.
+These mappings cover the public standalone form endpoints and the active
+workflow pause-time resume-link helpers. Keeping them local avoids importing
+the legacy Flask ORM graph on FastAPI-owned human-input paths while form
+delivery is ported.
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ class HumanInputForm(TypeBase):
 
 
 class HumanInputFormRecipient(TypeBase):
-    """Recipient token rows used to resolve public form submissions."""
+    """Recipient token rows used to resolve public and workflow-pause form links."""
 
     __tablename__ = "human_input_form_recipients"
     __table_args__ = (

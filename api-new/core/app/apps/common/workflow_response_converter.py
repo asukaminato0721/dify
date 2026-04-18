@@ -10,6 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from api_server.models.app import Account as FastAPIAccount
+from api_server.models.app import EndUser as FastAPIEndUser
+from api_server.models.human_input import HumanInputForm
+from api_server.models.workflow import WorkflowRun
 from core.app.entities.app_invoke_entities import AdvancedChatAppGenerateEntity, InvokeFrom, WorkflowAppGenerateEntity
 from core.app.entities.queue_entities import (
     QueueAgentLogEvent,
@@ -71,12 +75,13 @@ from graphon.variables.variables import Variable
 from graphon.workflow_type_encoder import WorkflowRuntimeTypeConverter
 from libs.datetime_utils import naive_utc_now
 from models import Account, EndUser
-from models.human_input import HumanInputForm
-from models.workflow import WorkflowRun
 from services.variable_truncator import BaseTruncator, DummyVariableTruncator, VariableTruncator
 
 NodeExecutionId = NewType("NodeExecutionId", str)
 logger = logging.getLogger(__name__)
+
+_ACCOUNT_TYPES = (Account, FastAPIAccount)
+_END_USER_TYPES = (EndUser, FastAPIEndUser)
 
 
 class AccountCreatedByDict(TypedDict):
@@ -278,13 +283,13 @@ class WorkflowResponseConverter:
 
         created_by: CreatedByDict | dict[str, object] = {}
         user = self._user
-        if isinstance(user, Account):
+        if isinstance(user, _ACCOUNT_TYPES):
             created_by = AccountCreatedByDict(
                 id=user.id,
                 name=user.name,
                 email=user.email,
             )
-        elif isinstance(user, EndUser):
+        elif isinstance(user, _END_USER_TYPES):
             created_by = EndUserCreatedByDict(
                 id=user.id,
                 user=user.session_id,
@@ -442,7 +447,7 @@ class WorkflowResponseConverter:
 
         created_by: Mapping[str, object]
         user = creator_user
-        if isinstance(user, Account):
+        if isinstance(user, _ACCOUNT_TYPES):
             created_by = {
                 "id": user.id,
                 "name": user.name,
@@ -465,7 +470,7 @@ class WorkflowResponseConverter:
                 error=workflow_run.error,
                 elapsed_time=elapsed_time,
                 total_tokens=workflow_run.total_tokens,
-                total_steps=workflow_run.total_steps,
+                total_steps=int(workflow_run.total_steps or 0),
                 created_by=created_by,
                 created_at=int(workflow_run.created_at.timestamp()),
                 finished_at=int(finished_at.timestamp()),
