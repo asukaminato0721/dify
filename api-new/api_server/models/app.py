@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 import json
+from decimal import Decimal
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +11,8 @@ from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api_server.db import Base, EnumText, LongText, StringUUID
+from factories import variable_factory
+from graphon.variables import VariableBase
 
 
 class AppMode(enum.StrEnum):
@@ -334,6 +337,11 @@ class AppModelConfig(Base):
             ),
         }
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return the legacy-compatible app-model-config feature payload."""
+
+        return self.to_feature_dict()
+
 
 class Workflow(Base):
     __tablename__ = "workflows"
@@ -401,6 +409,20 @@ class Workflow(Base):
         if isinstance(raw_values, list):
             return [value for value in raw_values if isinstance(value, dict)]
         return []
+
+    @property
+    def environment_variables_value_objects(self) -> list[VariableBase]:
+        return [
+            variable_factory.build_environment_variable_from_mapping(mapping)
+            for mapping in self.environment_variables_list
+        ]
+
+    @property
+    def conversation_variables_value_objects(self) -> list[VariableBase]:
+        return [
+            variable_factory.build_conversation_variable_from_mapping(mapping)
+            for mapping in self.conversation_variables_list
+        ]
 
     def user_input_form(self, to_old_structure: bool = False) -> list[Any]:
         if not self.graph:
@@ -516,15 +538,24 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(StringUUID)
     app_id: Mapped[str] = mapped_column(StringUUID)
     app_model_config_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    model_provider: Mapped[str | None] = mapped_column(String(255), default=None)
+    model_id: Mapped[str | None] = mapped_column(String(255), default=None)
+    override_model_configs: Mapped[str | None] = mapped_column(LongText, default=None)
     mode: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
+    summary: Mapped[str | None] = mapped_column(LongText, default=None)
     inputs: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
     introduction: Mapped[str | None] = mapped_column(LongText, default=None)
+    system_instruction: Mapped[str | None] = mapped_column(LongText, default=None)
+    system_instruction_tokens: Mapped[int | None] = mapped_column(sa.Integer, default=0)
     status: Mapped[str] = mapped_column(String(255), default="normal")
     invoke_from: Mapped[str | None] = mapped_column(String(255), default=None)
     from_source: Mapped[str] = mapped_column(String(255))
     from_end_user_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     from_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    read_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    dialogue_count: Mapped[int | None] = mapped_column(sa.Integer, default=0)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
     is_deleted: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
@@ -562,15 +593,34 @@ class Message(Base):
     conversation_id: Mapped[str] = mapped_column(StringUUID)
     inputs: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
     query: Mapped[str] = mapped_column(LongText)
+    message: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON, default=None)
+    message_tokens: Mapped[int] = mapped_column(sa.Integer, server_default=sa.text("0"), default=0)
+    message_unit_price: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 4), default=None)
+    message_price_unit: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 7), default=None)
     answer: Mapped[str] = mapped_column(LongText)
+    answer_tokens: Mapped[int] = mapped_column(sa.Integer, server_default=sa.text("0"), default=0)
+    answer_unit_price: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 4), default=None)
+    answer_price_unit: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 7), default=None)
     parent_message_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    provider_response_latency: Mapped[float] = mapped_column(sa.Float, server_default=sa.text("0"), default=0.0)
+    total_price: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 7), default=None)
+    currency: Mapped[str | None] = mapped_column(String(255), default=None)
     status: Mapped[str] = mapped_column(String(255), default="normal")
     error: Mapped[str | None] = mapped_column(LongText, default=None)
     message_metadata: Mapped[str | None] = mapped_column(LongText, default=None)
+    invoke_from: Mapped[str | None] = mapped_column(String(255), default=None)
     from_source: Mapped[str] = mapped_column(String(255))
     from_end_user_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     from_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+    agent_based: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
+    workflow_run_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    app_mode: Mapped[str | None] = mapped_column(String(255), default=None)
 
 
 class MessageFile(Base):
@@ -613,6 +663,18 @@ class ConversationVariable(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+    @classmethod
+    def from_variable(cls, *, app_id: str, conversation_id: str, variable: VariableBase) -> "ConversationVariable":
+        return cls(
+            id=variable.id,
+            app_id=app_id,
+            conversation_id=conversation_id,
+            data=variable.model_dump_json(),
+        )
+
+    def to_variable(self) -> VariableBase:
+        return variable_factory.build_conversation_variable_from_mapping(json.loads(self.data))
 
 
 class MessageFeedback(Base):

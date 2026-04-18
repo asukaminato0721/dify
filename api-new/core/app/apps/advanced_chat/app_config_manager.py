@@ -10,6 +10,8 @@ from core.app.app_config.features.suggested_questions_after_answer.manager impor
 )
 from core.app.app_config.features.text_to_speech.manager import TextToSpeechConfigManager
 from core.app.app_config.workflow_ui_based_app.variables.manager import WorkflowVariablesConfigManager
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import Workflow as FastAPIWorkflow
 from models.model import App, AppMode
 from models.workflow import Workflow
 
@@ -24,9 +26,9 @@ class AdvancedChatAppConfig(WorkflowUIBasedAppConfig):
 
 class AdvancedChatAppConfigManager(BaseAppConfigManager):
     @classmethod
-    def get_app_config(cls, app_model: App, workflow: Workflow) -> AdvancedChatAppConfig:
+    def get_app_config(cls, app_model: App | FastAPIApp, workflow: Workflow | FastAPIWorkflow) -> AdvancedChatAppConfig:
         features_dict = workflow.features_dict
-        app_mode = AppMode.value_of(app_model.mode)
+        app_mode = AppMode.value_of(str(app_model.mode))
         app_config = AdvancedChatAppConfig(
             tenant_id=app_model.tenant_id,
             app_id=app_model.id,

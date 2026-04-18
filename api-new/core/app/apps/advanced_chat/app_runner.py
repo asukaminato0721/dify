@@ -6,6 +6,14 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api_server.models.app import (
+    App as FastAPIApp,
+    Conversation as FastAPIConversation,
+    ConversationVariable as FastAPIConversationVariable,
+    Message as FastAPIMessage,
+    MessageAnnotation as FastAPIMessageAnnotation,
+    Workflow as FastAPIWorkflow,
+)
 from core.app.apps.advanced_chat.app_config_manager import AdvancedChatAppConfig
 from core.app.apps.base_app_queue_manager import AppQueueManager
 from core.app.apps.workflow_app_runner import WorkflowBasedAppRunner
@@ -45,6 +53,7 @@ from graphon.variables.variables import Variable
 from models import Workflow
 from models.model import App, Conversation, Message, MessageAnnotation
 from models.workflow import ConversationVariable
+from factories import variable_factory
 from services.conversation_variable_updater import ConversationVariableUpdater
 
 logger = logging.getLogger(__name__)
@@ -55,18 +64,36 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
     AdvancedChat Application Runner
     """
 
+    @staticmethod
+    def _resolve_environment_variables(workflow: Workflow | FastAPIWorkflow) -> list[Variable]:
+        if isinstance(workflow, FastAPIWorkflow):
+            return [
+                cast(Variable, variable_factory.build_environment_variable_from_mapping(mapping))
+                for mapping in workflow.environment_variables_list
+            ]
+        return cast(list[Variable], list(workflow.environment_variables))
+
+    @staticmethod
+    def _resolve_conversation_variables(workflow: Workflow | FastAPIWorkflow) -> list[Variable]:
+        if isinstance(workflow, FastAPIWorkflow):
+            return [
+                cast(Variable, variable_factory.build_conversation_variable_from_mapping(mapping))
+                for mapping in workflow.conversation_variables_list
+            ]
+        return cast(list[Variable], list(workflow.conversation_variables))
+
     def __init__(
         self,
         *,
         application_generate_entity: AdvancedChatAppGenerateEntity,
         queue_manager: AppQueueManager,
-        conversation: Conversation,
-        message: Message,
+        conversation: Conversation | FastAPIConversation,
+        message: Message | FastAPIMessage,
         dialogue_count: int,
         variable_loader: VariableLoader,
-        workflow: Workflow,
+        workflow: Workflow | FastAPIWorkflow,
         system_user_id: str,
-        app: App,
+        app: App | FastAPIApp,
         workflow_execution_repository: WorkflowExecutionRepository,
         workflow_node_execution_repository: WorkflowNodeExecutionRepository,
         graph_engine_layers: Sequence[GraphEngineLayer] = (),
@@ -106,7 +133,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         )
 
         with session_factory.create_session() as session:
-            app_record = session.scalar(select(App).where(App.id == app_config.app_id))
+            app_record = session.scalar(select(FastAPIApp).where(FastAPIApp.id == app_config.app_id))
 
         if not app_record:
             raise ValueError("App not found")
@@ -179,7 +206,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
                 variable_pool,
                 build_bootstrap_variables(
                     system_variables=system_inputs,
-                    environment_variables=self._workflow.environment_variables,
+                    environment_variables=self._resolve_environment_variables(self._workflow),
                     conversation_variables=conversation_variables,
                 ),
             )
@@ -264,7 +291,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         )
 
         with session_factory.create_session() as session:
-            app_record = session.scalar(select(App).where(App.id == app_config.app_id))
+            app_record = session.scalar(select(FastAPIApp).where(FastAPIApp.id == app_config.app_id))
 
         if not app_record:
             raise ValueError("App not found")
@@ -331,7 +358,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
                 variable_pool,
                 build_bootstrap_variables(
                     system_variables=system_inputs,
-                    environment_variables=self._workflow.environment_variables,
+                    environment_variables=self._resolve_environment_variables(self._workflow),
                     conversation_variables=conversation_variables,
                 ),
             )
@@ -397,7 +424,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
     def handle_input_moderation(
         self,
-        app_record: App,
+        app_record: App | FastAPIApp,
         app_generate_entity: AdvancedChatAppGenerateEntity,
         inputs: Mapping[str, Any],
         query: str,
@@ -420,7 +447,11 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         return False, new_inputs, new_query
 
     def handle_annotation_reply(
-        self, app_record: App, message: Message, query: str, app_generate_entity: AdvancedChatAppGenerateEntity
+        self,
+        app_record: App | FastAPIApp,
+        message: Message | FastAPIMessage,
+        query: str,
+        app_generate_entity: AdvancedChatAppGenerateEntity,
     ) -> bool:
         annotation_reply = self.query_app_annotations_to_reply(
             app_record=app_record,
@@ -449,8 +480,13 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         self._publish_event(QueueStopEvent(stopped_by=stopped_by))
 
     def query_app_annotations_to_reply(
-        self, app_record: App, message: Message, query: str, user_id: str, invoke_from: InvokeFrom
-    ) -> MessageAnnotation | None:
+        self,
+        app_record: App | FastAPIApp,
+        message: Message | FastAPIMessage,
+        query: str,
+        user_id: str,
+        invoke_from: InvokeFrom,
+    ) -> MessageAnnotation | FastAPIMessageAnnotation | None:
         """
         Query app annotations to reply
         :param app_record: app record
@@ -522,20 +558,22 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
             return cast(list[Variable], conversation_variables)
 
-    def _load_existing_conversation_variables(self, session: Session) -> list[ConversationVariable]:
+    def _load_existing_conversation_variables(
+        self, session: Session
+    ) -> list[ConversationVariable | FastAPIConversationVariable]:
         """
         Load existing conversation variables from the database.
 
         :param session: Database session
         :return: List of existing conversation variables
         """
-        stmt = select(ConversationVariable).where(
-            ConversationVariable.app_id == self.conversation.app_id,
-            ConversationVariable.conversation_id == self.conversation.id,
+        stmt = select(FastAPIConversationVariable).where(
+            FastAPIConversationVariable.app_id == self.conversation.app_id,
+            FastAPIConversationVariable.conversation_id == self.conversation.id,
         )
         return list(session.scalars(stmt).all())
 
-    def _create_all_conversation_variables(self, session: Session) -> list[ConversationVariable]:
+    def _create_all_conversation_variables(self, session: Session) -> list[FastAPIConversationVariable]:
         """
         Create all conversation variables for a new conversation.
 
@@ -543,10 +581,10 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         :return: List of created conversation variables
         """
         new_variables = [
-            ConversationVariable.from_variable(
+            FastAPIConversationVariable.from_variable(
                 app_id=self.conversation.app_id, conversation_id=self.conversation.id, variable=variable
             )
-            for variable in self._workflow.conversation_variables
+            for variable in self._resolve_conversation_variables(self._workflow)
         ]
 
         if new_variables:
@@ -555,8 +593,10 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         return new_variables
 
     def _sync_missing_conversation_variables(
-        self, session: Session, existing_variables: list[ConversationVariable]
-    ) -> list[ConversationVariable]:
+        self,
+        session: Session,
+        existing_variables: list[ConversationVariable | FastAPIConversationVariable],
+    ) -> list[ConversationVariable | FastAPIConversationVariable]:
         """
         Sync missing conversation variables from the workflow definition.
 
@@ -569,7 +609,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         """
         # Get IDs of existing and workflow variables
         existing_ids = {var.id for var in existing_variables}
-        workflow_variables = {var.id: var for var in self._workflow.conversation_variables}
+        workflow_variables = {var.id: var for var in self._resolve_conversation_variables(self._workflow)}
 
         # Find missing variable IDs
         missing_ids = set(workflow_variables.keys()) - existing_ids
@@ -579,7 +619,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         # Create missing variables with their default values
         new_variables = [
-            ConversationVariable.from_variable(
+            FastAPIConversationVariable.from_variable(
                 app_id=self.conversation.app_id,
                 conversation_id=self.conversation.id,
                 variable=workflow_variables[var_id],

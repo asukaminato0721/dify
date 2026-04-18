@@ -12,6 +12,11 @@ from typing import Any, Union
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api_server.models.app import Account as FastAPIAccount
+from api_server.models.app import Conversation as FastAPIConversation
+from api_server.models.app import EndUser as FastAPIEndUser
+from api_server.models.app import Message as FastAPIMessage
+from api_server.models.app import Workflow as FastAPIWorkflow
 from constants.tts_auto_play_timeout import TTS_AUTO_PLAY_TIMEOUT, TTS_AUTO_PLAY_YIELD_CPU_TIME
 from core.app.apps.base_app_queue_manager import AppQueueManager, PublishFrom
 from core.app.apps.common.graph_runtime_state_support import GraphRuntimeStateSupport
@@ -86,6 +91,9 @@ from models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
+_ACCOUNT_TYPES = (Account, FastAPIAccount)
+_END_USER_TYPES = (EndUser, FastAPIEndUser)
+
 
 @dataclass(frozen=True, slots=True)
 class WorkflowSnapshot:
@@ -94,7 +102,7 @@ class WorkflowSnapshot:
     features_dict: Mapping[str, Any]
 
     @classmethod
-    def from_workflow(cls, workflow: Workflow) -> "WorkflowSnapshot":
+    def from_workflow(cls, workflow: Workflow | FastAPIWorkflow) -> "WorkflowSnapshot":
         return cls(
             id=workflow.id,
             tenant_id=workflow.tenant_id,
@@ -105,13 +113,13 @@ class WorkflowSnapshot:
 @dataclass(frozen=True, slots=True)
 class ConversationSnapshot:
     id: str
-    mode: AppMode
+    mode: str
 
     @classmethod
-    def from_conversation(cls, conversation: Conversation) -> "ConversationSnapshot":
+    def from_conversation(cls, conversation: Conversation | FastAPIConversation) -> "ConversationSnapshot":
         return cls(
             id=conversation.id,
-            mode=conversation.mode,
+            mode=str(conversation.mode),
         )
 
 
@@ -120,16 +128,16 @@ class MessageSnapshot:
     id: str
     query: str
     created_at: datetime
-    status: MessageStatus
+    status: str
     answer: str
 
     @classmethod
-    def from_message(cls, message: Message) -> "MessageSnapshot":
+    def from_message(cls, message: Message | FastAPIMessage) -> "MessageSnapshot":
         return cls(
             id=message.id,
             query=message.query,
             created_at=message.created_at,
-            status=message.status,
+            status=str(message.status),
             answer=message.answer,
         )
 
@@ -157,11 +165,11 @@ class AdvancedChatAppGenerateTaskPipeline(GraphRuntimeStateSupport):
             stream=stream,
         )
 
-        if isinstance(user, EndUser):
+        if isinstance(user, _END_USER_TYPES):
             self._user_id = user.id
             user_session_id = user.session_id
             self._created_by_role = CreatorUserRole.END_USER
-        elif isinstance(user, Account):
+        elif isinstance(user, _ACCOUNT_TYPES):
             self._user_id = user.id
             user_session_id = user.id
             self._created_by_role = CreatorUserRole.ACCOUNT
@@ -207,7 +215,7 @@ class AdvancedChatAppGenerateTaskPipeline(GraphRuntimeStateSupport):
         self._seed_graph_runtime_state_from_queue_manager()
 
     def _seed_task_state_from_message(self, message: MessageSnapshot) -> None:
-        if message.status == MessageStatus.PAUSED and message.answer:
+        if message.status in {MessageStatus.PAUSED, MessageStatus.PAUSED.value} and message.answer:
             self._task_state.answer = message.answer
 
     def process(self) -> Union[ChatbotAppBlockingResponse, Generator[ChatbotAppStreamResponse, None, None]]:

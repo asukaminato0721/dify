@@ -2,6 +2,8 @@ import logging
 
 from sqlalchemy import select
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import Message as FastAPIMessage
 from core.app.entities.app_invoke_entities import InvokeFrom
 from core.db.session_factory import session_factory
 from core.rag.datasource.vdb.vector_factory import Vector
@@ -15,7 +17,12 @@ logger = logging.getLogger(__name__)
 
 class AnnotationReplyFeature:
     def query(
-        self, app_record: App, message: Message, query: str, user_id: str, invoke_from: InvokeFrom
+        self,
+        app_record: App | FastAPIApp,
+        message: Message | FastAPIMessage,
+        query: str,
+        user_id: str,
+        invoke_from: InvokeFrom,
     ) -> MessageAnnotation | None:
         """
         Query app annotations to reply

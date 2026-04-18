@@ -29,6 +29,7 @@ from api_server.models.app import (
     Conversation,
     EndUser as FastAPIEndUser,
     Message,
+    MessageFile,
     Workflow as FastAPIWorkflow,
 )
 from api_server.services.webapp_context import WebappContext
@@ -377,9 +378,9 @@ def _run_workflow_runner(
 
 def _prepare_advanced_chat_generation_entity(
     *,
-    app_model: LegacyApp,
-    workflow: LegacyWorkflow,
-    end_user: LegacyEndUser,
+    app_model: LegacyApp | FastAPIApp,
+    workflow: LegacyWorkflow | FastAPIWorkflow,
+    end_user: LegacyEndUser | FastAPIEndUser,
     inputs: dict[str, Any],
     query: str,
     files: list[dict[str, Any]] | None,
@@ -530,6 +531,29 @@ def _load_owned_legacy_conversation(
     return conversation
 
 
+def _load_owned_fastapi_conversation(
+    *,
+    session: Session,
+    app_id: str,
+    end_user_id: str,
+    conversation_id: str,
+) -> Conversation:
+    """Return an existing FastAPI public conversation only when it belongs to the caller."""
+
+    conversation = session.scalar(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.app_id == app_id,
+            Conversation.from_source == ConversationFromSource.API.value,
+            Conversation.from_end_user_id == end_user_id,
+            Conversation.is_deleted.is_(False),
+        )
+    )
+    if conversation is None:
+        raise bad_request("conversation_not_exists", "Conversation Not Exists.")
+    return conversation
+
+
 def _init_agent_chat_records(
     *,
     session: Session,
@@ -630,9 +654,9 @@ def _init_advanced_chat_records(
     *,
     session: Session,
     application_generate_entity: AdvancedChatAppGenerateEntity,
-    end_user: LegacyEndUser,
-    conversation: LegacyConversation | None,
-) -> tuple[LegacyConversation, LegacyMessage]:
+    end_user: FastAPIEndUser,
+    conversation: Conversation | None,
+) -> tuple[Conversation, Message]:
     """Persist conversation/message rows for public advanced-chat generation."""
 
     app_config = application_generate_entity.app_config
@@ -641,7 +665,7 @@ def _init_advanced_chat_records(
     conversation_name = (query[:20] + "…") if len(query) > 20 else query
 
     if conversation is None:
-        conversation = LegacyConversation(
+        conversation = Conversation(
             app_id=app_config.app_id,
             app_model_config_id=None,
             model_provider=None,
@@ -655,7 +679,7 @@ def _init_advanced_chat_records(
             system_instruction_tokens=0,
             status="normal",
             invoke_from=application_generate_entity.invoke_from.value,
-            from_source=ConversationFromSource.API,
+            from_source=ConversationFromSource.API.value,
             from_end_user_id=end_user.id,
             from_account_id=None,
         )
@@ -665,7 +689,7 @@ def _init_advanced_chat_records(
     else:
         conversation.updated_at = naive_utc_now()
 
-    message = LegacyMessage(
+    message = Message(
         app_id=app_config.app_id,
         model_provider=None,
         model_id=None,
@@ -673,7 +697,7 @@ def _init_advanced_chat_records(
         conversation_id=conversation.id,
         inputs=application_generate_entity.inputs,
         query=application_generate_entity.query,
-        message="",
+        message={},
         message_tokens=0,
         message_unit_price=0,
         message_price_unit=0,
@@ -686,26 +710,26 @@ def _init_advanced_chat_records(
         total_price=0,
         currency="USD",
         invoke_from=application_generate_entity.invoke_from.value,
-        from_source=ConversationFromSource.API,
+        from_source=ConversationFromSource.API.value,
         from_end_user_id=end_user.id,
         from_account_id=None,
-        app_mode=app_config.app_mode,
+        app_mode=app_config.app_mode.value,
     )
     session.add(message)
     session.flush()
     session.refresh(message)
 
-    message_files: list[LegacyMessageFile] = []
+    message_files: list[MessageFile] = []
     for file in application_generate_entity.files:
         message_files.append(
-            LegacyMessageFile(
+            MessageFile(
                 message_id=message.id,
                 type=file.type,
                 transfer_method=file.transfer_method,
-                belongs_to=MessageFileBelongsTo.USER,
+                belongs_to=MessageFileBelongsTo.USER.value,
                 url=file.remote_url,
                 upload_file_id=resolve_file_record_id(file.reference),
-                created_by_role=CreatorUserRole.END_USER,
+                created_by_role=CreatorUserRole.END_USER.value,
                 created_by=end_user.id,
             )
         )
@@ -718,13 +742,13 @@ def _init_advanced_chat_records(
     return conversation, message
 
 
-def _load_thread_messages_length(*, session: Session, conversation_id: str) -> int:
+def _load_thread_messages_length(*, session: Session, conversation_id: str, message_model: type[LegacyMessage] | type[Message]) -> int:
     """Mirror legacy thread counting without relying on Flask-scoped sessions."""
 
     messages = session.scalars(
-        select(LegacyMessage)
-        .where(LegacyMessage.conversation_id == conversation_id)
-        .order_by(LegacyMessage.created_at.desc())
+        select(message_model)
+        .where(message_model.conversation_id == conversation_id)
+        .order_by(message_model.created_at.desc())
     ).all()
     thread_messages = extract_thread_messages(messages)
     if thread_messages and not thread_messages[0].answer:
@@ -735,9 +759,9 @@ def _load_thread_messages_length(*, session: Session, conversation_id: str) -> i
 def _run_advanced_chat_runner(
     *,
     application_generate_entity: AdvancedChatAppGenerateEntity,
-    workflow: LegacyWorkflow,
-    app_model: LegacyApp,
-    end_user: LegacyEndUser,
+    workflow: LegacyWorkflow | FastAPIWorkflow,
+    app_model: LegacyApp | FastAPIApp,
+    end_user: LegacyEndUser | FastAPIEndUser,
     conversation_id: str,
     message_id: str,
     dialogue_count: int,
@@ -757,8 +781,8 @@ def _run_advanced_chat_runner(
         sync_session_factory = pause_state_config.session_factory
 
     with sync_session_factory() as session:
-        conversation = session.get(LegacyConversation, conversation_id)
-        message = session.get(LegacyMessage, message_id)
+        conversation = session.get(Conversation, conversation_id)
+        message = session.get(Message, message_id)
         if conversation is None or message is None:
             raise ValueError("Conversation or message not found")
 
@@ -861,20 +885,20 @@ def _run_native_public_advanced_chat_blocking(
     sync_session_factory = _get_legacy_sync_session_maker()
 
     with sync_session_factory() as session:
-        app_model = session.get(LegacyApp, context.app.id)
+        app_model = session.get(FastAPIApp, context.app.id)
         workflow = session.scalar(
-            select(LegacyWorkflow).where(
-                LegacyWorkflow.id == context.workflow.id,
-                LegacyWorkflow.app_id == context.app.id,
+            select(FastAPIWorkflow).where(
+                FastAPIWorkflow.id == context.workflow.id,
+                FastAPIWorkflow.app_id == context.app.id,
             )
         )
-        end_user = session.get(LegacyEndUser, context.end_user.id)
+        end_user = session.get(FastAPIEndUser, context.end_user.id)
         if app_model is None or workflow is None or end_user is None:
             raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
 
         conversation = None
         if conversation_id is not None:
-            conversation = _load_owned_legacy_conversation(
+            conversation = _load_owned_fastapi_conversation(
                 session=session,
                 app_id=app_model.id,
                 end_user_id=end_user.id,
@@ -898,7 +922,11 @@ def _run_native_public_advanced_chat_blocking(
             end_user=end_user,
             conversation=conversation,
         )
-        dialogue_count = _load_thread_messages_length(session=session, conversation_id=conversation.id) + 1
+        dialogue_count = _load_thread_messages_length(
+            session=session,
+            conversation_id=conversation.id,
+            message_model=Message,
+        ) + 1
 
     workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
         session_factory=sync_session_factory,
@@ -922,7 +950,7 @@ def _run_native_public_advanced_chat_blocking(
     )
     pause_state_config = PauseStateLayerConfig(
         session_factory=sync_session_factory,
-        state_owner_user_id=workflow.created_by,
+        state_owner_user_id=workflow.created_by or end_user.id,
     )
 
     worker = threading.Thread(
