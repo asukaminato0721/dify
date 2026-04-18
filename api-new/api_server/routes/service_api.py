@@ -44,6 +44,7 @@ from api_server.services.service_api_dataset_metadata import (
     ServiceApiDatasetMetadataDetailDict,
     ServiceApiDatasetMetadataResponseDict,
     ServiceApiDatasetMetadataService,
+    ServiceApiMetadataOperationItemDict,
 )
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
@@ -206,6 +207,22 @@ class ServiceApiDatasetMetadataUpdatePayload(BaseModel):
     name: str
 
 
+class ServiceApiMetadataValuePayload(BaseModel):
+    id: str
+    name: str
+    value: str | int | float | None = None
+
+
+class ServiceApiDocumentMetadataOperationPayload(BaseModel):
+    document_id: str
+    metadata_list: list[ServiceApiMetadataValuePayload]
+    partial_update: bool = False
+
+
+class ServiceApiMetadataOperationDataPayload(BaseModel):
+    operation_data: list[ServiceApiDocumentMetadataOperationPayload]
+
+
 class ServiceApiAnnotationCreatePayload(BaseModel):
     question: str = Field(description="Annotation question")
     answer: str = Field(description="Annotation answer")
@@ -361,6 +378,29 @@ async def toggle_service_api_dataset_built_in_metadata(
         dataset_id=str(dataset_id),
         action=action,
     )
+
+
+@router.post("/v1/datasets/{dataset_id}/documents/metadata")
+async def update_service_api_documents_metadata(
+    request: Request,
+    dataset_id: UUID,
+    payload: ServiceApiMetadataOperationDataPayload,
+) -> ResultDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    operation_data: list[ServiceApiMetadataOperationItemDict] = [
+        {
+            "document_id": item.document_id,
+            "metadata_list": [value.model_dump(mode="json") for value in item.metadata_list],
+            "partial_update": item.partial_update,
+        }
+        for item in payload.operation_data
+    ]
+    result = await ServiceApiDatasetMetadataService.update_documents_metadata(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        operation_data=operation_data,
+    )
+    return {"result": result["result"]}
 
 
 @router.get("/v1/site")

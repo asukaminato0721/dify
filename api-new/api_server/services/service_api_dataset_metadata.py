@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import TypedDict
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from api_server.errors import forbidden, not_found
 from api_server.models.app import Account
@@ -44,6 +45,12 @@ class ServiceApiMetadataToggleResultDict(TypedDict):
     result: str
 
 
+class ServiceApiMetadataOperationItemDict(TypedDict):
+    document_id: str
+    metadata_list: list[dict[str, object]]
+    partial_update: bool
+
+
 class ServiceApiDatasetMetadataService:
     """Read-only dataset metadata endpoints for the dataset-token service API slice."""
 
@@ -81,6 +88,19 @@ class ServiceApiDatasetMetadataService:
     @staticmethod
     def _metadata_detail(metadata: DatasetMetadata) -> ServiceApiDatasetMetadataDetailDict:
         return {"id": metadata.id, "type": metadata.type.value, "name": metadata.name}
+
+    @staticmethod
+    def _apply_built_in_fields(
+        *,
+        document: Document,
+        doc_metadata: dict[str, object],
+        uploader_name: str | None,
+    ) -> None:
+        doc_metadata[BuiltInField.document_name] = document.name
+        doc_metadata[BuiltInField.uploader] = uploader_name
+        doc_metadata[BuiltInField.upload_date] = document.created_at.timestamp()
+        doc_metadata[BuiltInField.last_update_date] = document.updated_at.timestamp()
+        doc_metadata[BuiltInField.source] = MetadataDataSource[document.data_source_type]
 
     @classmethod
     async def get_dataset_metadata(
@@ -339,5 +359,76 @@ class ServiceApiDatasetMetadataService:
             session_dataset.built_in_field_enabled = action == "enable"
             async with session.begin():
                 session.add(session_dataset)
+
+        return {"result": "success"}
+
+    @classmethod
+    async def update_documents_metadata(
+        cls,
+        *,
+        tenant_id: str,
+        dataset_id: str,
+        operation_data: list[ServiceApiMetadataOperationItemDict],
+    ) -> dict[str, str]:
+        dataset = await cls._get_dataset(tenant_id=tenant_id, dataset_id=dataset_id)
+
+        async with db.session_context() as session:
+            async with session.begin():
+                for operation in operation_data:
+                    document = await session.scalar(
+                        select(Document).where(
+                            Document.dataset_id == dataset.id,
+                            Document.id == operation["document_id"],
+                        )
+                    )
+                    if document is None:
+                        raise not_found("document_not_found", "Document not found.")
+
+                    doc_metadata = dict(document.doc_metadata or {}) if operation["partial_update"] else {}
+                    metadata_items = operation["metadata_list"]
+
+                    if not operation["partial_update"]:
+                        await session.execute(
+                            delete(DatasetMetadataBinding).where(
+                                DatasetMetadataBinding.document_id == document.id,
+                            )
+                        )
+
+                    account_names = await cls._account_names_by_id(account_ids={document.created_by})
+                    for metadata_value in metadata_items:
+                        metadata_id = str(metadata_value["id"])
+                        metadata_name = str(metadata_value["name"])
+                        doc_metadata[metadata_name] = metadata_value.get("value")
+
+                        existing_binding = None
+                        if operation["partial_update"]:
+                            existing_binding = await session.scalar(
+                                select(DatasetMetadataBinding).where(
+                                    DatasetMetadataBinding.document_id == document.id,
+                                    DatasetMetadataBinding.metadata_id == metadata_id,
+                                )
+                            )
+
+                        if existing_binding is None:
+                            session.add(
+                                DatasetMetadataBinding(
+                                    id=str(uuid.uuid4()),
+                                    tenant_id=tenant_id,
+                                    dataset_id=dataset.id,
+                                    metadata_id=metadata_id,
+                                    document_id=document.id,
+                                )
+                            )
+
+                    if dataset.built_in_field_enabled:
+                        cls._apply_built_in_fields(
+                            document=document,
+                            doc_metadata=doc_metadata,
+                            uploader_name=account_names.get(document.created_by),
+                        )
+
+                    document.doc_metadata = doc_metadata
+                    session.add(document)
+                pass
 
         return {"result": "success"}
