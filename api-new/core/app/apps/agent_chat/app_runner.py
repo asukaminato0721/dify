@@ -38,6 +38,7 @@ class AgentChatAppRunner(AppRunner):
         queue_manager: AppQueueManager,
         conversation: Conversation | FastAPIConversation,
         message: Message | FastAPIMessage,
+        app_record: App | FastAPIApp | None = None,
     ):
         """
         Run assistant application
@@ -49,15 +50,36 @@ class AgentChatAppRunner(AppRunner):
         """
         app_config = application_generate_entity.app_config
         app_config = cast(AgentChatAppConfig, app_config)
-        app_stmt = select(FastAPIApp).where(FastAPIApp.id == app_config.app_id)
-        with session_factory.create_session() as session:
-            app_record = session.scalar(app_stmt)
-        if not app_record:
+        if isinstance(app_record, FastAPIApp):
+            fastapi_app_record = app_record
+        else:
+            app_stmt = select(FastAPIApp).where(FastAPIApp.id == app_config.app_id)
+            with session_factory.create_session() as session:
+                fastapi_app_record = session.scalar(app_stmt)
+        if not fastapi_app_record:
             raise ValueError("App not found")
 
         inputs = application_generate_entity.inputs
         query = application_generate_entity.query
         files = application_generate_entity.files
+
+        if isinstance(conversation, FastAPIConversation):
+            fastapi_conversation = conversation
+        else:
+            with session_factory.create_session() as session:
+                conversation_stmt = select(FastAPIConversation).where(FastAPIConversation.id == conversation.id)
+                fastapi_conversation = session.scalar(conversation_stmt)
+                if fastapi_conversation is None:
+                    raise ValueError("Conversation not found")
+
+        if isinstance(message, FastAPIMessage):
+            fastapi_message = message
+        else:
+            with session_factory.create_session() as session:
+                msg_stmt = select(FastAPIMessage).where(FastAPIMessage.id == message.id)
+                fastapi_message = session.scalar(msg_stmt)
+                if fastapi_message is None:
+                    raise ValueError("Message not found")
 
         memory = None
         if application_generate_entity.conversation_id:
@@ -67,13 +89,13 @@ class AgentChatAppRunner(AppRunner):
                 model=application_generate_entity.model_conf.model,
             )
 
-            memory = TokenBufferMemory(conversation=conversation, model_instance=model_instance)
+            memory = TokenBufferMemory(conversation=fastapi_conversation, model_instance=model_instance)
 
         # organize all inputs and template to prompt messages
         # Include: prompt template, inputs, query(optional), files(optional)
         #          memory(optional)
         prompt_messages, _ = self.organize_prompt_messages(
-            app_record=app_record,
+            app_record=fastapi_app_record,
             model_config=application_generate_entity.model_conf,
             prompt_template_entity=app_config.prompt_template,
             inputs=dict(inputs),
@@ -86,12 +108,12 @@ class AgentChatAppRunner(AppRunner):
         try:
             # process sensitive_word_avoidance
             _, inputs, query = self.moderation_for_inputs(
-                app_id=app_record.id,
+                app_id=fastapi_app_record.id,
                 tenant_id=app_config.tenant_id,
                 app_generate_entity=application_generate_entity,
                 inputs=dict(inputs),
                 query=query or "",
-                message_id=message.id,
+                message_id=fastapi_message.id,
             )
         except ModerationError as e:
             self.direct_output(
@@ -106,8 +128,8 @@ class AgentChatAppRunner(AppRunner):
         if query:
             # annotation reply
             annotation_reply = self.query_app_annotations_to_reply(
-                app_record=app_record,
-                message=message,
+                app_record=fastapi_app_record,
+                message=fastapi_message,
                 query=query,
                 user_id=application_generate_entity.user_id,
                 invoke_from=application_generate_entity.invoke_from,
@@ -132,8 +154,8 @@ class AgentChatAppRunner(AppRunner):
         external_data_tools = app_config.external_data_variables
         if external_data_tools:
             inputs = self.fill_in_inputs_from_external_data_tools(
-                tenant_id=app_record.tenant_id,
-                app_id=app_record.id,
+                tenant_id=fastapi_app_record.tenant_id,
+                app_id=fastapi_app_record.id,
                 external_data_tools=external_data_tools,
                 inputs=inputs,
                 query=query,
@@ -143,7 +165,7 @@ class AgentChatAppRunner(AppRunner):
         # Include: prompt template, inputs, query(optional), files(optional)
         #          memory(optional), external data, dataset context(optional)
         prompt_messages, _ = self.organize_prompt_messages(
-            app_record=app_record,
+            app_record=fastapi_app_record,
             model_config=application_generate_entity.model_conf,
             prompt_template_entity=app_config.prompt_template,
             inputs=dict(inputs),
@@ -171,7 +193,7 @@ class AgentChatAppRunner(AppRunner):
             model=application_generate_entity.model_conf.model,
         )
         prompt_message, _ = self.organize_prompt_messages(
-            app_record=app_record,
+            app_record=fastapi_app_record,
             model_config=application_generate_entity.model_conf,
             prompt_template_entity=app_config.prompt_template,
             inputs=dict(inputs),
@@ -188,16 +210,6 @@ class AgentChatAppRunner(AppRunner):
 
         if {ModelFeature.MULTI_TOOL_CALL, ModelFeature.TOOL_CALL}.intersection(model_schema.features or []):
             agent_entity.strategy = AgentEntity.Strategy.FUNCTION_CALLING
-        with session_factory.create_session() as session:
-            conversation_stmt = select(FastAPIConversation).where(FastAPIConversation.id == conversation.id)
-            conversation_result = session.scalar(conversation_stmt)
-            if conversation_result is None:
-                raise ValueError("Conversation not found")
-            msg_stmt = select(FastAPIMessage).where(FastAPIMessage.id == message.id)
-            message_result = session.scalar(msg_stmt)
-            if message_result is None:
-                raise ValueError("Message not found")
-
         runner_cls: type[FunctionCallAgentRunner] | type[CotChatAgentRunner] | type[CotCompletionAgentRunner]
         # start agent runner
         if agent_entity.strategy == AgentEntity.Strategy.CHAIN_OF_THOUGHT:
@@ -216,12 +228,12 @@ class AgentChatAppRunner(AppRunner):
         runner = runner_cls(
             tenant_id=app_config.tenant_id,
             application_generate_entity=application_generate_entity,
-            conversation=conversation_result,
+            conversation=fastapi_conversation,
             app_config=app_config,
             model_config=application_generate_entity.model_conf,
             config=agent_entity,
             queue_manager=queue_manager,
-            message=message_result,
+            message=fastapi_message,
             user_id=application_generate_entity.user_id,
             memory=memory,
             prompt_messages=prompt_message,
@@ -229,7 +241,7 @@ class AgentChatAppRunner(AppRunner):
         )
 
         invoke_result = runner.run(
-            message=message,
+            message=fastapi_message,
             query=query,
             inputs=inputs,
         )
@@ -240,7 +252,7 @@ class AgentChatAppRunner(AppRunner):
             queue_manager=queue_manager,
             stream=application_generate_entity.stream,
             agent=True,
-            message_id=message.id,
+            message_id=fastapi_message.id,
             user_id=application_generate_entity.user_id,
             tenant_id=app_config.tenant_id,
         )

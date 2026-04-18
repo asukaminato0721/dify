@@ -132,8 +132,11 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
             workflow_execution_id=self.application_generate_entity.workflow_run_id,
         )
 
-        with session_factory.create_session() as session:
-            app_record = session.scalar(select(FastAPIApp).where(FastAPIApp.id == app_config.app_id))
+        if isinstance(self._app, FastAPIApp):
+            app_record = self._app
+        else:
+            with session_factory.create_session() as session:
+                app_record = session.scalar(select(FastAPIApp).where(FastAPIApp.id == app_config.app_id))
 
         if not app_record:
             raise ValueError("App not found")

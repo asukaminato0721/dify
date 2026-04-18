@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
@@ -7,7 +9,44 @@ import pytest
 
 from api_server.errors import ApiError
 from api_server.models.app import AppMode
-from api_server.services.generation import AsyncWebGenerationService, _get_legacy_sync_session_maker
+from api_server.services.generation import (
+    AsyncWebGenerationService,
+    _create_completion_message,
+    _get_legacy_sync_session_maker,
+    _save_message_result,
+)
+
+
+class _AsyncSessionStub:
+    def __init__(self, *, scalar_result: object | None = None) -> None:
+        self.scalar_result = scalar_result
+        self.added: list[object] = []
+        self.flush_calls = 0
+        self.commit_calls = 0
+        self.refresh_calls = 0
+
+    def add(self, value: object) -> None:
+        self.added.append(value)
+
+    async def flush(self) -> None:
+        self.flush_calls += 1
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
+
+    async def refresh(self, _: object) -> None:
+        self.refresh_calls += 1
+
+    async def scalar(self, *_args: object, **_kwargs: object) -> object | None:
+        return self.scalar_result
+
+
+def _session_context(session: _AsyncSessionStub):
+    @asynccontextmanager
+    async def _manager():
+        yield session
+
+    return _manager()
 
 
 class _AppStub:
@@ -130,3 +169,33 @@ def test_get_legacy_sync_session_maker_uses_configured_factory() -> None:
 
     assert session_maker is expected
     factory_mock.assert_called_once_with()
+
+
+async def test_create_completion_message_commits_async_session() -> None:
+    session = _AsyncSessionStub()
+    context = SimpleNamespace(app=SimpleNamespace(id="app-1"), end_user=SimpleNamespace(id="end-user-1"))
+
+    with patch("api_server.services.generation.db.session_context", return_value=_session_context(session)):
+        message = await _create_completion_message(
+            context=cast(Any, context),
+            query="hello",
+            inputs={"name": "Ada"},
+        )
+
+    assert message.query == "hello"
+    assert session.flush_calls == 1
+    assert session.commit_calls == 1
+    assert session.refresh_calls == 1
+
+
+async def test_save_message_result_commits_async_session() -> None:
+    message = SimpleNamespace(answer="", status="draft", message_metadata=None)
+    session = _AsyncSessionStub(scalar_result=message)
+
+    with patch("api_server.services.generation.db.session_context", return_value=_session_context(session)):
+        await _save_message_result(message_id="message-1", answer="updated", usage=None)
+
+    assert message.answer == "updated"
+    assert message.status == "normal"
+    assert session.flush_calls == 1
+    assert session.commit_calls == 1

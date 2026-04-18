@@ -303,6 +303,11 @@ Done
 - Targeted `pyrefly` is clean for the shared runtime helper slice.
 - Focused chat/completion generator/local-model verification now also passes: `4 passed`.
 - Targeted `pyrefly` is clean for the shared message-based generator and conversation-service slice.
+- Moved the active workflow/advanced-chat/agent-chat request-stage generation prep onto `AsyncSession`, including local model loading, owned-conversation lookup, message/conversation record creation, and advanced-chat thread counting before the copied sync runtime boundary.
+- Removed redundant sync app/conversation/message reloads in the active advanced-chat and agent-chat runners when FastAPI-local model instances are already available from the request-stage prep path.
+- Fixed the active FastAPI completion/chat async message write helpers to commit after flush so message creation and answer persistence do not rely on implicit session behavior.
+- Expanded focused generation verification now also passes: `16 passed` for the generation route/bridge/service slice and `8 passed` for the advanced-chat/agent-chat local-model slice.
+- Targeted `pyrefly` is clean for the active generation request-stage async-prep slice.
 
 Current status
 --------------
@@ -446,7 +451,7 @@ Current status
 - The plugin/model client now has async request surfaces for key LLM operations, but the node/model runtime stack still needs to consume those async methods end to end.
 - The lower model-runtime/model-instance abstractions now expose async methods, but concrete nodes still need to switch from sync invokes to those async paths end to end.
 - The main LLM-backed nodes, `http_request`, and `tool` now have async execution paths, but the broader node/runtime layer still needs the same treatment for any remaining concrete nodes on real workflow paths.
-- The copied workflow/advanced-chat/agent-chat runtime still contains sync-only persistence and helper paths; the active public generation seams now use the configured sync companion session factory explicitly instead of probing `db.engine.sync_engine` or assuming Flask's global session state.
+- The copied workflow/advanced-chat/agent-chat runtime still contains sync-only persistence and helper paths, but the active public generation request stage now loads and persists its local FastAPI models on `AsyncSession`; the configured sync companion session factory is now concentrated deeper at the copied runner/repository/pipeline boundary.
 - The shared workflow response/pipeline helpers used by the active FastAPI runtime now rely on the configured sync session factory instead of probing the async engine directly.
 - The active workflow response/log slice now uses local FastAPI `WorkflowRun` and `WorkflowAppLog` mappings instead of the legacy ORM classes for those entities, reducing active runtime coupling to the copied Flask-era workflow models.
 - The active workflow pause-token helper and pause-response form lookups now use local FastAPI human-input models instead of the legacy ORM classes for those entities.
