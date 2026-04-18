@@ -5,6 +5,9 @@ from typing import Union
 
 from sqlalchemy import select
 
+from api_server.models.app import Conversation as FastAPIConversation
+from api_server.models.app import MessageAnnotation as FastAPIMessageAnnotation
+from api_server.models.app import MessageFile as FastAPIMessageFile
 from configs import dify_config
 from core.app.entities.app_invoke_entities import (
     AdvancedChatAppGenerateEntity,
@@ -62,11 +65,11 @@ class MessageCycleManager:
         # Use SQLAlchemy 2.x style session.scalar(select(...))
         with session_factory.create_session() as session:
             message_file = session.scalar(
-                select(MessageFile)
+                select(FastAPIMessageFile)
                 .where(
-                    MessageFile.message_id == message_id,
+                    FastAPIMessageFile.message_id == message_id,
                 )
-                .where(MessageFile.belongs_to == "assistant")
+                .where(FastAPIMessageFile.belongs_to == "assistant")
             )
 
         if message_file:
@@ -108,13 +111,13 @@ class MessageCycleManager:
 
     def _generate_conversation_name_worker(self, conversation_id: str, query: str) -> None:
         with session_factory.get_session_maker().begin() as session:
-            stmt = select(Conversation).where(Conversation.id == conversation_id)
+            stmt = select(FastAPIConversation).where(FastAPIConversation.id == conversation_id)
             conversation = session.scalar(stmt)
 
             if not conversation:
                 return
 
-            if conversation.mode == AppMode.COMPLETION:
+            if str(conversation.mode) == AppMode.COMPLETION.value:
                 return
 
             app_model = conversation.app
@@ -140,7 +143,9 @@ class MessageCycleManager:
 
             conversation.name = name
 
-    def handle_annotation_reply(self, event: QueueAnnotationReplyEvent) -> MessageAnnotation | None:
+    def handle_annotation_reply(
+        self, event: QueueAnnotationReplyEvent
+    ) -> MessageAnnotation | FastAPIMessageAnnotation | None:
         """
         Handle annotation reply.
         :param event: event
@@ -149,11 +154,12 @@ class MessageCycleManager:
         annotation = AppAnnotationService.get_annotation_by_id(event.message_annotation_id)
         if annotation:
             account = annotation.account
+            account_name = getattr(account, "name", None)
             self._task_state.metadata.annotation_reply = AnnotationReply(
                 id=annotation.id,
                 account=AnnotationReplyAccount(
                     id=annotation.account_id,
-                    name=account.name if account else "Dify user",
+                    name=account_name if isinstance(account_name, str) and account_name else "Dify user",
                 ),
             )
 
@@ -199,7 +205,7 @@ class MessageCycleManager:
         :return:
         """
         with session_factory.create_session() as session:
-            message_file = session.scalar(select(MessageFile).where(MessageFile.id == event.message_file_id))
+            message_file = session.scalar(select(FastAPIMessageFile).where(FastAPIMessageFile.id == event.message_file_id))
 
         if message_file and message_file.url is not None:
             self._message_has_file.add(message_file.message_id)
@@ -226,7 +232,7 @@ class MessageCycleManager:
                 task_id=self._application_generate_entity.task_id,
                 id=message_file.id,
                 type=message_file.type,
-                belongs_to=message_file.belongs_to or MessageFileBelongsTo.USER,
+                belongs_to=message_file.belongs_to or MessageFileBelongsTo.USER.value,
                 url=url,
             )
 

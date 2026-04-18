@@ -227,6 +227,7 @@ Done
 - Extended the local FastAPI app/conversation/message models with the helper methods required by the active agent-chat runtime (`Conversation.app`, `Conversation.model_config`, and `Message.message_metadata_dict`), switched the public agent-chat loader and record creation path onto local FastAPI models, and updated the active token-memory / agent config / base-runner entry signatures to accept those local model shapes.
 - Switched the active inner agent-chat runtime off `db.session` globals for agent-thought creation/update, prompt-history loading, tool-response message-file persistence, and easy-ui response file/agent-thought lookups; added a local FastAPI `MessageAgentThought` mapping plus local-model support through `ToolEngine`, `BaseAgentRunner`, `TokenBufferMemory`, and the easy-ui task pipeline.
 - Widened the shared FastAPI generation/config boundary to use local `AppMode` and narrowed the active generation helpers in `api_server/services/generation.py` to the local FastAPI workflow/advanced-chat/agent-chat models on the public path, removing another layer of live legacy model dependence from the active generation entrypoints.
+- Switched the shared message-cycle helper off legacy `Conversation`/`MessageFile` lookups and onto local FastAPI message/conversation models for assistant-file detection and conversation-name worker bootstrap on the active advanced/agent path.
 - Added focused async graph-engine event tests in `tests/test_graph_engine_async.py`.
 - Added focused async ready-queue tests in `tests/test_async_ready_queue.py`.
 - Added focused async node execution tests in `tests/test_node_async.py`.
@@ -291,6 +292,8 @@ Done
 - Targeted `pyrefly` is clean for the active agent runtime compatibility slice.
 - Combined focused generation/advanced-chat/agent-chat local-model verification now also passes: `14 passed`.
 - Targeted `pyrefly` is clean for the active generation/config boundary slice.
+- Focused message-cycle verification now also passes: `2 passed`.
+- Targeted `pyrefly` is clean for the shared message-cycle slice.
 
 Current status
 --------------
@@ -443,6 +446,7 @@ Current status
 - The active public agent-chat entry path now loads local FastAPI `App`, `AppModelConfig`, `EndUser`, `Conversation`, and `Message` models, and the local conversation/message helpers now cover the copied token-memory and agent-config behavior that path requires.
 - The active inner agent-chat runtime now also uses explicit sync sessions plus local FastAPI `MessageAgentThought`, `MessageFile`, and `UploadFile` mappings on the public path, rather than relying on `db.session` globals for those operations.
 - The shared active generation/config layer now accepts local FastAPI `AppMode` and local FastAPI workflow/advanced-chat/agent-chat model shapes on the public path, so the remaining live legacy dependency surface is concentrated deeper in the copied runtime modules rather than at the FastAPI entry/model layer.
+- The shared message-cycle helper on the active advanced/agent path now reads local FastAPI `Conversation` and `MessageFile` rows instead of the legacy ORM classes.
 - The copied agent/chat/completion/workflow/advanced-chat/pipeline generator layers now use the configured sync session factory at the database boundary and no longer depend on Flask request-context helpers, though they are still sync-first and not part of the active FastAPI route surface.
 - The remaining Flask imports are concentrated in copied legacy generator/controller paths that are no longer on the active public FastAPI route surface.
 
