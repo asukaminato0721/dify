@@ -41,6 +41,7 @@ from api_server.services.service_api_conversation_variables import (
 )
 from api_server.services.service_api_dataset_metadata import (
     ServiceApiBuiltInFieldsResponseDict,
+    ServiceApiDatasetMetadataDetailDict,
     ServiceApiDatasetMetadataResponseDict,
     ServiceApiDatasetMetadataService,
 )
@@ -196,6 +197,15 @@ class ServiceApiConversationVariableUpdatePayload(BaseModel):
     value: object
 
 
+class ServiceApiDatasetMetadataCreatePayload(BaseModel):
+    type: Literal["string", "number", "time"]
+    name: str
+
+
+class ServiceApiDatasetMetadataUpdatePayload(BaseModel):
+    name: str
+
+
 class ServiceApiAnnotationCreatePayload(BaseModel):
     question: str = Field(description="Annotation question")
     answer: str = Field(description="Annotation answer")
@@ -287,6 +297,69 @@ async def get_service_api_dataset_built_in_metadata(
     return await ServiceApiDatasetMetadataService.get_built_in_fields(
         tenant_id=context.tenant.id,
         dataset_id=str(dataset_id),
+    )
+
+
+@router.post("/v1/datasets/{dataset_id}/metadata", status_code=201)
+async def create_service_api_dataset_metadata(
+    request: Request,
+    dataset_id: UUID,
+    payload: ServiceApiDatasetMetadataCreatePayload,
+) -> ServiceApiDatasetMetadataDetailDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    owner_account = await ServiceApiAuthService.resolve_owner_account(tenant_id=context.tenant.id)
+    return await ServiceApiDatasetMetadataService.create_metadata(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        created_by=owner_account.id,
+        metadata_type=payload.type,
+        name=payload.name,
+    )
+
+
+@router.patch("/v1/datasets/{dataset_id}/metadata/{metadata_id}")
+async def update_service_api_dataset_metadata(
+    request: Request,
+    dataset_id: UUID,
+    metadata_id: UUID,
+    payload: ServiceApiDatasetMetadataUpdatePayload,
+) -> ServiceApiDatasetMetadataDetailDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    owner_account = await ServiceApiAuthService.resolve_owner_account(tenant_id=context.tenant.id)
+    return await ServiceApiDatasetMetadataService.update_metadata_name(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        metadata_id=str(metadata_id),
+        updated_by=owner_account.id,
+        name=payload.name,
+    )
+
+
+@router.delete("/v1/datasets/{dataset_id}/metadata/{metadata_id}", status_code=204, response_model=None)
+async def delete_service_api_dataset_metadata(
+    request: Request,
+    dataset_id: UUID,
+    metadata_id: UUID,
+) -> None:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    await ServiceApiDatasetMetadataService.delete_metadata(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        metadata_id=str(metadata_id),
+    )
+
+
+@router.post("/v1/datasets/{dataset_id}/metadata/built-in/{action}")
+async def toggle_service_api_dataset_built_in_metadata(
+    request: Request,
+    dataset_id: UUID,
+    action: Literal["enable", "disable"],
+) -> ResultDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetMetadataService.toggle_built_in_fields(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        action=action,
     )
 
 

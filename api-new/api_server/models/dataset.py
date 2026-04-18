@@ -46,6 +46,8 @@ class DatasetMetadata(TypeBase):
     dataset_id: Mapped[str] = mapped_column(StringUUID, init=False)
     type: Mapped[DatasetMetadataType] = mapped_column(EnumText(DatasetMetadataType, length=255), init=False)
     name: Mapped[str] = mapped_column(String(255), init=False)
+    created_by: Mapped[str] = mapped_column(StringUUID, init=False)
+    updated_by: Mapped[str | None] = mapped_column(StringUUID, init=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         init=False,
@@ -69,3 +71,23 @@ class DatasetMetadataBinding(TypeBase):
     dataset_id: Mapped[str] = mapped_column(StringUUID, init=False)
     metadata_id: Mapped[str] = mapped_column(StringUUID, init=False)
     document_id: Mapped[str] = mapped_column(StringUUID, init=False)
+
+
+class Document(TypeBase):
+    __tablename__ = "documents"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="document_pkey"),
+        sa.Index("document_dataset_id_idx", "dataset_id"),
+        sa.Index("document_tenant_idx", "tenant_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID, init=False)
+    tenant_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    dataset_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    data_source_type: Mapped[str] = mapped_column(String(255), init=False)
+    name: Mapped[str] = mapped_column(String(255), init=False)
+    created_by: Mapped[str] = mapped_column(StringUUID, init=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
+    doc_metadata: Mapped[dict[str, object] | None] = mapped_column(sa.JSON, init=False)
