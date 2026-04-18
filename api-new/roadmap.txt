@@ -129,8 +129,14 @@ Done
   - `GET /api/messages/{message_id}/suggested-questions`
 - Mounted public message `more-like-this` endpoint:
   - `GET /api/messages/{message_id}/more-like-this`
+- Added FastAPI-native app-token auth and resource lookup services for the initial `/v1` service API slice.
+- Ported initial service API endpoints:
+  - `GET /v1/`
+  - `GET /v1/site`
+  - `GET /v1/end-users/{end_user_id}`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
+- Added focused service API route tests in `tests/test_service_api_routes.py`.
 - Added focused human-input route tests in `tests/test_human_input_form.py`.
 - Added focused audio route tests in `tests/test_audio_routes.py`.
 - Added focused suggested-questions route tests in `tests/test_suggested_questions_route.py`.
@@ -148,6 +154,8 @@ Done
 - Current active FastAPI runtime tests pass: `49 passed`.
 - The expanded generation-focused verification slice now also passes: `36 passed`.
 - Targeted `pyrefly` is clean for the updated generation bridge/service test slice.
+- Targeted service API route/auth verification now also passes: `6 passed`.
+- Targeted `pyrefly` is clean for the initial FastAPI `/v1` service API slice.
 
 Current status
 --------------
@@ -203,6 +211,9 @@ Current status
   - `/files/{file_id}/image-preview`
   - `/files/{file_id}/file-preview`
   - `/files/workspaces/{workspace_id}/webapp-logo`
+  - `/v1/`
+  - `/v1/site`
+  - `/v1/end-users/{end_user_id}`
 - The copied legacy tree is not ported yet; it still contains Flask-specific imports and synchronous `db.session` usage.
 - The active `api-new` dependency set no longer includes Flask, `flask-login`, or `flask-restx`.
 - The previous import-time blocker from `models/__init__.py` has been removed for the new runtime slice.
@@ -212,6 +223,7 @@ Current status
 - Public suggested-questions handling now stays on FastAPI route/service code with local async conversation/message lookups.
 - Public `more-like-this` now routes through the async-native completion generation service.
 - Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
+- The initial `/v1` service API slice now uses `fastapi.security` bearer auth plus local async app/token/end-user/site lookups under `api_server/`.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
 - Public advanced-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.

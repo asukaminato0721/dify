@@ -57,6 +57,11 @@ class StorageType(enum.StrEnum):
     LOCAL = "local"
 
 
+class ApiTokenType(enum.StrEnum):
+    APP = "app"
+    DATASET = "dataset"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (
@@ -202,7 +207,16 @@ class EndUser(Base):
     tenant_id: Mapped[str] = mapped_column(StringUUID)
     app_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     type: Mapped[str] = mapped_column(String(255))
+    external_user_id: Mapped[str | None] = mapped_column(String(255), default=None)
+    name: Mapped[str | None] = mapped_column(String(255), default=None)
+    is_anonymous: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=sa.text("true"))
     session_id: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
 
 
 class Site(Base):
@@ -273,7 +287,10 @@ class AppModelConfig(Base):
         return {
             "opening_statement": self.opening_statement,
             "suggested_questions": self._load_json(self.suggested_questions, []),
-            "suggested_questions_after_answer": self._load_json(self.suggested_questions_after_answer, {"enabled": False}),
+            "suggested_questions_after_answer": self._load_json(
+                self.suggested_questions_after_answer,
+                {"enabled": False},
+            ),
             "speech_to_text": self._load_json(self.speech_to_text, {"enabled": False}),
             "text_to_speech": self._load_json(self.text_to_speech, {"enabled": False}),
             "retriever_resource": self._load_json(self.retriever_resource, {"enabled": True}),
@@ -417,6 +434,25 @@ class UploadFile(Base):
     mime_type: Mapped[str | None] = mapped_column(String(255), default=None)
     created_by_role: Mapped[str] = mapped_column(String(255), default=CreatorUserRole.END_USER.value)
     created_by: Mapped[str] = mapped_column(StringUUID)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+
+class ApiToken(Base):
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="api_token_pkey"),
+        sa.Index("api_token_app_id_type_idx", "app_id", "type"),
+        sa.Index("api_token_token_idx", "token", "type"),
+        sa.Index("api_token_tenant_idx", "tenant_id", "type"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    tenant_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    type: Mapped[ApiTokenType] = mapped_column(EnumText(ApiTokenType, length=16))
+    token: Mapped[str] = mapped_column(String(255))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     used: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
     used_by: Mapped[str | None] = mapped_column(StringUUID, default=None)
