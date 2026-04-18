@@ -36,7 +36,6 @@ from core.tools.workflow_as_tool.tool import WorkflowTool
 from core.db.session_factory import session_factory
 from graphon.file import FileTransferMethod, FileType
 from models.enums import CreatorUserRole, MessageFileBelongsTo
-from models.model import Message
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class ToolEngine:
         tool_parameters: Union[str, dict[str, Any]],
         user_id: str,
         tenant_id: str,
-        message: Message | FastAPIMessage,
+        message: FastAPIMessage,
         invoke_from: InvokeFrom,
         agent_tool_callback: DifyAgentCallbackHandler,
         trace_manager: TraceQueueManager | None = None,
@@ -360,7 +359,7 @@ class ToolEngine:
     @staticmethod
     def _create_message_files(
         tool_messages: Iterable[ToolInvokeMessageBinary],
-        agent_message: Message | FastAPIMessage,
+        agent_message: FastAPIMessage,
         invoke_from: InvokeFrom,
         user_id: str,
     ) -> list[str]:

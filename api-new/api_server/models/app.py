@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from api_server.db import Base, EnumText, LongText, StringUUID
 from core.db.session_factory import session_factory as configured_sync_session_factory
 from factories import variable_factory
+from graphon.file import FileBelongsTo
 from graphon.variables import VariableBase
 
 
@@ -203,6 +204,13 @@ class App(Base):
         default=False,
     )
 
+    @property
+    def app_model_config(self) -> "AppModelConfig | None":
+        if self.app_model_config_id is None:
+            return None
+        with configured_sync_session_factory.create_session() as session:
+            return session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
+
 
 class EndUser(Base):
     __tablename__ = "end_users"
@@ -341,7 +349,16 @@ class AppModelConfig(Base):
     def to_dict(self) -> dict[str, Any]:
         """Return the legacy-compatible app-model-config feature payload."""
 
-        return self.to_feature_dict()
+        config = self.to_feature_dict()
+        config["prompt_type"] = (
+            "advanced" if config.get("chat_prompt_config") or config.get("completion_prompt_config") else "simple"
+        )
+        return config
+
+    @property
+    def more_like_this_dict(self) -> dict[str, Any]:
+        raw = self.more_like_this
+        return json.loads(raw) if raw else {"enabled": False}
 
 
 class Workflow(Base):
@@ -667,6 +684,36 @@ class Message(Base):
             if conversation is None or conversation.app_model_config_id is None:
                 return None
             return session.scalar(select(AppModelConfig).where(AppModelConfig.id == conversation.app_model_config_id))
+
+    @property
+    def message_files(self) -> list[dict[str, Any]]:
+        from core.app.file_access import DatabaseFileAccessController
+        from factories import file_factory
+
+        access_controller = DatabaseFileAccessController()
+        with configured_sync_session_factory.create_session() as session:
+            message_files = session.scalars(select(MessageFile).where(MessageFile.message_id == self.id)).all()
+            app = session.scalar(select(App).where(App.id == self.app_id))
+        if app is None:
+            return []
+
+        files: list[dict[str, Any]] = []
+        for message_file in message_files:
+            file_obj = file_factory.build_from_message_file(
+                message_file=message_file,
+                tenant_id=app.tenant_id,
+                config=None,
+                access_controller=access_controller,
+            )
+            files.append(
+                {
+                    "belongs_to": message_file.belongs_to or FileBelongsTo.USER.value,
+                    "upload_file_id": message_file.upload_file_id or message_file.id,
+                    **file_obj.to_dict(),
+                }
+            )
+
+        return files
 
 
 class MessageFile(Base):

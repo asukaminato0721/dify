@@ -66,7 +66,6 @@ from graphon.model_runtime.entities.message_entities import (
 )
 from graphon.model_runtime.model_providers.__base.large_language_model import LargeLanguageModel
 from libs.datetime_utils import naive_utc_now
-from models.model import AppMode, Conversation, Message
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +82,8 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         self,
         application_generate_entity: ChatAppGenerateEntity | CompletionAppGenerateEntity | AgentChatAppGenerateEntity,
         queue_manager: AppQueueManager,
-        conversation: Conversation | FastAPIConversation,
-        message: Message | FastAPIMessage,
+        conversation: FastAPIConversation,
+        message: FastAPIMessage,
         stream: bool,
     ):
         super().__init__(
@@ -125,7 +124,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         | CompletionAppBlockingResponse
         | Generator[ChatbotAppStreamResponse | CompletionAppStreamResponse, None, None]
     ):
-        if self._application_generate_entity.app_config.app_mode != AppMode.COMPLETION:
+        if str(self._application_generate_entity.app_config.app_mode) != "completion":
             query = cast(Any, self._application_generate_entity).query
             # start generate conversation name thread
             self._conversation_name_generate_thread = self._message_cycle_manager.generate_conversation_name(
@@ -153,7 +152,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
                 if self._task_state.metadata:
                     extras["metadata"] = self._task_state.metadata.model_dump()
                 response: ChatbotAppBlockingResponse | CompletionAppBlockingResponse
-                if self._conversation_mode == AppMode.COMPLETION:
+                if self._conversation_mode == "completion":
                     response = CompletionAppBlockingResponse(
                         task_id=self._application_generate_entity.task_id,
                         data=CompletionAppBlockingResponse.Data(
@@ -383,11 +382,11 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         llm_result = self._task_state.llm_result
         usage = llm_result.usage
 
-        message_stmt = select(Message).where(Message.id == self._message_id)
+        message_stmt = select(FastAPIMessage).where(FastAPIMessage.id == self._message_id)
         message = session.scalar(message_stmt)
         if not message:
             raise ValueError(f"message {self._message_id} not found")
-        conversation_stmt = select(Conversation).where(Conversation.id == self._conversation_id)
+        conversation_stmt = select(FastAPIConversation).where(FastAPIConversation.id == self._conversation_id)
         conversation = session.scalar(conversation_stmt)
         if not conversation:
             raise ValueError(f"Conversation {self._conversation_id} not found")

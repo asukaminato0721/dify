@@ -6,6 +6,9 @@ from typing import Any
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import Conversation as FastAPIConversation
+from api_server.models.app import EndUser as FastAPIEndUser
 from configs import dify_config
 from core.app.entities.app_invoke_entities import InvokeFrom
 from core.db.session_factory import session_factory
@@ -117,9 +120,9 @@ class ConversationService:
     @classmethod
     def rename(
         cls,
-        app_model: App,
+        app_model: App | FastAPIApp,
         conversation_id: str,
-        user: Account | EndUser | None,
+        user: Account | EndUser | FastAPIEndUser | None,
         name: str | None,
         auto_generate: bool,
     ):
@@ -128,50 +131,58 @@ class ConversationService:
         if auto_generate:
             return cls.auto_generate_name(app_model, conversation)
         else:
-            conversation.name = name
-            conversation.updated_at = naive_utc_now()
-            db.session.commit()
+            with session_factory.get_session_maker().begin() as session:
+                session.add(conversation)
+                conversation.name = name or ""
+                conversation.updated_at = naive_utc_now()
 
         return conversation
 
     @classmethod
-    def auto_generate_name(cls, app_model: App, conversation: Conversation):
+    def auto_generate_name(cls, app_model: App | FastAPIApp, conversation: FastAPIConversation):
         # get conversation first message
-        message = db.session.scalar(
-            select(Message)
-            .where(Message.app_id == app_model.id, Message.conversation_id == conversation.id)
-            .order_by(Message.created_at.asc())
-            .limit(1)
-        )
-
-        if not message:
-            raise MessageNotExistsError()
-
-        # generate conversation name
-        with contextlib.suppress(Exception):
-            name = LLMGenerator.generate_conversation_name(
-                app_model.tenant_id, message.query, conversation.id, app_model.id
+        with session_factory.get_session_maker().begin() as session:
+            message = session.scalar(
+                select(Message)
+                .where(Message.app_id == app_model.id, Message.conversation_id == conversation.id)
+                .order_by(Message.created_at.asc())
+                .limit(1)
             )
-            conversation.name = name
 
-        db.session.commit()
+            if not message:
+                raise MessageNotExistsError()
+
+            # generate conversation name
+            with contextlib.suppress(Exception):
+                name = LLMGenerator.generate_conversation_name(
+                    app_model.tenant_id, message.query, conversation.id, app_model.id
+                )
+                conversation.name = name
+
+            session.add(conversation)
 
         return conversation
 
     @classmethod
-    def get_conversation(cls, app_model: App, conversation_id: str, user: Account | EndUser | None):
-        conversation = db.session.scalar(
-            select(Conversation)
-            .where(
-                Conversation.id == conversation_id,
-                Conversation.app_id == app_model.id,
-                Conversation.from_source == ("api" if isinstance(user, EndUser) else "console"),
-                Conversation.from_end_user_id == (user.id if isinstance(user, EndUser) else None),
-                Conversation.from_account_id == (user.id if isinstance(user, Account) else None),
-                Conversation.is_deleted == False,
+    def get_conversation(
+        cls,
+        app_model: App | FastAPIApp,
+        conversation_id: str,
+        user: Account | EndUser | FastAPIEndUser | None,
+    ):
+        with session_factory.create_session() as session:
+            conversation = session.scalar(
+                select(FastAPIConversation)
+                .where(
+                    FastAPIConversation.id == conversation_id,
+                    FastAPIConversation.app_id == app_model.id,
+                    FastAPIConversation.from_source == ("api" if isinstance(user, FastAPIEndUser) else "console"),
+                    FastAPIConversation.from_end_user_id == (user.id if isinstance(user, FastAPIEndUser) else None),
+                    FastAPIConversation.from_account_id == (user.id if isinstance(user, Account) else None),
+                    FastAPIConversation.is_deleted == False,
+                )
+                .limit(1)
             )
-            .limit(1)
-        )
 
         if not conversation:
             raise ConversationNotExistsError()
@@ -179,7 +190,12 @@ class ConversationService:
         return conversation
 
     @classmethod
-    def delete(cls, app_model: App, conversation_id: str, user: Account | EndUser | None):
+    def delete(
+        cls,
+        app_model: App | FastAPIApp,
+        conversation_id: str,
+        user: Account | EndUser | FastAPIEndUser | None,
+    ):
         """
         Delete a conversation only if it belongs to the given user and app context.
 
@@ -195,13 +211,15 @@ class ConversationService:
                 conversation_id,
             )
 
-            db.session.delete(conversation)
-            db.session.commit()
+            with session_factory.get_session_maker().begin() as session:
+                session.add(conversation)
+                session.delete(conversation)
 
-            delete_conversation_related_data.delay(conversation.id)
+            delay = getattr(delete_conversation_related_data, "delay", None)
+            if callable(delay):
+                delay(conversation.id)
 
         except Exception as e:
-            db.session.rollback()
             raise e
 
     @classmethod

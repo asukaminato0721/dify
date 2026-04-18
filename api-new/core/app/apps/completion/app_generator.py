@@ -2,11 +2,14 @@ import logging
 import threading
 import uuid
 from collections.abc import Generator, Mapping
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import EndUser as FastAPIEndUser
+from api_server.models.app import Message as FastAPIMessage
 from configs import dify_config
 from core.app.app_config.easy_ui_based_app.model_config.converter import ModelConfigConverter
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
@@ -22,7 +25,7 @@ from core.db.session_factory import session_factory
 from core.ops.ops_trace_manager import TraceQueueManager
 from factories import file_factory
 from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
-from models import Account, App, EndUser, Message
+from models import Account
 from services.errors.app import MoreLikeThisDisabledError
 from services.errors.message import MessageNotExistsError
 
@@ -33,8 +36,8 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
     @overload
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: Literal[True],
@@ -43,8 +46,8 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
     @overload
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: Literal[False],
@@ -53,8 +56,8 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
     @overload
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: bool = False,
@@ -62,8 +65,8 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
 
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: bool = True,
@@ -227,9 +230,9 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
 
     def generate_more_like_this(
         self,
-        app_model: App,
+        app_model: FastAPIApp,
         message_id: str,
-        user: Account | EndUser,
+        user: Account | FastAPIEndUser,
         invoke_from: InvokeFrom,
         stream: bool = True,
     ) -> Mapping | Generator[Mapping | str, None, None]:
@@ -242,12 +245,12 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
         :param invoke_from: invoke from source
         :param stream: is stream
         """
-        stmt = select(Message).where(
-            Message.id == message_id,
-            Message.app_id == app_model.id,
-            Message.from_source == ("api" if isinstance(user, EndUser) else "console"),
-            Message.from_end_user_id == (user.id if isinstance(user, EndUser) else None),
-            Message.from_account_id == (user.id if isinstance(user, Account) else None),
+        stmt = select(FastAPIMessage).where(
+            FastAPIMessage.id == message_id,
+            FastAPIMessage.app_id == app_model.id,
+            FastAPIMessage.from_source == ("api" if isinstance(user, FastAPIEndUser) else "console"),
+            FastAPIMessage.from_end_user_id == (user.id if isinstance(user, FastAPIEndUser) else None),
+            FastAPIMessage.from_account_id == (user.id if isinstance(user, Account) else None),
         )
         with session_factory.create_session() as session:
             message = session.scalar(stmt)
@@ -286,6 +289,8 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
                 )
             else:
                 file_objs = []
+
+            override_model_config_dict = cast(Any, override_model_config_dict)
 
             # convert to app config
             app_config = CompletionAppConfigManager.get_app_config(

@@ -3,6 +3,8 @@ from typing import cast
 
 from sqlalchemy import select
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import Message as FastAPIMessage
 from core.app.apps.base_app_queue_manager import AppQueueManager
 from core.app.apps.base_app_runner import AppRunner
 from core.app.apps.completion.app_config_manager import CompletionAppConfig
@@ -16,7 +18,6 @@ from core.moderation.base import ModerationError
 from core.rag.retrieval.dataset_retrieval import DatasetRetrieval
 from graphon.file import File
 from graphon.model_runtime.entities.message_entities import ImagePromptMessageContent
-from models.model import App, Message
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,10 @@ class CompletionAppRunner(AppRunner):
     """
 
     def run(
-        self, application_generate_entity: CompletionAppGenerateEntity, queue_manager: AppQueueManager, message: Message
+        self,
+        application_generate_entity: CompletionAppGenerateEntity,
+        queue_manager: AppQueueManager,
+        message: FastAPIMessage,
     ):
         """
         Run application
@@ -38,7 +42,7 @@ class CompletionAppRunner(AppRunner):
         """
         app_config = application_generate_entity.app_config
         app_config = cast(CompletionAppConfig, app_config)
-        stmt = select(App).where(App.id == app_config.app_id)
+        stmt = select(FastAPIApp).where(FastAPIApp.id == app_config.app_id)
         with session_factory.create_session() as session:
             app_record = session.scalar(stmt)
         if not app_record:

@@ -6,6 +6,7 @@ from mimetypes import guess_extension
 from typing import TYPE_CHECKING, Any, Union
 
 from api_server.models.app import App as FastAPIApp
+from api_server.models.app import AppMode as FastAPIAppMode
 from api_server.models.app import Message as FastAPIMessage
 from api_server.models.app import MessageAnnotation as FastAPIMessageAnnotation
 from api_server.models.app import MessageFile as FastAPIMessageFile
@@ -44,7 +45,7 @@ from graphon.model_runtime.entities.message_entities import (
 from graphon.model_runtime.entities.model_entities import ModelPropertyKey
 from graphon.model_runtime.errors.invoke import InvokeBadRequestError
 from models.enums import CreatorUserRole, MessageFileBelongsTo
-from models.model import App, AppMode, Message, MessageAnnotation, MessageFile
+from models.model import AppMode, MessageAnnotation
 
 if TYPE_CHECKING:
     from graphon.file import File
@@ -89,7 +90,7 @@ class AppRunner:
 
     def organize_prompt_messages(
         self,
-        app_record: App | FastAPIApp,
+        app_record: FastAPIApp,
         model_config: ModelConfigWithCredentialsEntity,
         prompt_template_entity: PromptTemplateEntity,
         inputs: Mapping[str, str],
@@ -531,12 +532,12 @@ class AppRunner:
 
     def query_app_annotations_to_reply(
         self,
-        app_record: App | FastAPIApp,
-        message: Message | FastAPIMessage,
+        app_record: FastAPIApp,
+        message: FastAPIMessage,
         query: str,
         user_id: str,
         invoke_from: InvokeFrom,
-    ) -> MessageAnnotation | FastAPIMessageAnnotation | None:
+    ) -> FastAPIMessageAnnotation | MessageAnnotation | None:
         """
         Query app annotations to reply
         :param app_record: app record

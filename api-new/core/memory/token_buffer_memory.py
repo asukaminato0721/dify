@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 from sqlalchemy import select
 from api_server.models.app import App as FastAPIApp
+from api_server.models.app import AppMode as FastAPIAppMode
 from api_server.models.app import Conversation as FastAPIConversation
 from api_server.models.app import Message as FastAPIMessage
 from api_server.models.app import MessageFile as FastAPIMessageFile
@@ -22,7 +23,6 @@ from graphon.model_runtime.entities import (
     UserPromptMessage,
 )
 from graphon.model_runtime.entities.message_entities import PromptMessageContentUnionTypes
-from models.model import AppMode, Conversation, Message, MessageFile
 from repositories.api_workflow_run_repository import APIWorkflowRunRepository
 from repositories.factory import DifyAPIRepositoryFactory
 
@@ -32,7 +32,7 @@ _file_access_controller = DatabaseFileAccessController()
 class TokenBufferMemory:
     def __init__(
         self,
-        conversation: Conversation | FastAPIConversation,
+        conversation: FastAPIConversation,
         model_instance: ModelInstance,
     ):
         self.conversation = conversation
@@ -49,9 +49,9 @@ class TokenBufferMemory:
 
     def _build_prompt_message_with_files(
         self,
-        message_files: Sequence[MessageFile | FastAPIMessageFile],
+        message_files: Sequence[FastAPIMessageFile],
         text_content: str,
-        message: Message | FastAPIMessage,
+        message: FastAPIMessage,
         app_record,
         is_user_message: bool,
     ) -> PromptMessage:
@@ -66,9 +66,9 @@ class TokenBufferMemory:
         """
         conversation_mode = str(self.conversation.mode)
         match conversation_mode:
-            case AppMode.AGENT_CHAT | AppMode.COMPLETION | AppMode.CHAT:
+            case FastAPIAppMode.AGENT_CHAT | FastAPIAppMode.COMPLETION | FastAPIAppMode.CHAT:
                 file_extra_config = FileUploadConfigManager.convert(self.conversation.model_config)
-            case AppMode.ADVANCED_CHAT | AppMode.WORKFLOW:
+            case FastAPIAppMode.ADVANCED_CHAT | FastAPIAppMode.WORKFLOW:
                 app = self.conversation.app
                 if not app:
                     raise ValueError("App not found for conversation")

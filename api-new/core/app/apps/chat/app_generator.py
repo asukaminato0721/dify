@@ -6,6 +6,8 @@ from typing import Any, Literal, overload
 
 from pydantic import ValidationError
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import EndUser as FastAPIEndUser
 from configs import dify_config
 from constants import UUID_NIL
 from core.app.app_config.easy_ui_based_app.model_config.converter import ModelConfigConverter
@@ -22,7 +24,6 @@ from core.ops.ops_trace_manager import TraceQueueManager
 from factories import file_factory
 from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
 from models import Account
-from models.model import App, EndUser
 from services.conversation_service import ConversationService
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ class ChatAppGenerator(MessageBasedAppGenerator):
     @overload
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: Literal[True],
@@ -42,8 +43,8 @@ class ChatAppGenerator(MessageBasedAppGenerator):
     @overload
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: Literal[False],
@@ -52,8 +53,8 @@ class ChatAppGenerator(MessageBasedAppGenerator):
     @overload
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: bool,
@@ -61,8 +62,8 @@ class ChatAppGenerator(MessageBasedAppGenerator):
 
     def generate(
         self,
-        app_model: App,
-        user: Account | EndUser,
+        app_model: FastAPIApp,
+        user: Account | FastAPIEndUser,
         args: Mapping[str, Any],
         invoke_from: InvokeFrom,
         streaming: bool = True,

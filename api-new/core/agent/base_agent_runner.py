@@ -49,7 +49,6 @@ from graphon.model_runtime.entities.message_entities import ImagePromptMessageCo
 from graphon.model_runtime.entities.model_entities import ModelFeature
 from graphon.model_runtime.model_providers.__base.large_language_model import LargeLanguageModel
 from models.enums import CreatorUserRole
-from models.model import Conversation, Message, MessageFile
 
 logger = logging.getLogger(__name__)
 _file_access_controller = DatabaseFileAccessController()
@@ -61,12 +60,12 @@ class BaseAgentRunner(AppRunner):
         *,
         tenant_id: str,
         application_generate_entity: AgentChatAppGenerateEntity,
-        conversation: Conversation | FastAPIConversation,
+        conversation: FastAPIConversation,
         app_config: AgentChatAppConfig,
         model_config: ModelConfigWithCredentialsEntity,
         config: AgentEntity,
         queue_manager: AppQueueManager,
-        message: Message | FastAPIMessage,
+        message: FastAPIMessage,
         user_id: str,
         model_instance: ModelInstance,
         memory: TokenBufferMemory | None = None,
@@ -514,7 +513,7 @@ class BaseAgentRunner(AppRunner):
                     result.append(AssistantPromptMessage(content=message.answer))
         return result
 
-    def organize_agent_user_prompt(self, message: Message | FastAPIMessage) -> UserPromptMessage:
+    def organize_agent_user_prompt(self, message: FastAPIMessage) -> UserPromptMessage:
         with session_factory.create_session() as session:
             stmt = select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == message.id)
             files = session.scalars(stmt).all()

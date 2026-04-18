@@ -10,6 +10,8 @@ from core.app.app_config.entities import EasyUIBasedAppConfig, EasyUIBasedAppMod
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
 from core.app.app_config.features.more_like_this.manager import MoreLikeThisConfigManager
 from core.app.app_config.features.text_to_speech.manager import TextToSpeechConfigManager
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import AppModelConfig as FastAPIAppModelConfig
 from models.model import App, AppMode, AppModelConfig, AppModelConfigDict
 
 
@@ -24,7 +26,10 @@ class CompletionAppConfig(EasyUIBasedAppConfig):
 class CompletionAppConfigManager(BaseAppConfigManager):
     @classmethod
     def get_app_config(
-        cls, app_model: App, app_model_config: AppModelConfig, override_config_dict: AppModelConfigDict | None = None
+        cls,
+        app_model: App | FastAPIApp,
+        app_model_config: AppModelConfig | FastAPIAppModelConfig,
+        override_config_dict: AppModelConfigDict | None = None,
     ) -> CompletionAppConfig:
         """
         Convert app model config to completion app config
@@ -40,13 +45,13 @@ class CompletionAppConfigManager(BaseAppConfigManager):
 
         if config_from != EasyUIBasedAppModelConfigFrom.ARGS:
             app_model_config_dict = app_model_config.to_dict()
-            config_dict = app_model_config_dict.copy()
+            config_dict = cast(AppModelConfigDict, app_model_config_dict.copy())
         else:
             if not override_config_dict:
                 raise Exception("override_config_dict is required when config_from is ARGS")
             config_dict = override_config_dict
 
-        app_mode = AppMode.value_of(app_model.mode)
+        app_mode = AppMode.value_of(str(app_model.mode))
         app_config = CompletionAppConfig(
             tenant_id=app_model.tenant_id,
             app_id=app_model.id,

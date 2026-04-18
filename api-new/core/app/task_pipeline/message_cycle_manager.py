@@ -35,7 +35,7 @@ from core.llm_generator.llm_generator import LLMGenerator
 from core.tools.signature import sign_tool_file
 from extensions.ext_redis import redis_client
 from models.enums import MessageFileBelongsTo
-from models.model import AppMode, Conversation, MessageAnnotation, MessageFile
+from models.model import MessageAnnotation
 from services.annotation_service import AppAnnotationService
 
 logger = logging.getLogger(__name__)
@@ -117,7 +117,7 @@ class MessageCycleManager:
             if not conversation:
                 return
 
-            if str(conversation.mode) == AppMode.COMPLETION.value:
+            if str(conversation.mode) == "completion":
                 return
 
             app_model = conversation.app
@@ -145,7 +145,7 @@ class MessageCycleManager:
 
     def handle_annotation_reply(
         self, event: QueueAnnotationReplyEvent
-    ) -> MessageAnnotation | FastAPIMessageAnnotation | None:
+    ) -> FastAPIMessageAnnotation | MessageAnnotation | None:
         """
         Handle annotation reply.
         :param event: event

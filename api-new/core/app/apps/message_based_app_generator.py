@@ -5,6 +5,13 @@ from typing import Union, cast
 
 from sqlalchemy import select
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import AppMode as FastAPIAppMode
+from api_server.models.app import AppModelConfig as FastAPIAppModelConfig
+from api_server.models.app import Conversation as FastAPIConversation
+from api_server.models.app import EndUser as FastAPIEndUser
+from api_server.models.app import Message as FastAPIMessage
+from api_server.models.app import MessageFile as FastAPIMessageFile
 from core.app.app_config.entities import EasyUIBasedAppConfig, EasyUIBasedAppModelConfigFrom
 from core.app.apps.base_app_generator import BaseAppGenerator
 from core.app.apps.base_app_queue_manager import AppQueueManager
@@ -34,7 +41,6 @@ from libs.broadcast_channel.channel import Topic
 from libs.datetime_utils import naive_utc_now
 from models import Account
 from models.enums import ConversationFromSource, CreatorUserRole, MessageFileBelongsTo
-from models.model import App, AppMode, AppModelConfig, Conversation, EndUser, Message, MessageFile
 from services.errors.app_model_config import AppModelConfigBrokenError
 from services.errors.conversation import ConversationNotExistsError
 from services.errors.message import MessageNotExistsError
@@ -51,9 +57,9 @@ class MessageBasedAppGenerator(BaseAppGenerator):
             AgentChatAppGenerateEntity,
         ],
         queue_manager: AppQueueManager,
-        conversation: Conversation,
-        message: Message,
-        user: Union[Account, EndUser],
+        conversation: FastAPIConversation,
+        message: FastAPIMessage,
+        user: Union[Account, FastAPIEndUser],
         stream: bool = False,
     ) -> Union[
         ChatbotAppBlockingResponse,
@@ -88,10 +94,13 @@ class MessageBasedAppGenerator(BaseAppGenerator):
                 logger.exception("Failed to handle response, conversation_id: %s", conversation.id)
                 raise e
 
-    def _get_app_model_config(self, app_model: App, conversation: Conversation | None = None) -> AppModelConfig:
+    def _get_app_model_config(
+        self, app_model: FastAPIApp, conversation: FastAPIConversation | None = None
+    ) -> FastAPIAppModelConfig:
         if conversation:
-            stmt = select(AppModelConfig).where(
-                AppModelConfig.id == conversation.app_model_config_id, AppModelConfig.app_id == app_model.id
+            stmt = select(FastAPIAppModelConfig).where(
+                FastAPIAppModelConfig.id == conversation.app_model_config_id,
+                FastAPIAppModelConfig.app_id == app_model.id,
             )
             with session_factory.create_session() as session:
                 app_model_config = session.scalar(stmt)
@@ -117,8 +126,8 @@ class MessageBasedAppGenerator(BaseAppGenerator):
             AgentChatAppGenerateEntity,
             AdvancedChatAppGenerateEntity,
         ],
-        conversation: Conversation | None = None,
-    ) -> tuple[Conversation, Message]:
+        conversation: FastAPIConversation | None = None,
+    ) -> tuple[FastAPIConversation, FastAPIMessage]:
         """
         Initialize generate records
         :param application_generate_entity: application generate entity
@@ -148,9 +157,9 @@ class MessageBasedAppGenerator(BaseAppGenerator):
             model_id = application_generate_entity.model_conf.model
             override_model_configs = None
             if app_config.app_model_config_from == EasyUIBasedAppModelConfigFrom.ARGS and app_config.app_mode in {
-                AppMode.AGENT_CHAT,
-                AppMode.CHAT,
-                AppMode.COMPLETION,
+                FastAPIAppMode.AGENT_CHAT,
+                FastAPIAppMode.CHAT,
+                FastAPIAppMode.COMPLETION,
             }:
                 override_model_configs = app_config.app_model_config_dict
 
@@ -165,7 +174,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
         try:
             with session_factory.get_session_maker().begin() as session:
                 if not conversation:
-                    conversation = Conversation(
+                    conversation = FastAPIConversation(
                         app_id=app_config.app_id,
                         app_model_config_id=app_model_config_id,
                         model_provider=model_provider,
@@ -179,7 +188,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
                         system_instruction_tokens=0,
                         status="normal",
                         invoke_from=application_generate_entity.invoke_from.value,
-                        from_source=from_source,
+                        from_source=from_source.value,
                         from_end_user_id=end_user_id,
                         from_account_id=account_id,
                     )
@@ -191,7 +200,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
                     session.add(conversation)
                     conversation.updated_at = naive_utc_now()
 
-                message = Message(
+                message = FastAPIMessage(
                     app_id=app_config.app_id,
                     model_provider=model_provider,
                     model_id=model_id,
@@ -199,7 +208,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
                     conversation_id=conversation.id,
                     inputs=application_generate_entity.inputs,
                     query=application_generate_entity.query,
-                    message="",
+                    message={},
                     message_tokens=0,
                     message_unit_price=0,
                     message_price_unit=0,
@@ -212,10 +221,10 @@ class MessageBasedAppGenerator(BaseAppGenerator):
                     total_price=0,
                     currency="USD",
                     invoke_from=application_generate_entity.invoke_from.value,
-                    from_source=from_source,
+                    from_source=from_source.value,
                     from_end_user_id=end_user_id,
                     from_account_id=account_id,
-                    app_mode=app_config.app_mode,
+                    app_mode=app_config.app_mode.value,
                 )
 
                 session.add(message)
@@ -224,14 +233,16 @@ class MessageBasedAppGenerator(BaseAppGenerator):
 
                 message_files = []
                 for file in application_generate_entity.files:
-                    message_file = MessageFile(
+                    message_file = FastAPIMessageFile(
                         message_id=message.id,
                         type=file.type,
                         transfer_method=file.transfer_method,
-                        belongs_to=MessageFileBelongsTo.USER,
+                        belongs_to=MessageFileBelongsTo.USER.value,
                         url=file.remote_url,
                         upload_file_id=resolve_file_record_id(file.reference),
-                        created_by_role=(CreatorUserRole.ACCOUNT if account_id else CreatorUserRole.END_USER),
+                        created_by_role=(
+                            CreatorUserRole.ACCOUNT.value if account_id else CreatorUserRole.END_USER.value
+                        ),
                         created_by=account_id or end_user_id or "",
                     )
                     message_files.append(message_file)
@@ -266,28 +277,28 @@ class MessageBasedAppGenerator(BaseAppGenerator):
 
         return introduction or ""
 
-    def _get_conversation(self, conversation_id: str) -> Conversation:
+    def _get_conversation(self, conversation_id: str) -> FastAPIConversation:
         """
         Get conversation by conversation id
         :param conversation_id: conversation id
         :return: conversation
         """
         with session_factory.create_session() as session:
-            conversation = session.scalar(select(Conversation).where(Conversation.id == conversation_id))
+            conversation = session.scalar(select(FastAPIConversation).where(FastAPIConversation.id == conversation_id))
 
         if not conversation:
             raise ConversationNotExistsError("Conversation not exists")
 
         return conversation
 
-    def _get_message(self, message_id: str) -> Message:
+    def _get_message(self, message_id: str) -> FastAPIMessage:
         """
         Get message by message id
         :param message_id: message id
         :return: message
         """
         with session_factory.create_session() as session:
-            message = session.scalar(select(Message).where(Message.id == message_id))
+            message = session.scalar(select(FastAPIMessage).where(FastAPIMessage.id == message_id))
 
         if message is None:
             raise MessageNotExistsError("Message not exists")
@@ -295,11 +306,11 @@ class MessageBasedAppGenerator(BaseAppGenerator):
         return message
 
     @staticmethod
-    def _make_channel_key(app_mode: AppMode, workflow_run_id: str):
+    def _make_channel_key(app_mode: FastAPIAppMode, workflow_run_id: str):
         return f"channel:{app_mode}:{workflow_run_id}"
 
     @classmethod
-    def get_response_topic(cls, app_mode: AppMode, workflow_run_id: str) -> Topic:
+    def get_response_topic(cls, app_mode: FastAPIAppMode, workflow_run_id: str) -> Topic:
         key = cls._make_channel_key(app_mode, workflow_run_id)
         channel = get_pubsub_broadcast_channel()
         topic = channel.topic(key)
@@ -308,7 +319,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
     @classmethod
     def retrieve_events(
         cls,
-        app_mode: AppMode,
+        app_mode: FastAPIAppMode,
         workflow_run_id: str,
         idle_timeout=300,
         on_subscribe: Callable[[], None] | None = None,
