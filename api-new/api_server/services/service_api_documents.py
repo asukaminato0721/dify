@@ -12,6 +12,7 @@ from api_server.models.app import Account, UploadFile
 from api_server.models.dataset import Dataset, DatasetMetadata, DatasetMetadataBinding, Document, DocumentSegment
 from core.rag.index_processor.constant.built_in_field import BuiltInField, MetadataDataSource
 from extensions.ext_database import db
+from graphon.file import helpers as file_helpers
 
 
 class ServiceApiDocumentListResponseDict(TypedDict):
@@ -39,6 +40,10 @@ class ServiceApiDocumentStatusItemDict(TypedDict):
 
 class ServiceApiDocumentStatusResponseDict(TypedDict):
     data: list[ServiceApiDocumentStatusItemDict]
+
+
+class ServiceApiDocumentDownloadResponseDict(TypedDict):
+    url: str
 
 
 class ServiceApiDocumentService:
@@ -390,3 +395,45 @@ class ServiceApiDocumentService:
                     }
                 )
         return {"data": data}
+
+    @classmethod
+    async def get_document_download_url(
+        cls,
+        *,
+        tenant_id: str,
+        dataset_id: str,
+        document_id: str,
+    ) -> ServiceApiDocumentDownloadResponseDict:
+        await cls._get_dataset(tenant_id=tenant_id, dataset_id=dataset_id)
+        async with db.session_context() as session:
+            document = await session.scalar(
+                select(Document).where(
+                    Document.dataset_id == dataset_id,
+                    Document.tenant_id == tenant_id,
+                    Document.id == document_id,
+                )
+            )
+            if document is None:
+                raise not_found("document_not_found", "Document not found.")
+
+            if document.data_source_type != "upload_file":
+                raise not_found(
+                    "document_download_unavailable",
+                    "Document does not have an uploaded file to download.",
+                )
+
+            data_source_info = cls._data_source_info(document)
+            upload_file_id = data_source_info.get("upload_file_id")
+            if not isinstance(upload_file_id, str) or not upload_file_id:
+                raise not_found("upload_file_not_found", "Uploaded file not found.")
+
+            upload_file = await session.scalar(
+                select(UploadFile).where(
+                    UploadFile.id == upload_file_id,
+                    UploadFile.tenant_id == tenant_id,
+                )
+            )
+            if upload_file is None:
+                raise not_found("upload_file_not_found", "Uploaded file not found.")
+
+        return {"url": file_helpers.get_signed_file_url(upload_file_id=upload_file.id, as_attachment=True)}

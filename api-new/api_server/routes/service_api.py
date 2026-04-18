@@ -53,6 +53,7 @@ from api_server.services.service_api_dataset_tags import (
 )
 from api_server.services.service_api_datasets import ServiceApiDatasetListResponseDict, ServiceApiDatasetService
 from api_server.services.service_api_documents import (
+    ServiceApiDocumentDownloadResponseDict,
     ServiceApiDocumentListResponseDict,
     ServiceApiDocumentService,
     ServiceApiDocumentStatusResponseDict,
@@ -409,6 +410,20 @@ async def get_service_api_document_detail(
         dataset_id=str(dataset_id),
         document_id=str(document_id),
         metadata=metadata,
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/documents/{document_id}/download")
+async def get_service_api_document_download_url(
+    request: Request,
+    dataset_id: UUID,
+    document_id: UUID,
+) -> ServiceApiDocumentDownloadResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDocumentService.get_document_download_url(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_id=str(document_id),
     )
 
 

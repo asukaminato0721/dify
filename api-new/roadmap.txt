@@ -203,6 +203,8 @@ Done
   - `GET /v1/datasets/{dataset_id}/documents`
   - `GET /v1/datasets/{dataset_id}/documents/{batch}/indexing-status`
   - `GET /v1/datasets/{dataset_id}/documents/{document_id}`
+- Ported dataset-token service API document download endpoint:
+  - `GET /v1/datasets/{dataset_id}/documents/{document_id}/download`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused service API route tests in `tests/test_service_api_routes.py`.
@@ -259,6 +261,8 @@ Done
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata-mutation/document-metadata/tags/datasets slice.
 - Further expanded targeted service API route/auth verification now also passes: `56 passed` for the focused service-route slice.
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata-mutation/document-metadata/tags/datasets/documents slice.
+- Further expanded targeted service API route/auth verification now also passes: `57 passed` for the focused service-route slice.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata-mutation/document-metadata/tags/datasets/documents/download slice.
 
 Current status
 --------------
@@ -350,6 +354,7 @@ Current status
   - `/v1/datasets/{dataset_id}/documents`
   - `/v1/datasets/{dataset_id}/documents/{batch}/indexing-status`
   - `/v1/datasets/{dataset_id}/documents/{document_id}`
+  - `/v1/datasets/{dataset_id}/documents/{document_id}/download`
   - `/v1/datasets/tags`
   - `/v1/datasets/tags/binding`
   - `/v1/datasets/tags/unbinding`
@@ -387,6 +392,7 @@ Current status
 - The expanded `/v1` service API slice now also handles bulk document metadata updates through the same local async dataset/document metadata service path instead of the legacy Flask metadata bulk-update controller.
 - The expanded `/v1` service API slice now also handles dataset tag listing, CRUD, binding, and per-dataset tag status through local async tag/dataset services instead of the legacy Flask tag management controllers.
 - The expanded `/v1` service API slice now also serves the basic dataset document list/detail/indexing-status endpoints through local async dataset/document queries instead of the legacy Flask document read controllers.
+- The expanded `/v1` service API slice now also serves document download URLs through local async dataset/document/upload-file lookups plus the existing signed-file helper instead of the legacy Flask document download controller.
 - The expanded `/v1` service API slice now also serves the basic dataset list/detail endpoints through local async dataset, tag, metadata, and count queries instead of the legacy Flask dataset list/detail controllers.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.

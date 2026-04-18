@@ -243,6 +243,38 @@ async def test_service_api_document_detail_route_uses_dataset_context() -> None:
     )
 
 
+async def test_service_api_document_download_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    document_id = str(uuid4())
+    payload = {"url": "https://example.com/download"}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDocumentService.get_document_download_url",
+            new=AsyncMock(return_value=payload),
+        ) as document_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/documents/{document_id}/download",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    document_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        document_id=document_id,
+    )
+
+
 async def test_service_api_document_indexing_status_route_uses_dataset_context() -> None:
     context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
     dataset_id = str(uuid4())
