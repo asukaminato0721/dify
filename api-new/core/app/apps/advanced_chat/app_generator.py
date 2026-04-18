@@ -7,14 +7,13 @@ import uuid
 from collections.abc import Generator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from flask import Flask, current_app
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
 
 import contexts
 from configs import dify_config
 from constants import UUID_NIL
+from flask import Flask, current_app
 
 if TYPE_CHECKING:
     from controllers.console.app.workflow import LoopNodeRunPayload
@@ -41,7 +40,6 @@ from core.ops.ops_trace_manager import TraceQueueManager
 from core.prompt.utils.get_thread_messages_length import get_thread_messages_length
 from core.repositories import DifyCoreRepositoryFactory
 from core.repositories.factory import WorkflowExecutionRepository, WorkflowNodeExecutionRepository
-from extensions.ext_database import db
 from factories import file_factory
 from graphon.graph_engine.layers import GraphEngineLayer
 from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
@@ -201,21 +199,21 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
             # Create repositories
             #
             # Create session factory
-            session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+            sync_session_maker = session_factory.get_session_maker()
             # Create workflow execution(aka workflow run) repository
             if invoke_from == InvokeFrom.DEBUGGER:
                 workflow_triggered_from = WorkflowRunTriggeredFrom.DEBUGGING
             else:
                 workflow_triggered_from = WorkflowRunTriggeredFrom.APP_RUN
             workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-                session_factory=session_factory,
+                session_factory=sync_session_maker,
                 user=user,
                 app_id=application_generate_entity.app_config.app_id,
                 triggered_from=workflow_triggered_from,
             )
             # Create workflow node execution repository
             workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-                session_factory=session_factory,
+                session_factory=sync_session_maker,
                 user=user,
                 app_id=application_generate_entity.app_config.app_id,
                 triggered_from=WorkflowNodeExecutionTriggeredFrom.WORKFLOW_RUN,
@@ -313,30 +311,31 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
 
         # Create repositories
         #
-        # Create session factory
-        session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+        sync_session_maker = session_factory.get_session_maker()
+        sync_engine = sync_session_maker.kw["bind"]
         # Create workflow execution(aka workflow run) repository
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowRunTriggeredFrom.DEBUGGING,
         )
         # Create workflow node execution repository
         workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
         var_loader = DraftVarLoader(
-            engine=db.engine,
+            engine=sync_engine,
             app_id=application_generate_entity.app_config.app_id,
             tenant_id=application_generate_entity.app_config.tenant_id,
             user_id=user.id,
         )
-        draft_var_srv = WorkflowDraftVariableService(db.session())
-        draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
+        with session_factory.create_session() as session:
+            draft_var_srv = WorkflowDraftVariableService(session)
+            draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
 
         return self._generate(
             workflow=workflow,
@@ -397,30 +396,31 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
 
         # Create repositories
         #
-        # Create session factory
-        session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+        sync_session_maker = session_factory.get_session_maker()
+        sync_engine = sync_session_maker.kw["bind"]
         # Create workflow execution(aka workflow run) repository
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowRunTriggeredFrom.DEBUGGING,
         )
         # Create workflow node execution repository
         workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
         var_loader = DraftVarLoader(
-            engine=db.engine,
+            engine=sync_engine,
             app_id=application_generate_entity.app_config.app_id,
             tenant_id=application_generate_entity.app_config.tenant_id,
             user_id=user.id,
         )
-        draft_var_srv = WorkflowDraftVariableService(db.session())
-        draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
+        with session_factory.create_session() as session:
+            draft_var_srv = WorkflowDraftVariableService(session)
+            draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
 
         return self._generate(
             workflow=workflow,
@@ -477,9 +477,11 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
 
             if is_first_conversation:
                 # update conversation features
-                conversation.override_model_configs = workflow.features
-                db.session.commit()
-                db.session.refresh(conversation)
+                with session_factory.get_session_maker().begin() as session:
+                    session.add(conversation)
+                    conversation.override_model_configs = workflow.features
+                    session.flush()
+                    session.refresh(conversation)
 
             # get conversation dialogue count
             # NOTE: dialogue_count should not start from 0,
@@ -533,8 +535,6 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
             workflow_snapshot = WorkflowSnapshot.from_workflow(workflow)
             conversation_snapshot = ConversationSnapshot.from_conversation(conversation)
             message_snapshot = MessageSnapshot.from_message(message)
-            db.session.close()
-
             # return response or stream generator
             response = self._handle_advanced_chat_response(
                 application_generate_entity=application_generate_entity,
@@ -578,7 +578,7 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
             conversation = self._get_conversation(conversation_id)
             message = self._get_message(message_id)
 
-            with Session(db.engine, expire_on_commit=False) as session:
+            with session_factory.create_session() as session:
                 workflow = session.scalar(
                     select(Workflow).where(
                         Workflow.tenant_id == application_generate_entity.app_config.tenant_id,
@@ -642,7 +642,7 @@ class AdvancedChatAppGenerator(MessageBasedAppGenerator):
                 logger.exception("Unknown Error when generating")
                 queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
             finally:
-                db.session.close()
+                pass
 
     def _handle_advanced_chat_response(
         self,

@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
+from core.db.session_factory import session_factory
 from core.prompt.utils.extract_thread_messages import extract_thread_messages
-from extensions.ext_database import db
 from models.model import Message
 
 
@@ -11,8 +11,8 @@ def get_thread_messages_length(conversation_id: str) -> int:
     """
     # Fetch all messages related to the conversation
     stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc())
-
-    messages = db.session.scalars(stmt).all()
+    with session_factory.create_session() as session:
+        messages = session.scalars(stmt).all()
 
     # Extract thread messages
     thread_messages = extract_thread_messages(messages)
