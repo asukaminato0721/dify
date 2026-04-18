@@ -28,8 +28,27 @@ class Dataset(TypeBase):
 
     id: Mapped[str] = mapped_column(StringUUID, init=False)
     tenant_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    name: Mapped[str] = mapped_column(String(255), init=False)
+    description: Mapped[str | None] = mapped_column(sa.Text, init=False)
+    provider: Mapped[str] = mapped_column(String(255), init=False)
+    permission: Mapped[str] = mapped_column(String(255), init=False)
+    data_source_type: Mapped[str | None] = mapped_column(String(255), init=False)
+    indexing_technique: Mapped[str | None] = mapped_column(String(255), init=False)
+    created_by: Mapped[str] = mapped_column(StringUUID, init=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
+    updated_by: Mapped[str | None] = mapped_column(StringUUID, init=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
+    embedding_model: Mapped[str | None] = mapped_column(String(255), init=False)
+    embedding_model_provider: Mapped[str | None] = mapped_column(String(255), init=False)
+    retrieval_model: Mapped[dict[str, object] | None] = mapped_column(sa.JSON, init=False)
+    summary_index_setting: Mapped[dict[str, object] | None] = mapped_column(sa.JSON, init=False)
     built_in_field_enabled: Mapped[bool] = mapped_column(sa.Boolean, init=False)
+    icon_info: Mapped[dict[str, object] | None] = mapped_column(sa.JSON, init=False)
+    runtime_mode: Mapped[str | None] = mapped_column(String(255), init=False)
+    pipeline_id: Mapped[str | None] = mapped_column(StringUUID, init=False)
+    chunk_structure: Mapped[str | None] = mapped_column(String(255), init=False)
     enable_api: Mapped[bool] = mapped_column(sa.Boolean, init=False)
+    is_multimodal: Mapped[bool] = mapped_column(sa.Boolean, init=False)
 
 
 class DatasetMetadata(TypeBase):
@@ -90,4 +109,22 @@ class Document(TypeBase):
     created_by: Mapped[str] = mapped_column(StringUUID, init=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, init=False, server_default=func.current_timestamp())
+    word_count: Mapped[int | None] = mapped_column(sa.Integer, init=False)
+    indexing_status: Mapped[str] = mapped_column(String(255), init=False)
+    enabled: Mapped[bool] = mapped_column(sa.Boolean, init=False)
+    archived: Mapped[bool] = mapped_column(sa.Boolean, init=False)
+    doc_form: Mapped[str] = mapped_column(String(255), init=False)
     doc_metadata: Mapped[dict[str, object] | None] = mapped_column(sa.JSON, init=False)
+
+
+class AppDatasetJoin(TypeBase):
+    __tablename__ = "app_dataset_joins"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="app_dataset_join_pkey"),
+        sa.Index("app_dataset_join_dataset_id_idx", "dataset_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID, init=False)
+    app_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    dataset_id: Mapped[str] = mapped_column(StringUUID, init=False)

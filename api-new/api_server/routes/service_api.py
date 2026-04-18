@@ -51,6 +51,7 @@ from api_server.services.service_api_dataset_tags import (
     ServiceApiDatasetTagDict,
     ServiceApiDatasetTagService,
 )
+from api_server.services.service_api_datasets import ServiceApiDatasetListResponseDict, ServiceApiDatasetService
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
@@ -118,6 +119,14 @@ class ServiceApiFileUploadResponseDict(TypedDict):
 
 class ServiceApiWorkspaceModelsResponseDict(TypedDict):
     data: list[object]
+
+
+class ServiceApiDatasetListQuery(BaseModel):
+    page: int = Field(default=1)
+    limit: int = Field(default=20)
+    keyword: str | None = Field(default=None)
+    include_all: bool = Field(default=False)
+    tag_ids: list[str] = Field(default_factory=list)
 
 
 class ServiceApiMessageFeedbackPayload(BaseModel):
@@ -321,6 +330,26 @@ async def get_service_api_workspace_models(
     return {"data": [model.model_dump(mode="json") for model in models]}
 
 
+@router.get("/v1/datasets")
+async def list_service_api_datasets(
+    request: Request,
+    page: int = Query(default=1),
+    limit: int = Query(default=20),
+    keyword: str | None = Query(default=None),
+    include_all: bool = Query(default=False),
+    tag_ids: Annotated[list[str] | None, Query()] = None,
+) -> ServiceApiDatasetListResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetService.list_datasets(
+        tenant_id=context.tenant.id,
+        page=page,
+        limit=limit,
+        keyword=keyword,
+        include_all=include_all,
+        tag_ids=tag_ids or [],
+    )
+
+
 @router.get("/v1/datasets/{dataset_id}/metadata")
 async def get_service_api_dataset_metadata(
     request: Request,
@@ -508,6 +537,18 @@ async def list_service_api_dataset_tag_bindings(
 ) -> ServiceApiDatasetTagBindingStatusDict:
     context = await ServiceApiAuthService.resolve_dataset_context(request)
     return await ServiceApiDatasetTagService.list_dataset_tags(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}")
+async def get_service_api_dataset_detail(
+    request: Request,
+    dataset_id: UUID,
+) -> dict[str, object]:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetService.get_dataset_detail(
         tenant_id=context.tenant.id,
         dataset_id=str(dataset_id),
     )
