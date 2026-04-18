@@ -375,6 +375,110 @@ async def test_service_api_chat_stop_route_uses_task_control_service() -> None:
     stop_mock.assert_called_once_with("task-1")
 
 
+async def test_service_api_workflow_route_uses_native_generation_service() -> None:
+    context = _ServiceApiContextStub()
+    context.app.mode.value = "workflow"
+    end_user = object()
+    runtime_context = object()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiResourceService.build_runtime_context",
+            new=AsyncMock(return_value=runtime_context),
+        ) as runtime_mock,
+        patch(
+            "api_server.routes.service_api.AsyncWebGenerationService.run_workflow",
+            new=AsyncMock(return_value={"workflow_run_id": "run-1"}),
+        ) as workflow_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/workflows/run",
+                headers={"Authorization": "Bearer app-token"},
+                json={"user": "session-1", "inputs": {"topic": "weather"}},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"workflow_run_id": "run-1"}
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    runtime_mock.assert_awaited_once_with(app=context.app, end_user=end_user)
+    workflow_mock.assert_awaited_once()
+
+
+async def test_service_api_workflow_detail_route_uses_native_workflow_service() -> None:
+    context = _ServiceApiContextStub()
+    context.app.mode.value = "workflow"
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiWorkflowService.get_workflow_run",
+            new=AsyncMock(
+                return_value={
+                    "id": "run-1",
+                    "workflow_id": "workflow-1",
+                    "status": "succeeded",
+                    "inputs": {"topic": "weather"},
+                    "outputs": {"answer": "sunny"},
+                    "error": None,
+                    "total_steps": 3,
+                    "total_tokens": 42,
+                    "created_at": 1710000000,
+                    "finished_at": 1710000001,
+                    "elapsed_time": 1.2,
+                }
+            ),
+        ) as detail_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get("/v1/workflows/run/run-1", headers={"Authorization": "Bearer app-token"})
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "run-1"
+    auth_mock.assert_awaited_once()
+    detail_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        app_id="app-1",
+        workflow_run_id="run-1",
+    )
+
+
+async def test_service_api_workflow_stop_route_uses_task_control_service() -> None:
+    context = _ServiceApiContextStub()
+    context.app.mode.value = "workflow"
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch("api_server.routes.service_api.TaskControlService.stop_task") as stop_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/workflows/tasks/task-1/stop",
+                headers={"Authorization": "Bearer app-token"},
+                params={"user": "session-1"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    auth_mock.assert_awaited_once()
+    stop_mock.assert_called_once_with("task-1")
+
+
 async def test_service_api_messages_route_uses_native_message_service() -> None:
     context = _ServiceApiContextStub()
     end_user = object()

@@ -27,6 +27,7 @@ from api_server.services.service_api_apps import AppInfoResponseDict, ServiceApi
 from api_server.services.service_api_auth import ServiceApiAuthService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
+from api_server.services.service_api_workflows import ServiceApiWorkflowRunResponseDict, ServiceApiWorkflowService
 from api_server.services.suggested_questions import SuggestedQuestionsService
 from api_server.services.task_control import TaskControlService
 from configs import dify_config
@@ -115,6 +116,13 @@ class ServiceApiChatPayload(BaseModel):
     retriever_from: str = Field(default="dev")
     auto_generate_name: bool = Field(default=True)
     workflow_id: str | None = Field(default=None)
+
+
+class ServiceApiWorkflowPayload(BaseModel):
+    user: str | None = Field(default=None)
+    inputs: dict[str, object] = Field(default_factory=dict)
+    files: list[dict[str, object]] | None = Field(default=None)
+    response_mode: Literal["blocking", "streaming"] | None = Field(default=None)
 
 
 class ServiceApiSuggestedQuestionsResponseDict(TypedDict):
@@ -309,6 +317,54 @@ async def stop_service_api_chat(
     context = await ServiceApiAuthService.resolve_app_context(request)
     if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
         raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    _ = user
+    TaskControlService.stop_task(task_id)
+    return {"result": "success"}
+
+
+@router.post("/v1/workflows/run", response_model=None)
+async def create_service_api_workflow(
+    request: Request,
+    payload: ServiceApiWorkflowPayload,
+) -> JSONResponse | StreamingResponse:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value != "workflow":
+        raise forbidden("not_workflow_app", "Please check if your Workflow app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=payload.user)
+    runtime_context = await ServiceApiResourceService.build_runtime_context(app=context.app, end_user=end_user)
+    response = await AsyncWebGenerationService.run_workflow(
+        context=runtime_context,
+        inputs=payload.inputs,
+        files=payload.files,
+        streaming=payload.response_mode == "streaming",
+    )
+    return PublicGenerationBridge.to_fastapi_response(response)
+
+
+@router.get("/v1/workflows/run/{workflow_run_id}")
+async def get_service_api_workflow_run(
+    request: Request,
+    workflow_run_id: str,
+) -> ServiceApiWorkflowRunResponseDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"workflow", "advanced-chat"}:
+        raise forbidden("not_workflow_app", "Please check if your Workflow app mode matches the right API route.")
+    return await ServiceApiWorkflowService.get_workflow_run(
+        tenant_id=context.tenant.id,
+        app_id=context.app.id,
+        workflow_run_id=workflow_run_id,
+    )
+
+
+@router.post("/v1/workflows/tasks/{task_id}/stop")
+async def stop_service_api_workflow(
+    request: Request,
+    task_id: str,
+    user: str | None = Query(default=None),
+) -> ServiceApiStopResponseDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value != "workflow":
+        raise forbidden("not_workflow_app", "Please check if your Workflow app mode matches the right API route.")
     _ = user
     TaskControlService.stop_task(task_id)
     return {"result": "success"}
