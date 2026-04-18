@@ -1,4 +1,3 @@
-import contextvars
 import datetime
 import json
 import logging
@@ -9,10 +8,8 @@ import uuid
 from collections.abc import Generator, Mapping
 from typing import Any, Literal, cast, overload
 
-from flask import Flask, current_app
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
 
 import contexts
 from configs import dify_config
@@ -33,6 +30,7 @@ from core.datasource.entities.datasource_entities import (
     OnlineDriveBrowseFilesRequest,
 )
 from core.datasource.online_drive.online_drive_plugin import OnlineDriveDatasourcePlugin
+from core.db.session_factory import session_factory
 from core.entities.knowledge_entities import PipelineDataset, PipelineDocument
 from core.rag.index_processor.constant.built_in_field import BuiltInField
 from core.repositories.factory import (
@@ -40,10 +38,8 @@ from core.repositories.factory import (
     WorkflowExecutionRepository,
     WorkflowNodeExecutionRepository,
 )
-from extensions.ext_database import db
 from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
 from graphon.variable_loader import DUMMY_VARIABLE_LOADER, VariableLoader
-from libs.flask_utils import preserve_flask_contexts
 from models import Account, EndUser, Workflow, WorkflowNodeExecutionTriggeredFrom
 from models.dataset import Document, DocumentPipelineExecutionLog, Pipeline
 from models.enums import WorkflowRunTriggeredFrom
@@ -116,7 +112,7 @@ class PipelineGenerator(BaseAppGenerator):
     ) -> Mapping[str, Any] | Generator[Mapping | str, None, None] | None:
         # Add null check for dataset
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             dataset = pipeline.retrieve_dataset(session)
             if not dataset:
                 raise ValueError("Pipeline dataset is required")
@@ -135,23 +131,23 @@ class PipelineGenerator(BaseAppGenerator):
         if invoke_from == InvokeFrom.PUBLISHED_PIPELINE and not is_retry and not args.get("original_document_id"):
             from services.dataset_service import DocumentService
 
-            for datasource_info in datasource_info_list:
-                position = DocumentService.get_documents_position(dataset.id)
-                document = self._build_document(
-                    tenant_id=pipeline.tenant_id,
-                    dataset_id=dataset.id,
-                    built_in_field_enabled=dataset.built_in_field_enabled,
-                    datasource_type=datasource_type,
-                    datasource_info=datasource_info,
-                    created_from="rag-pipeline",
-                    position=position,
-                    account=user,
-                    batch=batch,
-                    document_form=dataset.chunk_structure,
-                )
-                db.session.add(document)
-                documents.append(document)
-            db.session.commit()
+            with session_factory.get_session_maker().begin() as session:
+                for datasource_info in datasource_info_list:
+                    position = DocumentService.get_documents_position(dataset.id)
+                    document = self._build_document(
+                        tenant_id=pipeline.tenant_id,
+                        dataset_id=dataset.id,
+                        built_in_field_enabled=dataset.built_in_field_enabled,
+                        datasource_type=datasource_type,
+                        datasource_info=datasource_info,
+                        created_from="rag-pipeline",
+                        position=position,
+                        account=user,
+                        batch=batch,
+                        document_form=dataset.chunk_structure,
+                    )
+                    session.add(document)
+                    documents.append(document)
 
         # run in child thread
         rag_pipeline_invoke_entities = []
@@ -169,8 +165,8 @@ class PipelineGenerator(BaseAppGenerator):
                     pipeline_id=pipeline.id,
                     created_by=user.id,
                 )
-                db.session.add(document_pipeline_execution_log)
-                db.session.commit()
+                with session_factory.get_session_maker().begin() as session:
+                    session.add(document_pipeline_execution_log)
             application_generate_entity = RagPipelineGenerateEntity(
                 task_id=str(uuid.uuid4()),
                 app_config=pipeline_config,
@@ -203,24 +199,23 @@ class PipelineGenerator(BaseAppGenerator):
             else:
                 workflow_triggered_from = WorkflowRunTriggeredFrom.RAG_PIPELINE_RUN
             # Create workflow node execution repository
-            session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+            sync_session_maker = session_factory.get_session_maker()
+            sync_engine = sync_session_maker.kw["bind"]
             workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-                session_factory=session_factory,
+                session_factory=sync_session_maker,
                 user=user,
                 app_id=application_generate_entity.app_config.app_id,
                 triggered_from=workflow_triggered_from,
             )
 
             workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-                session_factory=session_factory,
+                session_factory=sync_session_maker,
                 user=user,
                 app_id=application_generate_entity.app_config.app_id,
                 triggered_from=WorkflowNodeExecutionTriggeredFrom.RAG_PIPELINE_RUN,
             )
             if invoke_from == InvokeFrom.DEBUGGER or is_retry:
                 return self._generate(
-                    flask_app=current_app._get_current_object(),  # type: ignore
-                    context=contextvars.copy_context(),
                     pipeline=pipeline,
                     workflow_id=workflow.id,
                     user=user,
@@ -274,8 +269,6 @@ class PipelineGenerator(BaseAppGenerator):
     def _generate(
         self,
         *,
-        flask_app: Flask,
-        context: contextvars.Context,
         pipeline: Pipeline,
         workflow_id: str,
         user: Account | EndUser,
@@ -300,51 +293,46 @@ class PipelineGenerator(BaseAppGenerator):
         :param streaming: is stream
         :param workflow_thread_pool_id: workflow thread pool id
         """
-        with preserve_flask_contexts(flask_app, context_vars=context):
-            # init queue manager
-            workflow = db.session.get(Workflow, workflow_id)
+        with session_factory.create_session() as session:
+            workflow = session.get(Workflow, workflow_id)
             if not workflow:
                 raise ValueError(f"Workflow not found: {workflow_id}")
-            queue_manager = PipelineQueueManager(
-                task_id=application_generate_entity.task_id,
-                user_id=application_generate_entity.user_id,
-                invoke_from=application_generate_entity.invoke_from,
-                app_mode=AppMode.RAG_PIPELINE,
-            )
-            context = contextvars.copy_context()
 
-            # new thread
-            worker_thread = threading.Thread(
-                target=self._generate_worker,
-                kwargs={
-                    "flask_app": current_app._get_current_object(),  # type: ignore
-                    "context": context,
-                    "queue_manager": queue_manager,
-                    "application_generate_entity": application_generate_entity,
-                    "workflow_thread_pool_id": workflow_thread_pool_id,
-                    "variable_loader": variable_loader,
-                    "workflow_execution_repository": workflow_execution_repository,
-                    "workflow_node_execution_repository": workflow_node_execution_repository,
-                },
-            )
+        queue_manager = PipelineQueueManager(
+            task_id=application_generate_entity.task_id,
+            user_id=application_generate_entity.user_id,
+            invoke_from=application_generate_entity.invoke_from,
+            app_mode=AppMode.RAG_PIPELINE,
+        )
 
-            worker_thread.start()
+        worker_thread = threading.Thread(
+            target=self._generate_worker,
+            kwargs={
+                "queue_manager": queue_manager,
+                "application_generate_entity": application_generate_entity,
+                "workflow_thread_pool_id": workflow_thread_pool_id,
+                "variable_loader": variable_loader,
+                "workflow_execution_repository": workflow_execution_repository,
+                "workflow_node_execution_repository": workflow_node_execution_repository,
+            },
+        )
 
-            draft_var_saver_factory = self._get_draft_var_saver_factory(
-                invoke_from,
-                user,
-            )
-            # return response or stream generator
-            response = self._handle_response(
-                application_generate_entity=application_generate_entity,
-                workflow=workflow,
-                queue_manager=queue_manager,
-                user=user,
-                stream=streaming,
-                draft_var_saver_factory=draft_var_saver_factory,
-            )
+        worker_thread.start()
 
-            return WorkflowAppGenerateResponseConverter.convert(response=response, invoke_from=invoke_from)
+        draft_var_saver_factory = self._get_draft_var_saver_factory(
+            invoke_from,
+            user,
+        )
+        response = self._handle_response(
+            application_generate_entity=application_generate_entity,
+            workflow=workflow,
+            queue_manager=queue_manager,
+            user=user,
+            stream=streaming,
+            draft_var_saver_factory=draft_var_saver_factory,
+        )
+
+        return WorkflowAppGenerateResponseConverter.convert(response=response, invoke_from=invoke_from)
 
     def single_iteration_generate(
         self,
@@ -376,7 +364,7 @@ class PipelineGenerator(BaseAppGenerator):
             pipeline=pipeline, workflow=workflow, start_node_id=args.get("start_node_id", "shared")
         )
 
-        with Session(db.engine) as session:
+        with session_factory.create_session() as session:
             dataset = pipeline.retrieve_dataset(session)
             if not dataset:
                 raise ValueError("Pipeline dataset is required")
@@ -405,32 +393,33 @@ class PipelineGenerator(BaseAppGenerator):
         contexts.plugin_tool_providers.set({})
         contexts.plugin_tool_providers_lock.set(threading.Lock())
         # Create workflow node execution repository
-        session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+        sync_session_maker = session_factory.get_session_maker()
+        sync_engine = sync_session_maker.kw["bind"]
 
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowRunTriggeredFrom.RAG_PIPELINE_DEBUGGING,
         )
 
         workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
-        draft_var_srv = WorkflowDraftVariableService(db.session())
-        draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
+        with session_factory.create_session() as session:
+            draft_var_srv = WorkflowDraftVariableService(session)
+            draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
         var_loader = DraftVarLoader(
-            engine=db.engine,
+            engine=sync_engine,
             app_id=application_generate_entity.app_config.app_id,
             tenant_id=application_generate_entity.app_config.tenant_id,
             user_id=user.id,
         )
 
         return self._generate(
-            flask_app=current_app._get_current_object(),  # type: ignore
             pipeline=pipeline,
             workflow_id=workflow.id,
             user=user,
@@ -440,7 +429,6 @@ class PipelineGenerator(BaseAppGenerator):
             workflow_node_execution_repository=workflow_node_execution_repository,
             streaming=streaming,
             variable_loader=var_loader,
-            context=contextvars.copy_context(),
         )
 
     def single_loop_generate(
@@ -468,7 +456,7 @@ class PipelineGenerator(BaseAppGenerator):
         if args.get("inputs") is None:
             raise ValueError("inputs is required")
 
-        with Session(db.engine) as session:
+        with session_factory.create_session() as session:
             dataset = pipeline.retrieve_dataset(session)
             if not dataset:
                 raise ValueError("Pipeline dataset is required")
@@ -501,32 +489,33 @@ class PipelineGenerator(BaseAppGenerator):
         contexts.plugin_tool_providers_lock.set(threading.Lock())
 
         # Create workflow node execution repository
-        session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+        sync_session_maker = session_factory.get_session_maker()
+        sync_engine = sync_session_maker.kw["bind"]
 
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowRunTriggeredFrom.RAG_PIPELINE_DEBUGGING,
         )
 
         workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-            session_factory=session_factory,
+            session_factory=sync_session_maker,
             user=user,
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
-        draft_var_srv = WorkflowDraftVariableService(db.session())
-        draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
+        with session_factory.create_session() as session:
+            draft_var_srv = WorkflowDraftVariableService(session)
+            draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
         var_loader = DraftVarLoader(
-            engine=db.engine,
+            engine=sync_engine,
             app_id=application_generate_entity.app_config.app_id,
             tenant_id=application_generate_entity.app_config.tenant_id,
             user_id=user.id,
         )
 
         return self._generate(
-            flask_app=current_app._get_current_object(),  # type: ignore
             pipeline=pipeline,
             workflow_id=workflow.id,
             user=user,
@@ -536,15 +525,12 @@ class PipelineGenerator(BaseAppGenerator):
             workflow_node_execution_repository=workflow_node_execution_repository,
             streaming=streaming,
             variable_loader=var_loader,
-            context=contextvars.copy_context(),
         )
 
     def _generate_worker(
         self,
-        flask_app: Flask,
         application_generate_entity: RagPipelineGenerateEntity,
         queue_manager: AppQueueManager,
-        context: contextvars.Context,
         variable_loader: VariableLoader,
         workflow_execution_repository: WorkflowExecutionRepository,
         workflow_node_execution_repository: WorkflowNodeExecutionRepository,
@@ -552,72 +538,62 @@ class PipelineGenerator(BaseAppGenerator):
     ) -> None:
         """
         Generate worker in a new thread.
-        :param flask_app: Flask app
         :param application_generate_entity: application generate entity
         :param queue_manager: queue manager
         :param workflow_thread_pool_id: workflow thread pool id
         :return:
         """
-
-        with preserve_flask_contexts(flask_app, context_vars=context):
-            try:
-                with Session(db.engine, expire_on_commit=False) as session:
-                    workflow = session.scalar(
-                        select(Workflow).where(
-                            Workflow.tenant_id == application_generate_entity.app_config.tenant_id,
-                            Workflow.app_id == application_generate_entity.app_config.app_id,
-                            Workflow.id == application_generate_entity.app_config.workflow_id,
-                        )
+        try:
+            with session_factory.create_session() as session:
+                workflow = session.scalar(
+                    select(Workflow).where(
+                        Workflow.tenant_id == application_generate_entity.app_config.tenant_id,
+                        Workflow.app_id == application_generate_entity.app_config.app_id,
+                        Workflow.id == application_generate_entity.app_config.workflow_id,
                     )
-                    if workflow is None:
-                        raise ValueError("Workflow not found")
-
-                    # Determine system_user_id based on invocation source
-                    is_external_api_call = application_generate_entity.invoke_from in {
-                        InvokeFrom.WEB_APP,
-                        InvokeFrom.SERVICE_API,
-                    }
-
-                    if is_external_api_call:
-                        # For external API calls, use end user's session ID
-                        end_user = session.scalar(
-                            select(EndUser).where(EndUser.id == application_generate_entity.user_id)
-                        )
-                        system_user_id = end_user.session_id if end_user else ""
-                    else:
-                        # For internal calls, use the original user ID
-                        system_user_id = application_generate_entity.user_id
-                    # workflow app
-                    runner = PipelineRunner(
-                        application_generate_entity=application_generate_entity,
-                        queue_manager=queue_manager,
-                        workflow_thread_pool_id=workflow_thread_pool_id,
-                        variable_loader=variable_loader,
-                        workflow=workflow,
-                        system_user_id=system_user_id,
-                        workflow_execution_repository=workflow_execution_repository,
-                        workflow_node_execution_repository=workflow_node_execution_repository,
-                    )
-
-                    runner.run()
-            except GenerateTaskStoppedError:
-                pass
-            except InvokeAuthorizationError:
-                queue_manager.publish_error(
-                    InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
                 )
-            except ValidationError as e:
-                logger.exception("Validation Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except ValueError as e:
-                if dify_config.DEBUG:
-                    logger.exception("Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            except Exception as e:
-                logger.exception("Unknown Error when generating")
-                queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
-            finally:
-                db.session.close()
+                if workflow is None:
+                    raise ValueError("Workflow not found")
+
+                is_external_api_call = application_generate_entity.invoke_from in {
+                    InvokeFrom.WEB_APP,
+                    InvokeFrom.SERVICE_API,
+                }
+
+                if is_external_api_call:
+                    end_user = session.scalar(select(EndUser).where(EndUser.id == application_generate_entity.user_id))
+                    system_user_id = end_user.session_id if end_user else ""
+                else:
+                    system_user_id = application_generate_entity.user_id
+
+            runner = PipelineRunner(
+                application_generate_entity=application_generate_entity,
+                queue_manager=queue_manager,
+                workflow_thread_pool_id=workflow_thread_pool_id,
+                variable_loader=variable_loader,
+                workflow=workflow,
+                system_user_id=system_user_id,
+                workflow_execution_repository=workflow_execution_repository,
+                workflow_node_execution_repository=workflow_node_execution_repository,
+            )
+
+            runner.run()
+        except GenerateTaskStoppedError:
+            pass
+        except InvokeAuthorizationError:
+            queue_manager.publish_error(
+                InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
+            )
+        except ValidationError as e:
+            logger.exception("Validation Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except ValueError as e:
+            if dify_config.DEBUG:
+                logger.exception("Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
+        except Exception as e:
+            logger.exception("Unknown Error when generating")
+            queue_manager.publish_error(e, PublishFrom.APPLICATION_MANAGER)
 
     def _handle_response(
         self,

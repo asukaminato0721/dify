@@ -14,12 +14,12 @@ from core.app.entities.app_invoke_entities import (
     build_dify_run_context,
 )
 from core.app.workflow.layers.persistence import PersistenceWorkflowInfo, WorkflowPersistenceLayer
+from core.db.session_factory import session_factory
 from core.repositories.factory import WorkflowExecutionRepository, WorkflowNodeExecutionRepository
 from core.workflow.node_factory import DifyGraphInitContext, DifyNodeFactory, get_default_root_node_id
 from core.workflow.system_variables import build_bootstrap_variables, build_system_variables
 from core.workflow.variable_pool_initializer import add_node_inputs_to_pool, add_variables_to_pool
 from core.workflow.workflow_entry import WorkflowEntry
-from extensions.ext_database import db
 from graphon.enums import WorkflowType
 from graphon.graph import Graph
 from graphon.graph_events import GraphEngineEvent, GraphRunFailedEvent
@@ -83,22 +83,21 @@ class PipelineRunner(WorkflowBasedAppRunner):
         user_from = self._resolve_user_from(invoke_from)
 
         user_id = None
-        if invoke_from in {InvokeFrom.WEB_APP, InvokeFrom.SERVICE_API}:
-            end_user = db.session.get(EndUser, self.application_generate_entity.user_id)
-            if end_user:
-                user_id = end_user.session_id
-        else:
-            user_id = self.application_generate_entity.user_id
+        with session_factory.create_session() as session:
+            if invoke_from in {InvokeFrom.WEB_APP, InvokeFrom.SERVICE_API}:
+                end_user = session.get(EndUser, self.application_generate_entity.user_id)
+                if end_user:
+                    user_id = end_user.session_id
+            else:
+                user_id = self.application_generate_entity.user_id
 
-        pipeline = db.session.get(Pipeline, app_config.app_id)
-        if not pipeline:
-            raise ValueError("Pipeline not found")
+            pipeline = session.get(Pipeline, app_config.app_id)
+            if not pipeline:
+                raise ValueError("Pipeline not found")
 
-        workflow = self.get_workflow(pipeline=pipeline, workflow_id=app_config.workflow_id)
-        if not workflow:
-            raise ValueError("Workflow not initialized")
-
-        db.session.close()
+            workflow = self.get_workflow(session=session, pipeline=pipeline, workflow_id=app_config.workflow_id)
+            if not workflow:
+                raise ValueError("Workflow not initialized")
 
         # if only single iteration run is requested
         if self.application_generate_entity.single_iteration_run or self.application_generate_entity.single_loop_run:
@@ -208,12 +207,11 @@ class PipelineRunner(WorkflowBasedAppRunner):
             )
             self._handle_event(workflow_entry, event)
 
-    def get_workflow(self, pipeline: Pipeline, workflow_id: str) -> Workflow | None:
+    def get_workflow(self, *, session, pipeline: Pipeline, workflow_id: str) -> Workflow | None:
         """
         Get workflow
         """
-        # fetch workflow by workflow_id
-        workflow = db.session.scalar(
+        workflow = session.scalar(
             select(Workflow)
             .where(Workflow.tenant_id == pipeline.tenant_id, Workflow.app_id == pipeline.id, Workflow.id == workflow_id)
             .limit(1)
@@ -298,11 +296,11 @@ class PipelineRunner(WorkflowBasedAppRunner):
         """
         if isinstance(event, GraphRunFailedEvent):
             if document_id and dataset_id:
-                document = db.session.scalar(
-                    select(Document).where(Document.id == document_id, Document.dataset_id == dataset_id).limit(1)
-                )
-                if document:
-                    document.indexing_status = "error"
-                    document.error = event.error or "Unknown error"
-                    db.session.add(document)
-                    db.session.commit()
+                with session_factory.get_session_maker().begin() as session:
+                    document = session.scalar(
+                        select(Document).where(Document.id == document_id, Document.dataset_id == dataset_id).limit(1)
+                    )
+                    if document:
+                        document.indexing_status = "error"
+                        document.error = event.error or "Unknown error"
+                        session.add(document)
