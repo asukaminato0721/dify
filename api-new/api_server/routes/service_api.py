@@ -39,6 +39,11 @@ from api_server.services.service_api_conversation_variables import (
     ServiceApiConversationVariablePaginationDict,
     ServiceApiConversationVariableService,
 )
+from api_server.services.service_api_dataset_metadata import (
+    ServiceApiBuiltInFieldsResponseDict,
+    ServiceApiDatasetMetadataResponseDict,
+    ServiceApiDatasetMetadataService,
+)
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
@@ -259,6 +264,30 @@ async def get_service_api_workspace_models(
     context = await ServiceApiAuthService.resolve_dataset_context(request)
     models = ModelProviderService().get_models_by_model_type(tenant_id=context.tenant.id, model_type=model_type)
     return {"data": [model.model_dump(mode="json") for model in models]}
+
+
+@router.get("/v1/datasets/{dataset_id}/metadata")
+async def get_service_api_dataset_metadata(
+    request: Request,
+    dataset_id: UUID,
+) -> ServiceApiDatasetMetadataResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetMetadataService.get_dataset_metadata(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/metadata/built-in")
+async def get_service_api_dataset_built_in_metadata(
+    request: Request,
+    dataset_id: UUID,
+) -> ServiceApiBuiltInFieldsResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDatasetMetadataService.get_built_in_fields(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+    )
 
 
 @router.get("/v1/site")

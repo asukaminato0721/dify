@@ -178,6 +178,9 @@ Done
   - `DELETE /v1/apps/annotations/{annotation_id}`
 - Ported dataset-token service API workspace-models endpoint:
   - `GET /v1/workspaces/current/models/model-types/{model_type}`
+- Ported dataset-token service API dataset metadata endpoints:
+  - `GET /v1/datasets/{dataset_id}/metadata`
+  - `GET /v1/datasets/{dataset_id}/metadata/built-in`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused service API route tests in `tests/test_service_api_routes.py`.
@@ -222,6 +225,8 @@ Done
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations slice.
 - Further expanded targeted service API route/auth verification now also passes: `38 passed` for the focused service-route slice.
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models slice.
+- Further expanded targeted service API route/auth verification now also passes: `40 passed` for the focused service-route slice.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata slice.
 
 Current status
 --------------
@@ -303,6 +308,8 @@ Current status
   - `/v1/apps/annotations`
   - `/v1/apps/annotations/{annotation_id}`
   - `/v1/workspaces/current/models/model-types/{model_type}`
+  - `/v1/datasets/{dataset_id}/metadata`
+  - `/v1/datasets/{dataset_id}/metadata/built-in`
   - `/v1/app/feedbacks`
   - `/v1/conversations/{conversation_id}/variables`
   - `/v1/conversations/{conversation_id}/variables/{variable_id}`
@@ -331,6 +338,7 @@ Current status
 - The expanded `/v1` service API slice now also serves workflow execution logs through local async workflow-log and workflow-run mappings instead of the legacy Flask `WorkflowAppService`.
 - The expanded `/v1` service API slice now also handles annotation CRUD plus enable/disable job dispatch and status polling through local async services and owner-account lookup, instead of the legacy Flask annotation service and console permission glue.
 - The expanded `/v1` service API slice now also handles the dataset-token workspace model listing route through a native FastAPI dataset-token auth path instead of the legacy Flask dataset-token wrapper.
+- The expanded `/v1` service API slice now also serves the read-only dataset metadata endpoints through local dataset-token auth plus minimal async dataset metadata models/services, instead of the legacy Flask metadata controller path.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
 - Public advanced-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.

@@ -89,6 +89,60 @@ async def test_service_api_workspace_models_route_uses_dataset_context() -> None
     models_mock.assert_called_once_with(tenant_id="tenant-1", model_type="llm")
 
 
+async def test_service_api_dataset_metadata_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    payload = {"doc_metadata": [], "built_in_field_enabled": False}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetMetadataService.get_dataset_metadata",
+            new=AsyncMock(return_value=payload),
+        ) as metadata_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/metadata",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    metadata_mock.assert_awaited_once_with(tenant_id="tenant-1", dataset_id=dataset_id)
+
+
+async def test_service_api_dataset_built_in_metadata_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    payload = {"fields": [{"name": "document_name", "type": "string"}]}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDatasetMetadataService.get_built_in_fields",
+            new=AsyncMock(return_value=payload),
+        ) as metadata_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/metadata/built-in",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    metadata_mock.assert_awaited_once_with(tenant_id="tenant-1", dataset_id=dataset_id)
+
+
 async def test_service_api_site_route_uses_auth_and_resource_services() -> None:
     with (
         patch(
