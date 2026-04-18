@@ -7,6 +7,8 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api_server.models.app import Conversation as FastAPIConversation
+from api_server.models.app import Message as FastAPIMessage
 from constants.tts_auto_play_timeout import TTS_AUTO_PLAY_TIMEOUT, TTS_AUTO_PLAY_YIELD_CPU_TIME
 from core.app.apps.base_app_queue_manager import AppQueueManager, PublishFrom
 from core.app.entities.app_invoke_entities import (
@@ -79,8 +81,8 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         self,
         application_generate_entity: ChatAppGenerateEntity | CompletionAppGenerateEntity | AgentChatAppGenerateEntity,
         queue_manager: AppQueueManager,
-        conversation: Conversation,
-        message: Message,
+        conversation: Conversation | FastAPIConversation,
+        message: Message | FastAPIMessage,
         stream: bool,
     ):
         super().__init__(

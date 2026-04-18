@@ -6,6 +6,8 @@ from typing import Union, cast
 
 from sqlalchemy import func, select
 
+from api_server.models.app import Conversation as FastAPIConversation
+from api_server.models.app import Message as FastAPIMessage
 from core.agent.entities import AgentEntity, AgentToolEntity
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
 from core.app.apps.agent_chat.app_config_manager import AgentChatAppConfig
@@ -56,12 +58,12 @@ class BaseAgentRunner(AppRunner):
         *,
         tenant_id: str,
         application_generate_entity: AgentChatAppGenerateEntity,
-        conversation: Conversation,
+        conversation: Conversation | FastAPIConversation,
         app_config: AgentChatAppConfig,
         model_config: ModelConfigWithCredentialsEntity,
         config: AgentEntity,
         queue_manager: AppQueueManager,
-        message: Message,
+        message: Message | FastAPIMessage,
         user_id: str,
         model_instance: ModelInstance,
         memory: TokenBufferMemory | None = None,

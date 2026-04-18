@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Generator, Mapping, Sequence
 from typing import Any, TypedDict
 
+from api_server.models.app import Message as FastAPIMessage
 from core.agent.base_agent_runner import BaseAgentRunner
 from core.agent.entities import AgentScratchpadUnit
 from core.agent.errors import AgentMaxIterationError
@@ -46,7 +47,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
 
     def run(
         self,
-        message: Message,
+        message: Message | FastAPIMessage,
         query: str,
         inputs: Mapping[str, str],
     ) -> Generator:

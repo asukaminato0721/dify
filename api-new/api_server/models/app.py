@@ -7,10 +7,11 @@ from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, String, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api_server.db import Base, EnumText, LongText, StringUUID
+from core.db.session_factory import session_factory as configured_sync_session_factory
 from factories import variable_factory
 from graphon.variables import VariableBase
 
@@ -560,6 +561,37 @@ class Conversation(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
     is_deleted: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
 
+    @property
+    def app(self) -> App | None:
+        with configured_sync_session_factory.create_session() as session:
+            return session.scalar(select(App).where(App.id == self.app_id))
+
+    @property
+    def model_config(self) -> dict[str, Any]:
+        model_config: dict[str, Any] = {}
+
+        if self.mode == AppMode.ADVANCED_CHAT.value:
+            if self.override_model_configs:
+                return json.loads(self.override_model_configs)
+            return model_config
+
+        if self.override_model_configs:
+            override_model_configs = json.loads(self.override_model_configs)
+            if isinstance(override_model_configs, dict):
+                if "model" in override_model_configs:
+                    model_config = dict(override_model_configs)
+                else:
+                    model_config["configs"] = override_model_configs
+        elif self.app_model_config_id:
+            with configured_sync_session_factory.create_session() as session:
+                app_model_config = session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
+            if app_model_config is not None:
+                model_config = app_model_config.to_dict()
+
+        model_config["model_id"] = self.model_id
+        model_config["provider"] = self.model_provider
+        return model_config
+
 
 class PinnedConversation(Base):
     __tablename__ = "pinned_conversations"
@@ -621,6 +653,10 @@ class Message(Base):
     agent_based: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
     workflow_run_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     app_mode: Mapped[str | None] = mapped_column(String(255), default=None)
+
+    @property
+    def message_metadata_dict(self) -> dict[str, Any]:
+        return json.loads(self.message_metadata) if self.message_metadata else {}
 
 
 class MessageFile(Base):

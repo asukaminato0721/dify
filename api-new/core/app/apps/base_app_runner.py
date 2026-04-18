@@ -5,6 +5,10 @@ from collections.abc import Generator, Mapping, Sequence
 from mimetypes import guess_extension
 from typing import TYPE_CHECKING, Any, Union
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import Message as FastAPIMessage
+from api_server.models.app import MessageAnnotation as FastAPIMessageAnnotation
+from api_server.models.app import MessageFile as FastAPIMessageFile
 from core.app.app_config.entities import ExternalDataVariableEntity, PromptTemplateEntity
 from core.app.apps.base_app_queue_manager import AppQueueManager, PublishFrom
 from core.app.entities.app_invoke_entities import (
@@ -85,7 +89,7 @@ class AppRunner:
 
     def organize_prompt_messages(
         self,
-        app_record: App,
+        app_record: App | FastAPIApp,
         model_config: ModelConfigWithCredentialsEntity,
         prompt_template_entity: PromptTemplateEntity,
         inputs: Mapping[str, str],
@@ -114,7 +118,7 @@ class AppRunner:
             prompt_transform: Union[SimplePromptTransform, AdvancedPromptTransform]
             prompt_transform = SimplePromptTransform()
             prompt_messages, stop = prompt_transform.get_prompt(
-                app_mode=AppMode.value_of(app_record.mode),
+                app_mode=AppMode.value_of(str(app_record.mode)),
                 prompt_template_entity=prompt_template_entity,
                 inputs=inputs,
                 query=query,
@@ -414,7 +418,7 @@ class AppRunner:
             return
 
         # Create MessageFile record
-        message_file = MessageFile(
+        message_file = FastAPIMessageFile(
             message_id=message_id,
             type=FileType.IMAGE,
             transfer_method=FileTransferMethod.TOOL_FILE,
@@ -526,8 +530,13 @@ class AppRunner:
         )
 
     def query_app_annotations_to_reply(
-        self, app_record: App, message: Message, query: str, user_id: str, invoke_from: InvokeFrom
-    ) -> MessageAnnotation | None:
+        self,
+        app_record: App | FastAPIApp,
+        message: Message | FastAPIMessage,
+        query: str,
+        user_id: str,
+        invoke_from: InvokeFrom,
+    ) -> MessageAnnotation | FastAPIMessageAnnotation | None:
         """
         Query app annotations to reply
         :param app_record: app record

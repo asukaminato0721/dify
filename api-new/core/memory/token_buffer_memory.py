@@ -1,13 +1,16 @@
 from collections.abc import Sequence
 
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
-
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import Conversation as FastAPIConversation
+from api_server.models.app import Message as FastAPIMessage
+from api_server.models.app import MessageFile as FastAPIMessageFile
+from api_server.models.app import Workflow as FastAPIWorkflow
+from core.db.session_factory import session_factory
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
 from core.app.file_access import DatabaseFileAccessController
 from core.model_manager import ModelInstance
 from core.prompt.utils.extract_thread_messages import extract_thread_messages
-from extensions.ext_database import db
 from factories import file_factory
 from graphon.file import file_manager
 from graphon.model_runtime.entities import (
@@ -20,7 +23,6 @@ from graphon.model_runtime.entities import (
 )
 from graphon.model_runtime.entities.message_entities import PromptMessageContentUnionTypes
 from models.model import AppMode, Conversation, Message, MessageFile
-from models.workflow import Workflow
 from repositories.api_workflow_run_repository import APIWorkflowRunRepository
 from repositories.factory import DifyAPIRepositoryFactory
 
@@ -30,7 +32,7 @@ _file_access_controller = DatabaseFileAccessController()
 class TokenBufferMemory:
     def __init__(
         self,
-        conversation: Conversation,
+        conversation: Conversation | FastAPIConversation,
         model_instance: ModelInstance,
     ):
         self.conversation = conversation
@@ -40,15 +42,16 @@ class TokenBufferMemory:
     @property
     def workflow_run_repo(self) -> APIWorkflowRunRepository:
         if self._workflow_run_repo is None:
-            session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
-            self._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
+            self._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(
+                session_factory.get_session_maker()
+            )
         return self._workflow_run_repo
 
     def _build_prompt_message_with_files(
         self,
-        message_files: Sequence[MessageFile],
+        message_files: Sequence[MessageFile | FastAPIMessageFile],
         text_content: str,
-        message: Message,
+        message: Message | FastAPIMessage,
         app_record,
         is_user_message: bool,
     ) -> PromptMessage:
@@ -61,7 +64,8 @@ class TokenBufferMemory:
         :param is_user_message: whether this is a user message
         :return: PromptMessage
         """
-        match self.conversation.mode:
+        conversation_mode = str(self.conversation.mode)
+        match conversation_mode:
             case AppMode.AGENT_CHAT | AppMode.COMPLETION | AppMode.CHAT:
                 file_extra_config = FileUploadConfigManager.convert(self.conversation.model_config)
             case AppMode.ADVANCED_CHAT | AppMode.WORKFLOW:
@@ -77,7 +81,8 @@ class TokenBufferMemory:
                 )
                 if not workflow_run:
                     raise ValueError(f"Workflow run not found: {message.workflow_run_id}")
-                workflow = db.session.scalar(select(Workflow).where(Workflow.id == workflow_run.workflow_id))
+                with session_factory.create_session() as session:
+                    workflow = session.scalar(select(FastAPIWorkflow).where(FastAPIWorkflow.id == workflow_run.workflow_id))
                 if not workflow:
                     raise ValueError(f"Workflow not found: {workflow_run.workflow_id}")
                 file_extra_config = FileUploadConfigManager.convert(workflow.features_dict, is_vision=False)
@@ -133,7 +138,9 @@ class TokenBufferMemory:
 
         # fetch limited messages, and return reversed
         stmt = (
-            select(Message).where(Message.conversation_id == self.conversation.id).order_by(Message.created_at.desc())
+            select(FastAPIMessage)
+            .where(FastAPIMessage.conversation_id == self.conversation.id)
+            .order_by(FastAPIMessage.created_at.desc())
         )
 
         if message_limit and message_limit > 0:
@@ -143,7 +150,8 @@ class TokenBufferMemory:
 
         msg_limit_stmt = stmt.limit(message_limit)
 
-        messages = db.session.scalars(msg_limit_stmt).all()
+        with session_factory.create_session() as session:
+            messages = session.scalars(msg_limit_stmt).all()
 
         # instead of all messages from the conversation, we only need to extract messages
         # that belong to the thread of last message
@@ -159,12 +167,13 @@ class TokenBufferMemory:
         prompt_messages: list[PromptMessage] = []
         for message in messages:
             # Process user message with files
-            user_files = db.session.scalars(
-                select(MessageFile).where(
-                    MessageFile.message_id == message.id,
-                    (MessageFile.belongs_to == "user") | (MessageFile.belongs_to.is_(None)),
+            with session_factory.create_session() as session:
+                user_files = session.scalars(
+                    select(FastAPIMessageFile).where(
+                    FastAPIMessageFile.message_id == message.id,
+                    (FastAPIMessageFile.belongs_to == "user") | (FastAPIMessageFile.belongs_to.is_(None)),
                 )
-            ).all()
+                ).all()
 
             if user_files:
                 user_prompt_message = self._build_prompt_message_with_files(
@@ -179,9 +188,13 @@ class TokenBufferMemory:
                 prompt_messages.append(UserPromptMessage(content=message.query))
 
             # Process assistant message with files
-            assistant_files = db.session.scalars(
-                select(MessageFile).where(MessageFile.message_id == message.id, MessageFile.belongs_to == "assistant")
-            ).all()
+            with session_factory.create_session() as session:
+                assistant_files = session.scalars(
+                    select(FastAPIMessageFile).where(
+                        FastAPIMessageFile.message_id == message.id,
+                        FastAPIMessageFile.belongs_to == "assistant",
+                    )
+                ).all()
 
             if assistant_files:
                 assistant_prompt_message = self._build_prompt_message_with_files(

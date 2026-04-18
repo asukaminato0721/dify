@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from api_server.models.app import MessageFile as FastAPIMessageFile
 from core.app.file_access import FileAccessControllerProtocol
 from graphon.file import File, FileBelongsTo, FileTransferMethod, FileUploadConfig
 from models import MessageFile
@@ -13,7 +14,7 @@ from .builders import build_from_mapping
 
 def build_from_message_files(
     *,
-    message_files: Sequence[MessageFile],
+    message_files: Sequence[MessageFile | FastAPIMessageFile],
     tenant_id: str,
     config: FileUploadConfig | None = None,
     access_controller: FileAccessControllerProtocol,
@@ -32,7 +33,7 @@ def build_from_message_files(
 
 def build_from_message_file(
     *,
-    message_file: MessageFile,
+    message_file: MessageFile | FastAPIMessageFile,
     tenant_id: str,
     config: FileUploadConfig | None,
     access_controller: FileAccessControllerProtocol,

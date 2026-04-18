@@ -224,6 +224,7 @@ Done
 - Switched the active workflow pause-token lookup path off legacy human-input ORM models and onto local FastAPI human-input mappings, while preserving recipient-priority token selection for paused workflow resume links.
 - Switched the active public workflow generation loader off legacy `App`/`Workflow`/`EndUser` ORM models and onto the local FastAPI mappings, and widened the copied workflow runtime/config helpers on that path to accept the local workflow/end-user shapes.
 - Extended the local FastAPI app/workflow/conversation/message models with the fields and helper methods required by the active advanced-chat runtime, and switched the active public advanced-chat path onto those local FastAPI models instead of the legacy ORM classes for its loader, config, runner, snapshots, and conversation-variable persistence.
+- Extended the local FastAPI app/conversation/message models with the helper methods required by the active agent-chat runtime (`Conversation.app`, `Conversation.model_config`, and `Message.message_metadata_dict`), switched the public agent-chat loader and record creation path onto local FastAPI models, and updated the active token-memory / agent config / base-runner entry signatures to accept those local model shapes.
 - Added focused async graph-engine event tests in `tests/test_graph_engine_async.py`.
 - Added focused async ready-queue tests in `tests/test_async_ready_queue.py`.
 - Added focused async node execution tests in `tests/test_node_async.py`.
@@ -282,6 +283,8 @@ Done
 - Targeted `pyrefly` is clean for the active local-workflow runtime compatibility slice.
 - Focused advanced-chat local-model/generation verification now also passes: `10 passed`.
 - Targeted `pyrefly` is clean for the active advanced-chat local-model compatibility slice.
+- Focused agent local-model/generation verification now also passes: `9 passed`.
+- Targeted `pyrefly` is clean for the local agent-model helper slice.
 
 Current status
 --------------
@@ -431,6 +434,7 @@ Current status
 - The active workflow pause-token helper and pause-response form lookups now use local FastAPI human-input models instead of the legacy ORM classes for those entities.
 - The active public workflow generation entrypoint now loads local FastAPI `App`, `Workflow`, and `EndUser` models, and the copied workflow runtime/config helpers on that path now accept those local model shapes.
 - The active public advanced-chat generation path now uses local FastAPI `App`, `Workflow`, `EndUser`, `Conversation`, `Message`, and `ConversationVariable` models, with local model helpers covering the copied advanced-chat runtime’s required fields and variable conversions.
+- The active public agent-chat entry path now loads local FastAPI `App`, `AppModelConfig`, `EndUser`, `Conversation`, and `Message` models, and the local conversation/message helpers now cover the copied token-memory and agent-config behavior that path requires.
 - The copied agent/chat/completion/workflow/advanced-chat/pipeline generator layers now use the configured sync session factory at the database boundary and no longer depend on Flask request-context helpers, though they are still sync-first and not part of the active FastAPI route surface.
 - The remaining Flask imports are concentrated in copied legacy generator/controller paths that are no longer on the active public FastAPI route surface.
 

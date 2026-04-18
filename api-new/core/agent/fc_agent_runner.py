@@ -4,6 +4,7 @@ from collections.abc import Generator
 from copy import deepcopy
 from typing import Any, Union
 
+from api_server.models.app import Message as FastAPIMessage
 from core.agent.base_agent_runner import BaseAgentRunner
 from core.agent.errors import AgentMaxIterationError
 from core.app.apps.base_app_queue_manager import PublishFrom
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class FunctionCallAgentRunner(BaseAgentRunner):
-    def run(self, message: Message, query: str, **kwargs: Any) -> Generator[LLMResultChunk, None, None]:
+    def run(self, message: Message | FastAPIMessage, query: str, **kwargs: Any) -> Generator[LLMResultChunk, None, None]:
         """
         Run FunctionCall agent application
         """

@@ -432,10 +432,10 @@ def _prepare_advanced_chat_generation_entity(
 
 def _prepare_agent_chat_generation_entity(
     *,
-    app_model: LegacyApp,
-    app_model_config: LegacyAppModelConfig,
-    end_user: LegacyEndUser,
-    conversation: LegacyConversation | None,
+    app_model: LegacyApp | FastAPIApp,
+    app_model_config: LegacyAppModelConfig | AppModelConfig,
+    end_user: LegacyEndUser | FastAPIEndUser,
+    conversation: LegacyConversation | Conversation | None,
     inputs: dict[str, Any],
     query: str,
     files: list[dict[str, Any]] | None,
@@ -558,9 +558,9 @@ def _init_agent_chat_records(
     *,
     session: Session,
     application_generate_entity: AgentChatAppGenerateEntity,
-    end_user: LegacyEndUser,
-    conversation: LegacyConversation | None,
-) -> tuple[LegacyConversation, LegacyMessage]:
+    end_user: FastAPIEndUser,
+    conversation: Conversation | None,
+) -> tuple[Conversation, Message]:
     """Persist conversation/message rows for public agent-chat generation."""
 
     app_config = application_generate_entity.app_config
@@ -573,7 +573,7 @@ def _init_agent_chat_records(
         override_model_configs = cast(dict[str, Any], app_config.app_model_config_dict)
 
     if conversation is None:
-        conversation = LegacyConversation(
+        conversation = Conversation(
             app_id=app_config.app_id,
             app_model_config_id=app_config.app_model_config_id,
             model_provider=application_generate_entity.model_conf.provider,
@@ -587,7 +587,7 @@ def _init_agent_chat_records(
             system_instruction_tokens=0,
             status="normal",
             invoke_from=application_generate_entity.invoke_from.value,
-            from_source=ConversationFromSource.API,
+            from_source=ConversationFromSource.API.value,
             from_end_user_id=end_user.id,
             from_account_id=None,
         )
@@ -597,7 +597,7 @@ def _init_agent_chat_records(
     else:
         conversation.updated_at = naive_utc_now()
 
-    message = LegacyMessage(
+    message = Message(
         app_id=app_config.app_id,
         model_provider=application_generate_entity.model_conf.provider,
         model_id=application_generate_entity.model_conf.model,
@@ -605,7 +605,7 @@ def _init_agent_chat_records(
         conversation_id=conversation.id,
         inputs=application_generate_entity.inputs,
         query=application_generate_entity.query,
-        message="",
+        message={},
         message_tokens=0,
         message_unit_price=0,
         message_price_unit=0,
@@ -618,26 +618,26 @@ def _init_agent_chat_records(
         total_price=0,
         currency="USD",
         invoke_from=application_generate_entity.invoke_from.value,
-        from_source=ConversationFromSource.API,
+        from_source=ConversationFromSource.API.value,
         from_end_user_id=end_user.id,
         from_account_id=None,
-        app_mode=app_config.app_mode,
+        app_mode=app_config.app_mode.value,
     )
     session.add(message)
     session.flush()
     session.refresh(message)
 
-    message_files: list[LegacyMessageFile] = []
+    message_files: list[MessageFile] = []
     for file in application_generate_entity.files:
         message_files.append(
-            LegacyMessageFile(
+            MessageFile(
                 message_id=message.id,
                 type=file.type,
                 transfer_method=file.transfer_method,
-                belongs_to=MessageFileBelongsTo.USER,
+                belongs_to=MessageFileBelongsTo.USER.value,
                 url=file.remote_url,
                 upload_file_id=resolve_file_record_id(file.reference),
-                created_by_role=CreatorUserRole.END_USER,
+                created_by_role=CreatorUserRole.END_USER.value,
                 created_by=end_user.id,
             )
         )
@@ -837,8 +837,8 @@ def _run_agent_chat_runner(
     """Execute the agent-chat runner without the Flask controller bridge."""
 
     with session_factory() as session:
-        conversation = session.get(LegacyConversation, conversation_id)
-        message = session.get(LegacyMessage, message_id)
+        conversation = session.get(Conversation, conversation_id)
+        message = session.get(Message, message_id)
         if conversation is None or message is None:
             raise ValueError("Conversation or message not found")
 
@@ -1037,15 +1037,15 @@ def _run_native_public_agent_chat_streaming_blocking(
     sync_session_factory = _get_legacy_sync_session_maker()
 
     with sync_session_factory() as session:
-        app_model = session.get(LegacyApp, context.app.id)
-        app_model_config = session.get(LegacyAppModelConfig, context.app.app_model_config_id)
-        end_user = session.get(LegacyEndUser, context.end_user.id)
+        app_model = session.get(FastAPIApp, context.app.id)
+        app_model_config = session.get(AppModelConfig, context.app.app_model_config_id)
+        end_user = session.get(FastAPIEndUser, context.end_user.id)
         if app_model is None or app_model_config is None or end_user is None:
             raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
 
         conversation = None
         if conversation_id is not None:
-            conversation = _load_owned_legacy_conversation(
+            conversation = _load_owned_fastapi_conversation(
                 session=session,
                 app_id=app_model.id,
                 end_user_id=end_user.id,

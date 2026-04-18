@@ -20,6 +20,9 @@ from core.app.app_config.features.suggested_questions_after_answer.manager impor
 )
 from core.app.app_config.features.text_to_speech.manager import TextToSpeechConfigManager
 from core.entities.agent_entities import PlanningStrategy
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import AppModelConfig as FastAPIAppModelConfig
+from api_server.models.app import Conversation as FastAPIConversation
 from models.model import App, AppMode, AppModelConfig, AppModelConfigDict, Conversation
 
 OLD_TOOLS = ["dataset", "google_search", "web_reader", "wikipedia", "current_datetime"]
@@ -37,9 +40,9 @@ class AgentChatAppConfigManager(BaseAppConfigManager):
     @classmethod
     def get_app_config(
         cls,
-        app_model: App,
-        app_model_config: AppModelConfig,
-        conversation: Conversation | None = None,
+        app_model: App | FastAPIApp,
+        app_model_config: AppModelConfig | FastAPIAppModelConfig,
+        conversation: Conversation | FastAPIConversation | None = None,
         override_config_dict: AppModelConfigDict | None = None,
     ) -> AgentChatAppConfig:
         """
@@ -59,13 +62,13 @@ class AgentChatAppConfigManager(BaseAppConfigManager):
 
         if config_from != EasyUIBasedAppModelConfigFrom.ARGS:
             app_model_config_dict = app_model_config.to_dict()
-            config_dict = app_model_config_dict.copy()
+            config_dict = cast(AppModelConfigDict, app_model_config_dict.copy())
         else:
             if not override_config_dict:
                 raise Exception("override_config_dict is required when config_from is ARGS")
             config_dict = override_config_dict
 
-        app_mode = AppMode.value_of(app_model.mode)
+        app_mode = AppMode.value_of(str(app_model.mode))
         app_config = AgentChatAppConfig(
             tenant_id=app_model.tenant_id,
             app_id=app_model.id,
