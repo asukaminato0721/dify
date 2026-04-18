@@ -441,7 +441,13 @@ class AppRunner:
 
         # Publish QueueMessageFileEvent
         queue_manager.publish(
-            QueueMessageFileEvent(message_file_id=message_file.id),
+            QueueMessageFileEvent(
+                message_file_id=message_file.id,
+                message_id=message_file.message_id,
+                type=message_file.type,
+                belongs_to=message_file.belongs_to,
+                url=message_file.url,
+            ),
             PublishFrom.APPLICATION_MANAGER,
         )
 

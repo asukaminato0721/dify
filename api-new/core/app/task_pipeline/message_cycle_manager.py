@@ -58,25 +58,23 @@ class MessageCycleManager:
         self._message_has_file: set[str] = set()
 
     def get_message_event_type(self, message_id: str) -> StreamEvent:
-        # Fast path: cached determination from prior QueueMessageFileEvent
         if message_id in self._message_has_file:
             return StreamEvent.MESSAGE_FILE
 
-        # Use SQLAlchemy 2.x style session.scalar(select(...))
-        with session_factory.create_session() as session:
-            message_file = session.scalar(
-                select(FastAPIMessageFile)
-                .where(
-                    FastAPIMessageFile.message_id == message_id,
-                )
-                .where(FastAPIMessageFile.belongs_to == "assistant")
+        return StreamEvent.MESSAGE
+
+    def _load_message_file(self, event: QueueMessageFileEvent) -> FastAPIMessageFile | None:
+        if event.message_id and event.url is not None and event.type:
+            return FastAPIMessageFile(
+                id=event.message_file_id,
+                message_id=event.message_id,
+                url=event.url,
+                type=event.type,
+                belongs_to=event.belongs_to or MessageFileBelongsTo.USER.value,
             )
 
-        if message_file:
-            self._message_has_file.add(message_id)
-            return StreamEvent.MESSAGE_FILE
-
-        return StreamEvent.MESSAGE
+        with session_factory.create_session() as session:
+            return session.scalar(select(FastAPIMessageFile).where(FastAPIMessageFile.id == event.message_file_id))
 
     def generate_conversation_name(self, *, conversation_id: str, query: str) -> Thread | None:
         """
@@ -204,8 +202,7 @@ class MessageCycleManager:
         :param event: event
         :return:
         """
-        with session_factory.create_session() as session:
-            message_file = session.scalar(select(FastAPIMessageFile).where(FastAPIMessageFile.id == event.message_file_id))
+        message_file = self._load_message_file(event)
 
         if message_file and message_file.url is not None:
             self._message_has_file.add(message_file.message_id)

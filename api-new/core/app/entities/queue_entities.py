@@ -442,6 +442,10 @@ class QueueMessageFileEvent(AppQueueEvent):
 
     event: QueueEvent = QueueEvent.MESSAGE_FILE
     message_file_id: str
+    message_id: str | None = None
+    type: str | None = None
+    belongs_to: str | None = None
+    url: str | None = None
 
 
 class QueueErrorEvent(AppQueueEvent):
