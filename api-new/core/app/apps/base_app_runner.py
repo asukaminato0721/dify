@@ -20,6 +20,7 @@ from core.app.entities.queue_entities import (
     QueueMessageFileEvent,
 )
 from core.app.features.hosting_moderation.hosting_moderation import HostingModerationFeature
+from core.db.session_factory import session_factory
 from core.external_data_tool.external_data_fetch import ExternalDataFetch
 from core.memory.token_buffer_memory import TokenBufferMemory
 from core.model_manager import ModelInstance
@@ -28,7 +29,6 @@ from core.prompt.advanced_prompt_transform import AdvancedPromptTransform
 from core.prompt.entities.advanced_prompt_entities import ChatModelMessage, CompletionModelPromptTemplate, MemoryConfig
 from core.prompt.simple_prompt_transform import ModelMode, SimplePromptTransform
 from core.tools.tool_file_manager import ToolFileManager
-from extensions.ext_database import db
 from graphon.file import FileTransferMethod, FileType
 from graphon.model_runtime.entities.llm_entities import LLMResult, LLMResultChunk, LLMResultChunkDelta, LLMUsage
 from graphon.model_runtime.entities.message_entities import (
@@ -429,9 +429,10 @@ class AppRunner:
             created_by=user_id,
         )
 
-        db.session.add(message_file)
-        db.session.commit()
-        db.session.refresh(message_file)
+        with session_factory.get_session_maker().begin() as session:
+            session.add(message_file)
+            session.flush()
+            session.refresh(message_file)
 
         # Publish QueueMessageFileEvent
         queue_manager.publish(

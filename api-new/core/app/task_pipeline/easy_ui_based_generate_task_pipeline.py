@@ -5,7 +5,7 @@ from threading import Thread
 from typing import Any, cast
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from constants.tts_auto_play_timeout import TTS_AUTO_PLAY_TIMEOUT, TTS_AUTO_PLAY_YIELD_CPU_TIME
 from core.app.apps.base_app_queue_manager import AppQueueManager, PublishFrom
@@ -46,13 +46,13 @@ from core.app.task_pipeline.based_generate_task_pipeline import BasedGenerateTas
 from core.app.task_pipeline.message_cycle_manager import MessageCycleManager
 from core.app.task_pipeline.message_file_utils import prepare_file_dict
 from core.base.tts import AppGeneratorTTSPublisher, AudioTrunk
+from core.db.session_factory import session_factory
 from core.model_manager import ModelInstance
 from core.ops.entities.trace_entity import TraceTaskName
 from core.ops.ops_trace_manager import TraceQueueManager, TraceTask
 from core.prompt.utils.prompt_message_util import PromptMessageUtil
 from core.prompt.utils.prompt_template_parser import PromptTemplateParser
 from events.message_event import message_was_created
-from extensions.ext_database import db
 from graphon.file import FileTransferMethod
 from graphon.model_runtime.entities.llm_entities import LLMResult, LLMResultChunk, LLMResultChunkDelta, LLMUsage
 from graphon.model_runtime.entities.message_entities import (
@@ -266,7 +266,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
             event = message.event
 
             if isinstance(event, QueueErrorEvent):
-                with sessionmaker(bind=db.engine).begin() as session:
+                with session_factory.get_session_maker().begin() as session:
                     err = self.handle_error(event=event, session=session, message_id=self._message_id)
                 yield self.error_to_stream_response(err)
                 break
@@ -287,7 +287,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
                         answer=output_moderation_answer
                     )
 
-                with sessionmaker(bind=db.engine).begin() as session:
+                with session_factory.get_session_maker().begin() as session:
                     # Save message
                     self._save_message(session=session, trace_manager=trace_manager)
                 message_end_resp = self._message_end_to_stream_response()
@@ -458,7 +458,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
 
         # Fetch files associated with this message
         files = None
-        with Session(db.engine, expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             message_files = session.scalars(select(MessageFile).where(MessageFile.message_id == self._message_id)).all()
 
             if message_files:
@@ -506,7 +506,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         :param event: agent thought event
         :return:
         """
-        with Session(db.engine, expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             agent_thought: MessageAgentThought | None = session.scalar(
                 select(MessageAgentThought).where(MessageAgentThought.id == event.agent_thought_id).limit(1)
             )

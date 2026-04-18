@@ -12,10 +12,10 @@ from core.app.apps.base_app_queue_manager import AppQueueManager, PublishFrom
 from core.app.apps.base_app_runner import AppRunner
 from core.app.entities.app_invoke_entities import AgentChatAppGenerateEntity
 from core.app.entities.queue_entities import QueueAnnotationReplyEvent
+from core.db.session_factory import session_factory
 from core.memory.token_buffer_memory import TokenBufferMemory
 from core.model_manager import ModelInstance
 from core.moderation.base import ModerationError
-from extensions.ext_database import db
 from graphon.model_runtime.entities.llm_entities import LLMMode
 from graphon.model_runtime.entities.model_entities import ModelFeature, ModelPropertyKey
 from graphon.model_runtime.model_providers.__base.large_language_model import LargeLanguageModel
@@ -47,7 +47,8 @@ class AgentChatAppRunner(AppRunner):
         app_config = application_generate_entity.app_config
         app_config = cast(AgentChatAppConfig, app_config)
         app_stmt = select(App).where(App.id == app_config.app_id)
-        app_record = db.session.scalar(app_stmt)
+        with session_factory.create_session() as session:
+            app_record = session.scalar(app_stmt)
         if not app_record:
             raise ValueError("App not found")
 
@@ -184,15 +185,15 @@ class AgentChatAppRunner(AppRunner):
 
         if {ModelFeature.MULTI_TOOL_CALL, ModelFeature.TOOL_CALL}.intersection(model_schema.features or []):
             agent_entity.strategy = AgentEntity.Strategy.FUNCTION_CALLING
-        conversation_stmt = select(Conversation).where(Conversation.id == conversation.id)
-        conversation_result = db.session.scalar(conversation_stmt)
-        if conversation_result is None:
-            raise ValueError("Conversation not found")
-        msg_stmt = select(Message).where(Message.id == message.id)
-        message_result = db.session.scalar(msg_stmt)
-        if message_result is None:
-            raise ValueError("Message not found")
-        db.session.close()
+        with session_factory.create_session() as session:
+            conversation_stmt = select(Conversation).where(Conversation.id == conversation.id)
+            conversation_result = session.scalar(conversation_stmt)
+            if conversation_result is None:
+                raise ValueError("Conversation not found")
+            msg_stmt = select(Message).where(Message.id == message.id)
+            message_result = session.scalar(msg_stmt)
+            if message_result is None:
+                raise ValueError("Message not found")
 
         runner_cls: type[FunctionCallAgentRunner] | type[CotChatAgentRunner] | type[CotCompletionAgentRunner]
         # start agent runner

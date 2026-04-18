@@ -103,8 +103,11 @@ Done
 - Replaced the public workflow route's hard-coded `generation_backend_unavailable` stub with a direct workflow-runner path that no longer depends on Flask compatibility glue.
 - Replaced the public advanced-chat and agent-chat route-level `generation_backend_unavailable` path with the same compatibility bridge.
 - Replaced the public advanced-chat route's broad `AppGenerateService` compatibility bridge with a direct runner/task-pipeline path that avoids the Flask controller layer.
+- Replaced the public agent-chat route's broad `AppGenerateService` compatibility bridge with a direct runner/task-pipeline path that avoids the Flask controller layer.
 - Wired the async database bootstrap to configure a sync companion SQLAlchemy session factory for the copied workflow runtime seams that are still active under FastAPI.
 - Switched the active advanced-chat/workflow sync helper paths off direct `db.engine`/`db.session` assumptions and onto the configured sync companion session factory.
+- Switched the active agent-chat/message-pipeline sync helper paths off direct `db.engine`/`db.session` assumptions and onto the configured sync companion session factory.
+- Switched the active agent workflow-node runtime helpers off direct `db.engine` usage and onto the configured sync companion session factory.
 - Rewired public completion `more-like-this` through the async-native FastAPI generation service.
 - Ported public workflow event replay endpoint:
   - `GET /api/workflow/{task_id}/events`
@@ -128,6 +131,7 @@ Done
 - Added focused generation route tests in `tests/test_generation_routes.py`.
 - Added focused generation compatibility tests in `tests/test_generation_service.py`.
 - Extended focused generation compatibility tests to cover the new native advanced-chat path while keeping agent-chat on the compatibility bridge.
+- Extended focused generation compatibility tests to cover the new native agent-chat path and its streaming-only contract.
 - Added focused async graph-engine event tests in `tests/test_graph_engine_async.py`.
 - Added focused async ready-queue tests in `tests/test_async_ready_queue.py`.
 - Added focused async node execution tests in `tests/test_node_async.py`.
@@ -203,7 +207,7 @@ Current status
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
 - Public advanced-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.
-- Public agent-chat generation no longer hard-fails at the route layer, but it still bridges into the copied compatibility stack behind the FastAPI service layer.
+- Public agent-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.
 - The execution engine now has an async event-emission surface, but advanced-chat/workflow still need an async-native app service built on top of it.
 - The workflow runners now expose async entrypoints, but advanced-chat/workflow still need async-native persistence and response services built on top of them.
 - The graph engine now has async-native queue/control-plane primitives, but node execution and workflow persistence still are not fully ported end to end.
@@ -211,7 +215,7 @@ Current status
 - The plugin/model client now has async request surfaces for key LLM operations, but the node/model runtime stack still needs to consume those async methods end to end.
 - The lower model-runtime/model-instance abstractions now expose async methods, but concrete nodes still need to switch from sync invokes to those async paths end to end.
 - The main LLM-backed nodes, `http_request`, and `tool` now have async execution paths, but the broader node/runtime layer still needs the same treatment for any remaining concrete nodes on real workflow paths.
-- The copied workflow/advanced-chat runtime still contains sync-only persistence and helper paths; they now use the sync companion engine explicitly instead of assuming Flask's global session state.
+- The copied workflow/advanced-chat/agent-chat runtime still contains sync-only persistence and helper paths; the active public generation seams now use the sync companion engine explicitly instead of assuming Flask's global session state.
 
 Immediate blockers
 ------------------
@@ -220,15 +224,14 @@ Immediate blockers
   - Flask-Login
   - sync SQLAlchemy sessions via `db.session`
   - Flask-specific controllers and decorators
-- Agent-chat generation still executes through the copied compatibility bridge, and the active FastAPI runtime still lacks a fully async-native workflow-backed generation service for agent/chatflow-backed modes.
 - Many services import broad legacy modules rather than small interfaces, so route-by-route porting still requires extracting local async models/services under `api_server/`.
 - Model-provider resolution and the broader generation feature set still depend on copied legacy domain code in places, so the async-native generation slice is only partially ported compared with the original Flask feature set.
-- The remaining unfinished work is concentrated in replacing the remaining agent-chat compatibility path and then moving workflow-backed generation persistence/response flows onto the new async execution surface end to end.
+- The remaining unfinished work is concentrated in moving workflow-backed generation persistence/response flows onto the new async execution surface end to end and shrinking the remaining sync companion-engine seams underneath the copied runtime.
 
 Next steps
 ----------
 1. Continue porting the next public route family.
-   - Candidate next slice: replace the remaining agent-chat compatibility bridge with async-native execution/persistence services.
+   - Candidate next slice: move the public workflow-backed generation persistence/response flow from sync companion helpers to async-native execution/persistence services.
    - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
 
 2. Expand the FastAPI-native domain layer.

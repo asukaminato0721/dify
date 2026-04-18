@@ -4,12 +4,11 @@ from collections.abc import Generator, Mapping
 from typing import Any, cast
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from core.app.file_access import DatabaseFileAccessController
+from core.db.session_factory import session_factory
 from core.tools.entities.tool_entities import ToolInvokeMessage
 from core.tools.utils.message_transformer import ToolFileMessageTransformer
-from extensions.ext_database import db
 from factories import file_factory
 from graphon.enums import BuiltinNodeTypes, NodeType, WorkflowNodeExecutionMetadataKey, WorkflowNodeExecutionStatus
 from graphon.file import File, FileTransferMethod, get_file_type_by_mime_type
@@ -81,7 +80,7 @@ class AgentMessageTransformer:
                 if not isinstance(tool_file_id, str) or not tool_file_id:
                     raise ToolFileNotFoundError("missing tool_file_id metadata")
 
-                with Session(db.engine) as session:
+                with session_factory.create_session() as session:
                     stmt = select(ToolFile).where(ToolFile.id == tool_file_id)
                     tool_file = session.scalar(stmt)
                     if tool_file is None:
@@ -106,7 +105,7 @@ class AgentMessageTransformer:
                 tool_file_id = message.meta.get("tool_file_id")
                 if not isinstance(tool_file_id, str) or not tool_file_id:
                     raise ToolFileNotFoundError("missing tool_file_id metadata")
-                with Session(db.engine) as session:
+                with session_factory.create_session() as session:
                     stmt = select(ToolFile).where(ToolFile.id == tool_file_id)
                     tool_file = session.scalar(stmt)
                     if tool_file is None:

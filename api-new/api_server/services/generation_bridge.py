@@ -1,8 +1,8 @@
 """FastAPI validation layer for public generation endpoints.
 
 Authentication and request validation stay inside the FastAPI runtime.
-Completion, chat, workflow, and advanced-chat now dispatch to direct service
-paths, while agent-chat still uses the copied compatibility stack.
+Completion, chat, workflow, advanced-chat, and agent-chat now dispatch to
+direct service paths.
 """
 
 from __future__ import annotations

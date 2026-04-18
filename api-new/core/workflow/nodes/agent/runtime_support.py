@@ -7,10 +7,10 @@ from typing import Any, cast
 from packaging.version import Version
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from core.agent.entities import AgentToolEntity
 from core.agent.plugin_entities import AgentStrategyParameter
+from core.db.session_factory import session_factory
 from core.memory.token_buffer_memory import TokenBufferMemory
 from core.model_manager import ModelInstance
 from core.plugin.entities.request import InvokeCredentials
@@ -18,7 +18,6 @@ from core.plugin.impl.model_runtime_factory import create_plugin_model_assembly
 from core.tools.entities.tool_entities import ToolIdentity, ToolParameter, ToolProviderType
 from core.tools.tool_manager import ToolManager
 from core.workflow.system_variables import SystemVariableKey, get_system_text
-from extensions.ext_database import db
 from graphon.model_runtime.entities.model_entities import AIModelEntity, ModelType
 from graphon.runtime import VariablePool
 from models.model import Conversation
@@ -228,7 +227,7 @@ class AgentRuntimeSupport:
         if conversation_id is None:
             return None
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             stmt = select(Conversation).where(Conversation.app_id == app_id, Conversation.id == conversation_id)
             conversation = session.scalar(stmt)
             if not conversation:
