@@ -26,6 +26,11 @@ from api_server.services.generation import AsyncWebGenerationService
 from api_server.services.generation_bridge import PublicGenerationBridge
 from api_server.services.service_api_apps import AppInfoResponseDict, ServiceApiAppService, ToolIconsResponseDict
 from api_server.services.service_api_auth import ServiceApiAuthService
+from api_server.services.service_api_conversation_variables import (
+    ServiceApiConversationVariableDict,
+    ServiceApiConversationVariablePaginationDict,
+    ServiceApiConversationVariableService,
+)
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
@@ -151,6 +156,11 @@ class ServiceApiAudioToTextResponseDict(TypedDict):
 class ServiceApiFeedbackListQuery(BaseModel):
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=20, ge=1, le=101)
+
+
+class ServiceApiConversationVariableUpdatePayload(BaseModel):
+    user: str | None = Field(default=None)
+    value: object
 
 
 def _site_icon_url(site: Site) -> str | None:
@@ -543,6 +553,49 @@ async def rename_service_api_conversation(
         end_user=end_user,
         name=payload.name,
         auto_generate=payload.auto_generate,
+    )
+
+
+@router.get("/v1/conversations/{conversation_id}/variables")
+async def list_service_api_conversation_variables(
+    request: Request,
+    conversation_id: str,
+    user: str | None = Query(default=None),
+    last_id: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    variable_name: str | None = Query(default=None, min_length=1, max_length=255),
+) -> ServiceApiConversationVariablePaginationDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=user)
+    return await ServiceApiConversationVariableService.list_variables(
+        app=context.app,
+        conversation_id=conversation_id,
+        end_user=end_user,
+        limit=limit,
+        last_id=last_id,
+        variable_name=variable_name,
+    )
+
+
+@router.put("/v1/conversations/{conversation_id}/variables/{variable_id}")
+async def update_service_api_conversation_variable(
+    request: Request,
+    conversation_id: str,
+    variable_id: str,
+    payload: ServiceApiConversationVariableUpdatePayload,
+) -> ServiceApiConversationVariableDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=payload.user)
+    return await ServiceApiConversationVariableService.update_variable(
+        app=context.app,
+        conversation_id=conversation_id,
+        variable_id=variable_id,
+        end_user=end_user,
+        value=payload.value,
     )
 
 

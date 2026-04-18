@@ -837,6 +837,93 @@ async def test_service_api_rename_conversation_route_uses_native_conversation_se
     )
 
 
+async def test_service_api_conversation_variables_route_uses_native_variable_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+    payload = {"limit": 20, "has_more": False, "data": []}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiConversationVariableService.list_variables",
+            new=AsyncMock(return_value=payload),
+        ) as variable_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/v1/conversations/conversation-1/variables",
+                headers={"Authorization": "Bearer app-token"},
+                params={"user": "session-1", "variable_name": "score"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    variable_mock.assert_awaited_once_with(
+        app=context.app,
+        conversation_id="conversation-1",
+        end_user=end_user,
+        limit=20,
+        last_id=None,
+        variable_name="score",
+    )
+
+
+async def test_service_api_update_conversation_variable_route_uses_native_variable_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+    payload = {
+        "id": "variable-1",
+        "name": "score",
+        "value_type": "number",
+        "value": 5,
+        "description": None,
+        "created_at": 1710000000,
+        "updated_at": 1710000001,
+    }
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiConversationVariableService.update_variable",
+            new=AsyncMock(return_value=payload),
+        ) as variable_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.put(
+                "/v1/conversations/conversation-1/variables/variable-1",
+                headers={"Authorization": "Bearer app-token"},
+                json={"user": "session-1", "value": 5},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    variable_mock.assert_awaited_once_with(
+        app=context.app,
+        conversation_id="conversation-1",
+        variable_id="variable-1",
+        end_user=end_user,
+        value=5,
+    )
+
+
 async def test_service_api_suggested_route_uses_native_suggested_service() -> None:
     context = _ServiceApiContextStub()
     end_user = object()

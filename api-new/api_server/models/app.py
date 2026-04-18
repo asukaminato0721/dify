@@ -594,6 +594,27 @@ class MessageFile(Base):
     created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
 
 
+class ConversationVariable(Base):
+    __tablename__ = "workflow_conversation_variables"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", "conversation_id", name="workflow_conversation_variables_pkey"),
+        sa.Index("workflow_conversation_variables_app_id_idx", "app_id"),
+        sa.Index("workflow_conversation_variables_conversation_id_idx", "conversation_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    conversation_id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    data: Mapped[str] = mapped_column(LongText)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
 class MessageFeedback(Base):
     __tablename__ = "message_feedbacks"
     __table_args__ = (
