@@ -62,6 +62,11 @@ class ApiTokenType(enum.StrEnum):
     DATASET = "dataset"
 
 
+class TagType(enum.StrEnum):
+    KNOWLEDGE = "knowledge"
+    APP = "app"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (
@@ -177,6 +182,7 @@ class App(Base):
     icon_type: Mapped[str | None] = mapped_column(String(255), default=None)
     icon: Mapped[str | None] = mapped_column(String(255), default=None)
     icon_background: Mapped[str | None] = mapped_column(String(255), default=None)
+    created_by: Mapped[str | None] = mapped_column(StringUUID, default=None)
     app_model_config_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     workflow_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     status: Mapped[AppStatus] = mapped_column(
@@ -217,6 +223,10 @@ class EndUser(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+
+class DefaultEndUserSessionID(enum.StrEnum):
+    DEFAULT_SESSION_ID = "DEFAULT-USER"
 
 
 class Site(Base):
@@ -434,6 +444,11 @@ class UploadFile(Base):
     mime_type: Mapped[str | None] = mapped_column(String(255), default=None)
     created_by_role: Mapped[str] = mapped_column(String(255), default=CreatorUserRole.END_USER.value)
     created_by: Mapped[str] = mapped_column(StringUUID)
+    used: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
+    used_by: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    hash: Mapped[str | None] = mapped_column(String(255), default=None)
+    source_url: Mapped[str] = mapped_column(LongText, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
 
@@ -454,11 +469,40 @@ class ApiToken(Base):
     token: Mapped[str] = mapped_column(String(255))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-    used: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), default=False)
-    used_by: Mapped[str | None] = mapped_column(StringUUID, default=None)
-    used_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
-    hash: Mapped[str | None] = mapped_column(String(255), default=None)
-    source_url: Mapped[str] = mapped_column(LongText, default="")
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="tag_pkey"),
+        sa.Index("tag_type_idx", "type"),
+        sa.Index("tag_name_idx", "name"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    tenant_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    type: Mapped[TagType] = mapped_column(EnumText(TagType, length=16))
+    name: Mapped[str] = mapped_column(String(255))
+    created_by: Mapped[str] = mapped_column(StringUUID)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+
+class TagBinding(Base):
+    __tablename__ = "tag_bindings"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="tag_binding_pkey"),
+        sa.Index("tag_bind_target_id_idx", "target_id"),
+        sa.Index("tag_bind_tag_id_idx", "tag_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    tenant_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    tag_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    target_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    created_by: Mapped[str] = mapped_column(StringUUID)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
 
 class Conversation(Base):
@@ -526,6 +570,27 @@ class Message(Base):
     from_source: Mapped[str] = mapped_column(String(255))
     from_end_user_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     from_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+
+class MessageFile(Base):
+    __tablename__ = "message_files"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="message_file_pkey"),
+        sa.Index("message_file_message_idx", "message_id"),
+        sa.Index("message_file_upload_idx", "upload_file_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    message_id: Mapped[str] = mapped_column(StringUUID)
+    type: Mapped[str] = mapped_column(String(255))
+    transfer_method: Mapped[str | None] = mapped_column(String(255), default=None)
+    belongs_to: Mapped[str] = mapped_column(String(255))
+    url: Mapped[str | None] = mapped_column(LongText, default=None)
+    upload_file_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    created_by_role: Mapped[str] = mapped_column(String(255), default=CreatorUserRole.END_USER.value)
+    created_by: Mapped[str] = mapped_column(StringUUID)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
 
 

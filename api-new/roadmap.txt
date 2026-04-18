@@ -130,10 +130,21 @@ Done
 - Mounted public message `more-like-this` endpoint:
   - `GET /api/messages/{message_id}/more-like-this`
 - Added FastAPI-native app-token auth and resource lookup services for the initial `/v1` service API slice.
+- Added FastAPI-native service API app/file services plus local end-user resolution for the growing `/v1` slice.
 - Ported initial service API endpoints:
   - `GET /v1/`
   - `GET /v1/site`
   - `GET /v1/end-users/{end_user_id}`
+- Ported additional service API app/file endpoints:
+  - `GET /v1/parameters`
+  - `GET /v1/meta`
+  - `GET /v1/info`
+  - `POST /v1/files/upload`
+  - `GET /v1/files/{file_id}/preview`
+- Ported additional service API message endpoints:
+  - `GET /v1/messages`
+  - `POST /v1/messages/{message_id}/feedbacks`
+  - `GET /v1/messages/{message_id}/suggested`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused service API route tests in `tests/test_service_api_routes.py`.
@@ -156,6 +167,10 @@ Done
 - Targeted `pyrefly` is clean for the updated generation bridge/service test slice.
 - Targeted service API route/auth verification now also passes: `6 passed`.
 - Targeted `pyrefly` is clean for the initial FastAPI `/v1` service API slice.
+- Expanded targeted service API route/auth verification now also passes: `11 passed`.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file slice.
+- Further expanded targeted service API route/auth verification now also passes: `14 passed`.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message slice.
 
 Current status
 --------------
@@ -213,6 +228,14 @@ Current status
   - `/files/workspaces/{workspace_id}/webapp-logo`
   - `/v1/`
   - `/v1/site`
+  - `/v1/parameters`
+  - `/v1/meta`
+  - `/v1/info`
+  - `/v1/files/upload`
+  - `/v1/files/{file_id}/preview`
+  - `/v1/messages`
+  - `/v1/messages/{message_id}/feedbacks`
+  - `/v1/messages/{message_id}/suggested`
   - `/v1/end-users/{end_user_id}`
 - The copied legacy tree is not ported yet; it still contains Flask-specific imports and synchronous `db.session` usage.
 - The active `api-new` dependency set no longer includes Flask, `flask-login`, or `flask-restx`.
@@ -224,6 +247,8 @@ Current status
 - Public `more-like-this` now routes through the async-native completion generation service.
 - Public webapp auth extraction now uses `fastapi.security` helpers for bearer/header/cookie credentials in the active runtime.
 - The initial `/v1` service API slice now uses `fastapi.security` bearer auth plus local async app/token/end-user/site lookups under `api_server/`.
+- The expanded `/v1` service API slice now also handles app metadata, service-API file upload, and app-scoped file preview through local FastAPI services and ORM models under `api_server/`.
+- The expanded `/v1` service API slice now also reuses the native FastAPI conversation/message and suggested-question services via service-API end-user resolution and local runtime-context construction.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
 - Public advanced-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.

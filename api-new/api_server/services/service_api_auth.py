@@ -9,13 +9,23 @@ guard service API requests.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import uuid4
 
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 
 from api_server.errors import forbidden, unauthorized
-from api_server.models.app import ApiToken, ApiTokenType, App, AppStatus, Tenant, TenantStatus
+from api_server.models.app import (
+    ApiToken,
+    ApiTokenType,
+    App,
+    AppStatus,
+    DefaultEndUserSessionID,
+    EndUser,
+    Tenant,
+    TenantStatus,
+)
 from extensions.ext_database import db
 from libs.datetime_utils import naive_utc_now
 
@@ -83,3 +93,37 @@ class ServiceApiAuthService:
             await session.flush()
 
         return ServiceApiAppContext(api_token=api_token, app=app, tenant=tenant)
+
+    @staticmethod
+    async def resolve_end_user(*, app: App, user_id: str | None) -> EndUser:
+        session_id = user_id or DefaultEndUserSessionID.DEFAULT_SESSION_ID
+
+        async with db.session_context() as session:
+            end_user = await session.scalar(
+                select(EndUser).where(
+                    EndUser.tenant_id == app.tenant_id,
+                    EndUser.app_id == app.id,
+                    EndUser.session_id == session_id,
+                )
+            )
+            if end_user is not None:
+                if end_user.type != "service-api":
+                    end_user.type = "service-api"
+                    session.add(end_user)
+                    await session.flush()
+                return end_user
+
+            end_user = EndUser(
+                id=str(uuid4()),
+                tenant_id=app.tenant_id,
+                app_id=app.id,
+                type="service-api",
+                external_user_id=session_id,
+                name=None,
+                is_anonymous=session_id == DefaultEndUserSessionID.DEFAULT_SESSION_ID,
+                session_id=session_id,
+            )
+            session.add(end_user)
+            await session.flush()
+            await session.refresh(end_user)
+            return end_user
