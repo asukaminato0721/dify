@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal, TypedDict
 from uuid import UUID
 
@@ -34,6 +35,10 @@ from api_server.services.service_api_conversation_variables import (
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
+from api_server.services.service_api_workflow_logs import (
+    ServiceApiWorkflowLogPaginationDict,
+    ServiceApiWorkflowLogService,
+)
 from api_server.services.service_api_workflows import ServiceApiWorkflowRunResponseDict, ServiceApiWorkflowService
 from api_server.services.suggested_questions import SuggestedQuestionsService
 from api_server.services.task_control import TaskControlService
@@ -156,6 +161,17 @@ class ServiceApiAudioToTextResponseDict(TypedDict):
 class ServiceApiFeedbackListQuery(BaseModel):
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=20, ge=1, le=101)
+
+
+class ServiceApiWorkflowLogQuery(BaseModel):
+    keyword: str | None = None
+    status: Literal["succeeded", "failed", "stopped"] | None = None
+    created_at__before: str | None = None
+    created_at__after: str | None = None
+    created_by_end_user_session_id: str | None = None
+    created_by_account: str | None = None
+    page: int = Field(default=1, ge=1, le=99999)
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 class ServiceApiConversationVariableUpdatePayload(BaseModel):
@@ -456,6 +472,35 @@ async def stop_service_api_workflow(
     _ = user
     TaskControlService.stop_task(task_id)
     return {"result": "success"}
+
+
+@router.get("/v1/workflows/logs")
+async def list_service_api_workflow_logs(
+    request: Request,
+    keyword: str | None = Query(default=None),
+    status: Literal["succeeded", "failed", "stopped"] | None = Query(default=None),
+    created_at__before: str | None = Query(default=None),
+    created_at__after: str | None = Query(default=None),
+    created_by_end_user_session_id: str | None = Query(default=None),
+    created_by_account: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1, le=99999),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> ServiceApiWorkflowLogPaginationDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    created_before = datetime.fromisoformat(created_at__before) if created_at__before else None
+    created_after = datetime.fromisoformat(created_at__after) if created_at__after else None
+    return await ServiceApiWorkflowLogService.list_logs(
+        tenant_id=context.tenant.id,
+        app_id=context.app.id,
+        keyword=keyword,
+        status=status,
+        created_at_before=created_before,
+        created_at_after=created_after,
+        page=page,
+        limit=limit,
+        created_by_end_user_session_id=created_by_end_user_session_id,
+        created_by_account=created_by_account,
+    )
 
 
 @router.get("/v1/messages")

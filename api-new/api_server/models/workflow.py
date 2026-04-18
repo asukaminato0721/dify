@@ -20,6 +20,12 @@ from api_server.models.app import CreatorUserRole
 from graphon.enums import WorkflowExecutionStatus
 
 
+class WorkflowAppLogCreatedFrom(str, sa.Enum):
+    SERVICE_API = "service-api"
+    WEB_APP = "web-app"
+    INSTALLED_APP = "installed-app"
+
+
 class WorkflowRun(TypeBase):
     """Read-only subset of `workflow_runs` used by FastAPI workflow event routes."""
 
@@ -79,3 +85,32 @@ class WorkflowRun(TypeBase):
     @property
     def outputs_dict(self) -> dict[str, Any]:
         return self._load_json(self.outputs, {})
+
+
+class WorkflowAppLog(TypeBase):
+    """Subset of `workflow_app_logs` needed by the active FastAPI `/v1` route."""
+
+    __tablename__ = "workflow_app_logs"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="workflow_app_log_pkey"),
+        sa.Index("workflow_app_log_app_idx", "tenant_id", "app_id"),
+        sa.Index("workflow_app_log_workflow_run_id_idx", "workflow_run_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID, init=False)
+    tenant_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    app_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    workflow_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    workflow_run_id: Mapped[str] = mapped_column(StringUUID, init=False)
+    created_from: Mapped[str] = mapped_column(String(255), init=False)
+    created_by_role: Mapped[CreatorUserRole] = mapped_column(
+        EnumText(CreatorUserRole, length=255),
+        init=False,
+    )
+    created_by: Mapped[str] = mapped_column(StringUUID, init=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        init=False,
+        server_default=func.current_timestamp(),
+    )

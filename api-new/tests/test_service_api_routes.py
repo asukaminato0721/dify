@@ -500,6 +500,52 @@ async def test_service_api_workflow_detail_route_uses_native_workflow_service() 
     )
 
 
+async def test_service_api_workflow_logs_route_uses_native_workflow_log_service() -> None:
+    context = _ServiceApiContextStub()
+    context.app.mode.value = "workflow"
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiWorkflowLogService.list_logs",
+            new=AsyncMock(
+                return_value={
+                    "page": 1,
+                    "limit": 20,
+                    "total": 1,
+                    "has_more": False,
+                    "data": [],
+                }
+            ),
+        ) as logs_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/v1/workflows/logs",
+                headers={"Authorization": "Bearer app-token"},
+                params={"status": "succeeded"},
+            )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    auth_mock.assert_awaited_once()
+    logs_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        app_id="app-1",
+        keyword=None,
+        status="succeeded",
+        created_at_before=None,
+        created_at_after=None,
+        page=1,
+        limit=20,
+        created_by_end_user_session_id=None,
+        created_by_account=None,
+    )
+
+
 async def test_service_api_workflow_stop_route_uses_task_control_service() -> None:
     context = _ServiceApiContextStub()
     context.app.mode.value = "workflow"

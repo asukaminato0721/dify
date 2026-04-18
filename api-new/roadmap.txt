@@ -167,6 +167,8 @@ Done
 - Ported additional service API conversation-variable endpoints:
   - `GET /v1/conversations/{conversation_id}/variables`
   - `PUT /v1/conversations/{conversation_id}/variables/{variable_id}`
+- Ported additional service API workflow-log endpoint:
+  - `GET /v1/workflows/logs`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused service API route tests in `tests/test_service_api_routes.py`.
@@ -205,6 +207,8 @@ Done
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback slice.
 - Further expanded targeted service API route/auth verification now also passes: `30 passed` for the focused service-route slice.
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables slice.
+- Further expanded targeted service API route/auth verification now also passes: `31 passed` for the focused service-route slice.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs slice.
 
 Current status
 --------------
@@ -278,6 +282,7 @@ Current status
   - `/v1/workflows/{workflow_id}/run`
   - `/v1/workflows/run/{workflow_run_id}`
   - `/v1/workflows/tasks/{task_id}/stop`
+  - `/v1/workflows/logs`
   - `/v1/audio-to-text`
   - `/v1/text-to-audio`
   - `/v1/app/feedbacks`
@@ -305,6 +310,7 @@ Current status
 - The expanded `/v1` service API slice now also reuses the native FastAPI audio transcription/synthesis service paths instead of the legacy Flask audio controllers.
 - The expanded `/v1` service API slice now also exposes app-wide feedback listing through a local async query and supports workflow-id-specific runs by threading a workflow override through the native FastAPI workflow runner.
 - The expanded `/v1` service API slice now also handles conversation-variable listing and updates through local async SQLAlchemy plus graph variable serialization, instead of the legacy sync conversation-variable service path.
+- The expanded `/v1` service API slice now also serves workflow execution logs through local async workflow-log and workflow-run mappings instead of the legacy Flask `WorkflowAppService`.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
 - Public advanced-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.
