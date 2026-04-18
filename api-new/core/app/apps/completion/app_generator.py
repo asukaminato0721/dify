@@ -18,8 +18,8 @@ from core.app.apps.exc import GenerateTaskStoppedError
 from core.app.apps.message_based_app_generator import MessageBasedAppGenerator
 from core.app.apps.message_based_app_queue_manager import MessageBasedAppQueueManager
 from core.app.entities.app_invoke_entities import CompletionAppGenerateEntity, InvokeFrom
+from core.db.session_factory import session_factory
 from core.ops.ops_trace_manager import TraceQueueManager
-from extensions.ext_database import db
 from factories import file_factory
 from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
 from models import Account, App, EndUser, Message
@@ -249,7 +249,8 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
             Message.from_end_user_id == (user.id if isinstance(user, EndUser) else None),
             Message.from_account_id == (user.id if isinstance(user, Account) else None),
         )
-        message = db.session.scalar(stmt)
+        with session_factory.create_session() as session:
+            message = session.scalar(stmt)
 
         if not message:
             raise MessageNotExistsError()
@@ -318,20 +319,14 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
                 message_id=message.id,
             )
 
-            context = contextvars.copy_context()
-
-            # new thread with request context
-            @copy_current_request_context
-            def worker_with_context():
-                return context.run(
-                    self._generate_worker,
-                    flask_app=current_app._get_current_object(),  # type: ignore
-                    application_generate_entity=application_generate_entity,
-                    queue_manager=queue_manager,
-                    message_id=message.id,
-                )
-
-            worker_thread = threading.Thread(target=worker_with_context)
+            worker_thread = threading.Thread(
+                target=self._generate_worker,
+                kwargs={
+                    "application_generate_entity": application_generate_entity,
+                    "queue_manager": queue_manager,
+                    "message_id": message.id,
+                },
+            )
 
             worker_thread.start()
 
