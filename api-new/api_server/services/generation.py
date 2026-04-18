@@ -14,7 +14,7 @@ import uuid
 from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -130,29 +130,6 @@ class _HistoryMessage:
     query: str
     answer: str
     parent_message_id: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class _LegacyAppProxy:
-    """Minimal app view required by the copied compatibility generators."""
-
-    id: str
-    tenant_id: str
-    mode: str
-    workflow_id: str | None
-    is_agent: bool
-    max_active_requests: int | None
-
-
-class _CompatibilityGenerationArgs(TypedDict, total=False):
-    """Public generation payload passed into the copied execution bridge."""
-
-    inputs: dict[str, Any]
-    query: str
-    files: list[dict[str, Any]]
-    conversation_id: str
-    parent_message_id: str
-    auto_generate_name: bool
 
 
 class _ConversationMemoryAdapter:
@@ -278,56 +255,6 @@ def _ensure_supported_features(
             "external_data_tools_unavailable",
             "External data tool generation is not ported to the FastAPI runtime yet.",
         )
-
-
-def _build_legacy_app_proxy(context: WebappContext) -> _LegacyAppProxy:
-    return _LegacyAppProxy(
-        id=context.app.id,
-        tenant_id=context.app.tenant_id,
-        mode=str(context.app.mode),
-        workflow_id=context.app.workflow_id,
-        is_agent=context.app.mode == context.app.mode.AGENT_CHAT,
-        max_active_requests=None,
-    )
-
-
-def _run_compat_public_generation_blocking(
-    *,
-    context: WebappContext,
-    args: _CompatibilityGenerationArgs,
-    streaming: bool,
-) -> Mapping[str, Any] | Iterator[str]:
-    """Run the copied workflow-capable generators inside the local Flask shim."""
-
-    from flask import Flask
-    from libs.flask_utils import set_login_user
-    from services.app_generate_service import AppGenerateService
-
-    compat_app = Flask("fastapi-public-generation")
-    with compat_app.app_context():
-        set_login_user(context.end_user)
-        response = AppGenerateService.generate(
-            app_model=cast(LegacyApp, _build_legacy_app_proxy(context)),
-            user=cast(LegacyEndUser, context.end_user),
-            args=args,
-            invoke_from=InvokeFrom.WEB_APP,
-            streaming=streaming,
-        )
-    return cast(Mapping[str, Any] | Iterator[str], response)
-
-
-async def _run_compat_public_generation(
-    *,
-    context: WebappContext,
-    args: _CompatibilityGenerationArgs,
-    streaming: bool,
-) -> Mapping[str, Any] | Iterator[str]:
-    return await asyncio.to_thread(
-        _run_compat_public_generation_blocking,
-        context=context,
-        args=args,
-        streaming=streaming,
-    )
 
 
 def _get_legacy_sync_engine() -> Engine:

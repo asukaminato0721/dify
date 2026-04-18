@@ -31,7 +31,6 @@ from core.db.session_factory import session_factory
 from core.llm_generator.llm_generator import LLMGenerator
 from core.tools.signature import sign_tool_file
 from extensions.ext_redis import redis_client
-from flask import Flask, current_app
 from models.enums import MessageFileBelongsTo
 from models.model import AppMode, Conversation, MessageAnnotation, MessageFile
 from services.annotation_service import AppAnnotationService
@@ -97,11 +96,7 @@ class MessageCycleManager:
             thread = Timer(
                 1,
                 self._generate_conversation_name_worker,
-                kwargs={
-                    "flask_app": current_app._get_current_object(),  # type: ignore
-                    "conversation_id": conversation_id,
-                    "query": query,
-                },
+                kwargs={"conversation_id": conversation_id, "query": query},
             )
             thread.daemon = True
             thread.start()
@@ -111,40 +106,39 @@ class MessageCycleManager:
 
         return thread
 
-    def _generate_conversation_name_worker(self, flask_app: Flask, conversation_id: str, query: str):
-        with flask_app.app_context():
-            # get conversation and message
+    def _generate_conversation_name_worker(self, conversation_id: str, query: str) -> None:
+        with session_factory.get_session_maker().begin() as session:
             stmt = select(Conversation).where(Conversation.id == conversation_id)
-            conversation = db.session.scalar(stmt)
+            conversation = session.scalar(stmt)
 
             if not conversation:
                 return
 
-            if conversation.mode != AppMode.COMPLETION:
-                app_model = conversation.app
-                if not app_model:
-                    return
+            if conversation.mode == AppMode.COMPLETION:
+                return
 
-                # generate conversation name
-                query_hash = hashlib.md5(query.encode()).hexdigest()[:16]
-                cache_key = f"conv_name:{conversation_id}:{query_hash}"
+            app_model = conversation.app
+            if not app_model:
+                return
 
-                cached_name = redis_client.get(cache_key)
-                if cached_name:
-                    name = cached_name.decode("utf-8")
-                else:
-                    try:
-                        name = LLMGenerator.generate_conversation_name(
-                            app_model.tenant_id, query, conversation_id, conversation.app_id
-                        )
-                        redis_client.setex(cache_key, 3600, name)
-                    except Exception:
-                        if dify_config.DEBUG:
-                            logger.exception("generate conversation name failed, conversation_id: %s", conversation_id)
-                        name = query[:47] + "..." if len(query) > 50 else query
-                conversation.name = name
-                db.session.commit()
-                db.session.close()
+            query_hash = hashlib.md5(query.encode()).hexdigest()[:16]
+            cache_key = f"conv_name:{conversation_id}:{query_hash}"
+
+            cached_name = redis_client.get(cache_key)
+            if cached_name:
+                name = cached_name.decode("utf-8")
+            else:
+                try:
+                    name = LLMGenerator.generate_conversation_name(
+                        app_model.tenant_id, query, conversation_id, conversation.app_id
+                    )
+                    redis_client.setex(cache_key, 3600, name)
+                except Exception:
+                    if dify_config.DEBUG:
+                        logger.exception("generate conversation name failed, conversation_id: %s", conversation_id)
+                    name = query[:47] + "..." if len(query) > 50 else query
+
+            conversation.name = name
 
     def handle_annotation_reply(self, event: QueueAnnotationReplyEvent) -> MessageAnnotation | None:
         """

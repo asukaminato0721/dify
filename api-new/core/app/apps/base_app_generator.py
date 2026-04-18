@@ -2,8 +2,6 @@ from collections.abc import Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from typing import TYPE_CHECKING, Any, Union, final
 
-from sqlalchemy.orm import Session
-
 from core.app.apps.draft_variable_saver import (
     DraftVariableSaver,
     DraftVariableSaverFactory,
@@ -11,7 +9,7 @@ from core.app.apps.draft_variable_saver import (
 )
 from core.app.entities.app_invoke_entities import InvokeFrom, UserFrom
 from core.app.file_access import DatabaseFileAccessController, FileAccessScope, bind_file_access_scope
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from factories import file_factory
 from graphon.enums import NodeType
 from graphon.file import File, FileUploadConfig
@@ -46,7 +44,7 @@ class _DebuggerDraftVariableSaver:
         self._enclosing_node_id = enclosing_node_id
 
     def save(self, process_data: Mapping[str, Any] | None, outputs: Mapping[str, Any] | None) -> None:
-        with Session(db.engine) as session, session.begin():
+        with session_factory.create_session() as session, session.begin():
             DraftVariableSaverImpl(
                 session=session,
                 app_id=self._app_id,

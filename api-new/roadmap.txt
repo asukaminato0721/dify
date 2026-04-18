@@ -108,6 +108,8 @@ Done
 - Switched the active advanced-chat/workflow sync helper paths off direct `db.engine`/`db.session` assumptions and onto the configured sync companion session factory.
 - Switched the active agent-chat/message-pipeline sync helper paths off direct `db.engine`/`db.session` assumptions and onto the configured sync companion session factory.
 - Switched the active agent workflow-node runtime helpers off direct `db.engine` usage and onto the configured sync companion session factory.
+- Removed the now-dead public generation Flask compatibility shim from `api_server/services/generation.py`.
+- Removed the active message-cycle conversation-name worker's Flask app-context dependency from the public generation path.
 - Rewired public completion `more-like-this` through the async-native FastAPI generation service.
 - Ported public workflow event replay endpoint:
   - `GET /api/workflow/{task_id}/events`
@@ -208,6 +210,7 @@ Current status
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
 - Public advanced-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.
 - Public agent-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.
+- The active FastAPI public generation service no longer retains a direct Flask compatibility fallback.
 - The execution engine now has an async event-emission surface, but advanced-chat/workflow still need an async-native app service built on top of it.
 - The workflow runners now expose async entrypoints, but advanced-chat/workflow still need async-native persistence and response services built on top of them.
 - The graph engine now has async-native queue/control-plane primitives, but node execution and workflow persistence still are not fully ported end to end.
@@ -216,6 +219,7 @@ Current status
 - The lower model-runtime/model-instance abstractions now expose async methods, but concrete nodes still need to switch from sync invokes to those async paths end to end.
 - The main LLM-backed nodes, `http_request`, and `tool` now have async execution paths, but the broader node/runtime layer still needs the same treatment for any remaining concrete nodes on real workflow paths.
 - The copied workflow/advanced-chat/agent-chat runtime still contains sync-only persistence and helper paths; the active public generation seams now use the sync companion engine explicitly instead of assuming Flask's global session state.
+- The remaining Flask imports are concentrated in copied legacy generator/controller paths that are no longer on the active public FastAPI route surface.
 
 Immediate blockers
 ------------------
