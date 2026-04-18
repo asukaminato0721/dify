@@ -106,16 +106,7 @@ class BaseAgentRunner(AppRunner):
             user_id=user_id,
             inputs=cast(dict, application_generate_entity.inputs),
         )
-        # get how many agent thoughts have been created
-        with session_factory.create_session() as session:
-            self.agent_thought_count = (
-                session.scalar(
-                    select(func.count())
-                    .select_from(FastAPIMessageAgentThought)
-                    .where(FastAPIMessageAgentThought.message_id == self.message.id)
-                )
-                or 0
-            )
+        self.agent_thought_count = self._load_agent_thought_count()
 
         # check if model supports stream tool call
         llm_model = cast(LargeLanguageModel, model_instance.model_type_instance)
@@ -125,6 +116,82 @@ class BaseAgentRunner(AppRunner):
         self.files = application_generate_entity.files if ModelFeature.VISION in features else []
         self.query: str | None = ""
         self._current_thoughts: list[PromptMessage] = []
+
+    def _load_agent_thought_count(self) -> int:
+        cached_count = getattr(self.message, "_cached_agent_thought_count", None)
+        if isinstance(cached_count, int):
+            return cached_count
+
+        with session_factory.create_session() as session:
+            count = session.scalar(
+                select(func.count())
+                .select_from(FastAPIMessageAgentThought)
+                .where(FastAPIMessageAgentThought.message_id == self.message.id)
+            )
+        return int(count or 0)
+
+    def _load_history_messages(self) -> list[FastAPIMessage]:
+        cached_messages = getattr(self.conversation, "_cached_history_messages", None)
+        if isinstance(cached_messages, list):
+            return cast(list[FastAPIMessage], cached_messages)
+
+        with session_factory.create_session() as session:
+            messages = (
+                session.execute(
+                    select(FastAPIMessage)
+                    .where(FastAPIMessage.conversation_id == self.message.conversation_id)
+                    .order_by(FastAPIMessage.created_at.desc())
+                )
+                .scalars()
+                .all()
+            )
+        return list(messages)
+
+    def _load_agent_thoughts(self, message: FastAPIMessage) -> list[FastAPIMessageAgentThought]:
+        cached_thoughts = getattr(message, "_cached_agent_thoughts", None)
+        if isinstance(cached_thoughts, list):
+            return cast(list[FastAPIMessageAgentThought], cached_thoughts)
+
+        with session_factory.create_session() as session:
+            agent_thoughts = session.scalars(
+                select(FastAPIMessageAgentThought)
+                .where(FastAPIMessageAgentThought.message_id == message.id)
+                .order_by(FastAPIMessageAgentThought.position.asc())
+            ).all()
+        return list(agent_thoughts)
+
+    def _load_user_message_files(self, message: FastAPIMessage) -> list[FastAPIMessageFile]:
+        cached_files = getattr(message, "_cached_user_message_files", None)
+        if isinstance(cached_files, list):
+            return cast(list[FastAPIMessageFile], cached_files)
+
+        with session_factory.create_session() as session:
+            files = session.scalars(select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == message.id)).all()
+        return list(files)
+
+    def _load_message_conversation(self, message: FastAPIMessage) -> FastAPIConversation | None:
+        if message.conversation_id == self.conversation.id:
+            return self.conversation
+
+        cached_conversation = getattr(message, "_cached_conversation", None)
+        if isinstance(cached_conversation, FastAPIConversation):
+            return cached_conversation
+
+        with session_factory.create_session() as session:
+            return session.scalar(select(FastAPIConversation).where(FastAPIConversation.id == message.conversation_id))
+
+    def _load_message_app_model_config(self, conversation: FastAPIConversation) -> FastAPIAppModelConfig | None:
+        cached_config = getattr(conversation, "_cached_app_model_config", None)
+        if isinstance(cached_config, FastAPIAppModelConfig):
+            return cached_config
+
+        if not conversation.app_model_config_id:
+            return None
+
+        with session_factory.create_session() as session:
+            return session.scalar(
+                select(FastAPIAppModelConfig).where(FastAPIAppModelConfig.id == conversation.app_model_config_id)
+            )
 
     def _repack_app_generate_entity(
         self, app_generate_entity: AgentChatAppGenerateEntity
@@ -427,30 +494,14 @@ class BaseAgentRunner(AppRunner):
             if isinstance(prompt_message, SystemPromptMessage):
                 result.append(prompt_message)
 
-        with session_factory.create_session() as session:
-            messages = (
-                session.execute(
-                    select(FastAPIMessage)
-                    .where(FastAPIMessage.conversation_id == self.message.conversation_id)
-                    .order_by(FastAPIMessage.created_at.desc())
-                )
-                .scalars()
-                .all()
-            )
-
-        messages = list(reversed(extract_thread_messages(messages)))
+        messages = list(reversed(extract_thread_messages(self._load_history_messages())))
 
         for message in messages:
             if message.id == self.message.id:
                 continue
 
             result.append(self.organize_agent_user_prompt(message))
-            with session_factory.create_session() as session:
-                agent_thoughts = session.scalars(
-                    select(FastAPIMessageAgentThought)
-                    .where(FastAPIMessageAgentThought.message_id == message.id)
-                    .order_by(FastAPIMessageAgentThought.position.asc())
-                ).all()
+            agent_thoughts = self._load_agent_thoughts(message)
             if agent_thoughts:
                 for agent_thought in agent_thoughts:
                     tool_names_raw = agent_thought.tool
@@ -514,22 +565,15 @@ class BaseAgentRunner(AppRunner):
         return result
 
     def organize_agent_user_prompt(self, message: FastAPIMessage) -> UserPromptMessage:
-        with session_factory.create_session() as session:
-            stmt = select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == message.id)
-            files = session.scalars(stmt).all()
+        files = self._load_user_message_files(message)
         if not files:
             return UserPromptMessage(content=message.query)
         file_extra_config = None
-        with session_factory.create_session() as session:
-            conversation = session.scalar(
-                select(FastAPIConversation).where(FastAPIConversation.id == message.conversation_id)
-            )
-            if conversation and conversation.app_model_config_id:
-                app_model_config = session.scalar(
-                    select(FastAPIAppModelConfig).where(FastAPIAppModelConfig.id == conversation.app_model_config_id)
-                )
-                if app_model_config:
-                    file_extra_config = FileUploadConfigManager.convert(app_model_config.to_dict())
+        conversation = self._load_message_conversation(message)
+        if conversation and conversation.app_model_config_id:
+            app_model_config = self._load_message_app_model_config(conversation)
+            if app_model_config:
+                file_extra_config = FileUploadConfigManager.convert(app_model_config.to_dict())
 
         if not file_extra_config:
             return UserPromptMessage(content=message.query)

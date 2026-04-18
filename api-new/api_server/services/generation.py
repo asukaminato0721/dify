@@ -30,6 +30,7 @@ from api_server.models.app import (
     Conversation,
     EndUser as FastAPIEndUser,
     Message,
+    MessageAgentThought,
     MessageFile,
     Workflow as FastAPIWorkflow,
 )
@@ -974,10 +975,21 @@ async def _prefetch_agent_chat_memory_async(
     history_files = (
         await session.scalars(select(MessageFile).where(MessageFile.message_id.in_(message_ids)))
     ).all()
+    agent_thoughts = (
+        await session.scalars(
+            select(MessageAgentThought)
+            .where(MessageAgentThought.message_id.in_(message_ids))
+            .order_by(MessageAgentThought.message_id.asc(), MessageAgentThought.position.asc())
+        )
+    ).all()
 
     files_by_message_id: dict[str, list[MessageFile]] = {message_id: [] for message_id in message_ids}
     for message_file in history_files:
         files_by_message_id.setdefault(message_file.message_id, []).append(message_file)
+
+    thoughts_by_message_id: dict[str, list[MessageAgentThought]] = {message_id: [] for message_id in message_ids}
+    for agent_thought in agent_thoughts:
+        thoughts_by_message_id.setdefault(agent_thought.message_id, []).append(agent_thought)
 
     for history_message in history_messages:
         message_files = files_by_message_id.get(history_message.id, [])
@@ -989,9 +1001,13 @@ async def _prefetch_agent_chat_memory_async(
         assistant_files = [
             message_file for message_file in message_files if message_file.belongs_to == MessageFileBelongsTo.ASSISTANT.value
         ]
+        cached_thoughts = thoughts_by_message_id.get(history_message.id, [])
         setattr(history_message, "_cached_user_message_files", user_files)
         setattr(history_message, "_cached_assistant_message_files", assistant_files)
         setattr(history_message, "_cached_app_model_config", app_model_config)
+        setattr(history_message, "_cached_conversation", conversation)
+        setattr(history_message, "_cached_agent_thoughts", cached_thoughts)
+        setattr(history_message, "_cached_agent_thought_count", len(cached_thoughts))
 
 
 def _run_advanced_chat_runner(
