@@ -8,12 +8,13 @@ from uuid import UUID
 from fastapi import APIRouter, Form, Query, Request
 from fastapi import File as FastAPIFile
 from fastapi import UploadFile as FastAPIUploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from api_server.errors import forbidden
 from api_server.models.app import EndUser, Site
 from api_server.routes.files import _build_file_response
+from api_server.services.audio import PublicAudioService
 from api_server.services.conversation_message import (
     ConversationItemDict,
     ConversationMessageService,
@@ -25,6 +26,7 @@ from api_server.services.generation import AsyncWebGenerationService
 from api_server.services.generation_bridge import PublicGenerationBridge
 from api_server.services.service_api_apps import AppInfoResponseDict, ServiceApiAppService, ToolIconsResponseDict
 from api_server.services.service_api_auth import ServiceApiAuthService
+from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
 from api_server.services.service_api_workflows import ServiceApiWorkflowRunResponseDict, ServiceApiWorkflowService
@@ -125,6 +127,14 @@ class ServiceApiWorkflowPayload(BaseModel):
     response_mode: Literal["blocking", "streaming"] | None = Field(default=None)
 
 
+class ServiceApiTextToAudioPayload(BaseModel):
+    user: str | None = Field(default=None)
+    message_id: str | None = Field(default=None)
+    voice: str | None = Field(default=None)
+    text: str | None = Field(default=None)
+    streaming: bool | None = Field(default=None)
+
+
 class ServiceApiSuggestedQuestionsResponseDict(TypedDict):
     result: str
     data: list[str]
@@ -132,6 +142,15 @@ class ServiceApiSuggestedQuestionsResponseDict(TypedDict):
 
 class ServiceApiStopResponseDict(TypedDict):
     result: str
+
+
+class ServiceApiAudioToTextResponseDict(TypedDict):
+    text: str
+
+
+class ServiceApiFeedbackListQuery(BaseModel):
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=20, ge=1, le=101)
 
 
 def _site_icon_url(site: Site) -> str | None:
@@ -225,6 +244,44 @@ async def upload_service_api_file(
         content=content,
         mime_type=mime_type,
     )
+
+
+@router.post("/v1/audio-to-text")
+async def service_api_audio_to_text(
+    request: Request,
+    file: Annotated[FastAPIUploadFile, FastAPIFile(...)],
+    user: str | None = Form(default=None),
+) -> ServiceApiAudioToTextResponseDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=user)
+    runtime_context = await ServiceApiResourceService.build_runtime_context(app=context.app, end_user=end_user)
+    content = await file.read()
+    result = await PublicAudioService.transcribe_audio(
+        context=runtime_context,
+        filename=file.filename or "audio",
+        content_type=file.content_type or "",
+        content=content,
+    )
+    return {"text": result["text"]}
+
+
+@router.post("/v1/text-to-audio", response_model=None)
+async def service_api_text_to_audio(
+    request: Request,
+    payload: ServiceApiTextToAudioPayload,
+) -> Response | StreamingResponse:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=payload.user)
+    runtime_context = await ServiceApiResourceService.build_runtime_context(app=context.app, end_user=end_user)
+    result = await PublicAudioService.synthesize_audio(
+        context=runtime_context,
+        text=payload.text,
+        voice=payload.voice,
+        message_id=payload.message_id,
+    )
+    if isinstance(result, bytes):
+        return Response(content=result, media_type="audio/mpeg")
+    return StreamingResponse(result, media_type="audio/mpeg")
 
 
 @router.get("/v1/files/{file_id}/preview")
@@ -337,6 +394,27 @@ async def create_service_api_workflow(
         inputs=payload.inputs,
         files=payload.files,
         streaming=payload.response_mode == "streaming",
+    )
+    return PublicGenerationBridge.to_fastapi_response(response)
+
+
+@router.post("/v1/workflows/{workflow_id}/run", response_model=None)
+async def create_service_api_workflow_by_id(
+    request: Request,
+    workflow_id: str,
+    payload: ServiceApiWorkflowPayload,
+) -> JSONResponse | StreamingResponse:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value != "workflow":
+        raise forbidden("not_workflow_app", "Please check if your Workflow app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=payload.user)
+    runtime_context = await ServiceApiResourceService.build_runtime_context(app=context.app, end_user=end_user)
+    response = await AsyncWebGenerationService.run_workflow(
+        context=runtime_context,
+        inputs=payload.inputs,
+        files=payload.files,
+        streaming=payload.response_mode == "streaming",
+        workflow_id=workflow_id,
     )
     return PublicGenerationBridge.to_fastapi_response(response)
 
@@ -481,6 +559,16 @@ async def get_service_api_suggested_questions(
     runtime_context = await ServiceApiResourceService.build_runtime_context(app=context.app, end_user=end_user)
     questions = await SuggestedQuestionsService.get_suggested_questions(context=runtime_context, message_id=message_id)
     return {"result": "success", "data": questions}
+
+
+@router.get("/v1/app/feedbacks")
+async def list_service_api_feedbacks(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=101),
+) -> ServiceApiFeedbackListResponseDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    return await ServiceApiFeedbackService.list_feedbacks(app_id=context.app.id, page=page, limit=limit)
 
 
 @router.get("/v1/end-users/{end_user_id}")

@@ -1093,6 +1093,7 @@ def _run_native_public_workflow_blocking(
     inputs: dict[str, Any],
     files: list[dict[str, Any]] | None,
     streaming: bool,
+    workflow_id: str | None = None,
 ) -> Mapping[str, Any] | Iterator[str]:
     """Run the public workflow route on the workflow runner without Flask glue."""
 
@@ -1103,7 +1104,7 @@ def _run_native_public_workflow_blocking(
         app_model = session.get(LegacyApp, context.app.id)
         workflow = session.scalar(
             select(LegacyWorkflow).where(
-                LegacyWorkflow.id == context.app.workflow_id,
+                LegacyWorkflow.id == (workflow_id or context.app.workflow_id),
                 LegacyWorkflow.app_id == context.app.id,
             )
         )
@@ -1179,6 +1180,7 @@ async def _run_native_public_workflow(
     inputs: dict[str, Any],
     files: list[dict[str, Any]] | None,
     streaming: bool,
+    workflow_id: str | None = None,
 ) -> Mapping[str, Any] | Iterator[str]:
     if streaming:
         return _run_native_public_workflow_blocking(
@@ -1186,6 +1188,7 @@ async def _run_native_public_workflow(
             inputs=inputs,
             files=files,
             streaming=True,
+            workflow_id=workflow_id,
         )
     return await asyncio.to_thread(
         _run_native_public_workflow_blocking,
@@ -1193,6 +1196,7 @@ async def _run_native_public_workflow(
         inputs=inputs,
         files=files,
         streaming=False,
+        workflow_id=workflow_id,
     )
 
 
@@ -1717,12 +1721,14 @@ class AsyncWebGenerationService:
         inputs: dict[str, Any],
         files: list[dict[str, Any]] | None,
         streaming: bool,
+        workflow_id: str | None = None,
     ) -> Mapping[str, Any] | Iterator[str]:
         return await _run_native_public_workflow(
             context=context,
             inputs=inputs,
             files=files,
             streaming=streaming,
+            workflow_id=workflow_id,
         )
 
     @staticmethod

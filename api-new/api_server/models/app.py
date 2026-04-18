@@ -612,6 +612,11 @@ class MessageFeedback(Base):
     from_end_user_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     from_account_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
 
 
 class SavedMessage(Base):

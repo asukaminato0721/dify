@@ -158,6 +158,12 @@ Done
   - `POST /v1/workflows/run`
   - `GET /v1/workflows/run/{workflow_run_id}`
   - `POST /v1/workflows/tasks/{task_id}/stop`
+- Ported additional service API audio endpoints:
+  - `POST /v1/audio-to-text`
+  - `POST /v1/text-to-audio`
+- Ported additional service API feedback/workflow endpoints:
+  - `GET /v1/app/feedbacks`
+  - `POST /v1/workflows/{workflow_id}/run`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused service API route tests in `tests/test_service_api_routes.py`.
@@ -190,6 +196,10 @@ Done
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation slice.
 - Further expanded targeted service API route/auth verification now also passes: `24 passed`.
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow slice.
+- Further expanded targeted service API route/auth verification now also passes: `26 passed`.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio slice.
+- Further expanded targeted service API route/auth verification now also passes: `33 passed`.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback slice.
 
 Current status
 --------------
@@ -260,8 +270,12 @@ Current status
   - `/v1/chat-messages`
   - `/v1/chat-messages/{task_id}/stop`
   - `/v1/workflows/run`
+  - `/v1/workflows/{workflow_id}/run`
   - `/v1/workflows/run/{workflow_run_id}`
   - `/v1/workflows/tasks/{task_id}/stop`
+  - `/v1/audio-to-text`
+  - `/v1/text-to-audio`
+  - `/v1/app/feedbacks`
   - `/v1/messages`
   - `/v1/messages/{message_id}/feedbacks`
   - `/v1/messages/{message_id}/suggested`
@@ -281,6 +295,8 @@ Current status
 - The expanded `/v1` service API slice now also reuses the native FastAPI conversation list/delete/rename services for service-API chat applications instead of the legacy sync conversation controller path.
 - The expanded `/v1` service API slice now also reuses the native FastAPI completion/chat generation service and Redis stop-flag task control for service-API callers instead of the legacy Flask `AppGenerateService` and task-stop controllers.
 - The expanded `/v1` service API slice now also reuses the native FastAPI workflow generation/task-control path and local async workflow-run lookup service instead of the legacy Flask workflow run/detail/stop controllers.
+- The expanded `/v1` service API slice now also reuses the native FastAPI audio transcription/synthesis service paths instead of the legacy Flask audio controllers.
+- The expanded `/v1` service API slice now also exposes app-wide feedback listing through a local async query and supports workflow-id-specific runs by threading a workflow override through the native FastAPI workflow runner.
 - Public completion/chat generation routes now validate/authenticate on FastAPI and route through an async-native service layer.
 - Public workflow generation no longer hard-fails at the route layer and now runs through the workflow runner without Flask compatibility glue.
 - Public advanced-chat generation no longer hard-fails at the route layer and now runs through a direct runner/task-pipeline path without the Flask controller bridge.

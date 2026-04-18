@@ -93,3 +93,27 @@ async def test_run_workflow_uses_compatibility_bridge() -> None:
 
     assert response == {"workflow_run_id": "run-1"}
     compatibility_mock.assert_awaited_once()
+
+
+async def test_run_workflow_passes_workflow_id_override() -> None:
+    context = _ContextStub(AppMode.WORKFLOW)
+    with patch(
+        "api_server.services.generation._run_native_public_workflow",
+        new=AsyncMock(return_value={"workflow_run_id": "run-2"}),
+    ) as compatibility_mock:
+        response = await AsyncWebGenerationService.run_workflow(
+            context=cast(Any, context),
+            inputs={"topic": "weather"},
+            files=None,
+            streaming=False,
+            workflow_id="workflow-2",
+        )
+
+    assert response == {"workflow_run_id": "run-2"}
+    compatibility_mock.assert_awaited_once_with(
+        context=cast(Any, context),
+        inputs={"topic": "weather"},
+        files=None,
+        streaming=False,
+        workflow_id="workflow-2",
+    )

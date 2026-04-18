@@ -414,6 +414,51 @@ async def test_service_api_workflow_route_uses_native_generation_service() -> No
     workflow_mock.assert_awaited_once()
 
 
+async def test_service_api_workflow_by_id_route_uses_native_generation_service() -> None:
+    context = _ServiceApiContextStub()
+    context.app.mode.value = "workflow"
+    end_user = object()
+    runtime_context = object()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiResourceService.build_runtime_context",
+            new=AsyncMock(return_value=runtime_context),
+        ) as runtime_mock,
+        patch(
+            "api_server.routes.service_api.AsyncWebGenerationService.run_workflow",
+            new=AsyncMock(return_value={"workflow_run_id": "run-2"}),
+        ) as workflow_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/workflows/workflow-2/run",
+                headers={"Authorization": "Bearer app-token"},
+                json={"user": "session-1", "inputs": {"topic": "weather"}},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"workflow_run_id": "run-2"}
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    runtime_mock.assert_awaited_once_with(app=context.app, end_user=end_user)
+    workflow_mock.assert_awaited_once_with(
+        context=runtime_context,
+        inputs={"topic": "weather"},
+        files=None,
+        streaming=False,
+        workflow_id="workflow-2",
+    )
+
+
 async def test_service_api_workflow_detail_route_uses_native_workflow_service() -> None:
     context = _ServiceApiContextStub()
     context.app.mode.value = "workflow"
@@ -477,6 +522,126 @@ async def test_service_api_workflow_stop_route_uses_task_control_service() -> No
     assert response.json() == {"result": "success"}
     auth_mock.assert_awaited_once()
     stop_mock.assert_called_once_with("task-1")
+
+
+async def test_service_api_feedbacks_route_uses_native_feedback_service() -> None:
+    context = _ServiceApiContextStub()
+    feedback_payload = {
+        "data": [
+            {
+                "id": "feedback-1",
+                "app_id": "app-1",
+                "conversation_id": "conversation-1",
+                "message_id": "message-1",
+                "rating": "like",
+                "content": "great",
+                "from_source": "user",
+                "from_end_user_id": "end-user-1",
+                "from_account_id": None,
+                "created_at": "2026-04-18T12:00:00+00:00",
+                "updated_at": "2026-04-18T12:01:00+00:00",
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiFeedbackService.list_feedbacks",
+            new=AsyncMock(return_value=feedback_payload),
+        ) as feedback_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/v1/app/feedbacks",
+                headers={"Authorization": "Bearer app-token"},
+                params={"page": 2, "limit": 10},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == feedback_payload
+    auth_mock.assert_awaited_once()
+    feedback_mock.assert_awaited_once_with(app_id="app-1", page=2, limit=10)
+
+
+async def test_service_api_audio_to_text_route_uses_native_audio_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+    runtime_context = object()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiResourceService.build_runtime_context",
+            new=AsyncMock(return_value=runtime_context),
+        ) as runtime_mock,
+        patch(
+            "api_server.routes.service_api.PublicAudioService.transcribe_audio",
+            new=AsyncMock(return_value={"text": "hello"}),
+        ) as audio_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/audio-to-text",
+                headers={"Authorization": "Bearer app-token"},
+                files={"file": ("voice.mp3", b"data", "audio/mpeg")},
+                data={"user": "session-1"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "hello"}
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    runtime_mock.assert_awaited_once_with(app=context.app, end_user=end_user)
+    audio_mock.assert_awaited_once()
+
+
+async def test_service_api_text_to_audio_route_streams_native_audio_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+    runtime_context = object()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiResourceService.build_runtime_context",
+            new=AsyncMock(return_value=runtime_context),
+        ) as runtime_mock,
+        patch(
+            "api_server.routes.service_api.PublicAudioService.synthesize_audio",
+            new=AsyncMock(return_value=_stream()),
+        ) as audio_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/text-to-audio",
+                headers={"Authorization": "Bearer app-token"},
+                json={"user": "session-1", "text": "hello"},
+            )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/mpeg")
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    runtime_mock.assert_awaited_once_with(app=context.app, end_user=end_user)
+    audio_mock.assert_awaited_once()
 
 
 async def test_service_api_messages_route_uses_native_message_service() -> None:
