@@ -433,6 +433,13 @@ class QueueAgentThoughtEvent(AppQueueEvent):
 
     event: QueueEvent = QueueEvent.AGENT_THOUGHT
     agent_thought_id: str
+    position: int | None = None
+    thought: str | None = None
+    observation: str | None = None
+    tool: str | None = None
+    tool_labels: Mapping[str, Any] | None = None
+    tool_input: str | None = None
+    message_files: list[str] | None = None
 
 
 class QueueMessageFileEvent(AppQueueEvent):

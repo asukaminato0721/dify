@@ -519,6 +519,19 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         :param event: agent thought event
         :return:
         """
+        if event.position is not None:
+            return AgentThoughtStreamResponse(
+                task_id=self._application_generate_entity.task_id,
+                id=event.agent_thought_id,
+                position=event.position,
+                thought=event.thought,
+                observation=event.observation,
+                tool=event.tool,
+                tool_labels=event.tool_labels or {},
+                tool_input=event.tool_input,
+                message_files=event.message_files,
+            )
+
         with session_factory.create_session() as session:
             agent_thought: FastAPIMessageAgentThought | None = session.scalar(
                 select(FastAPIMessageAgentThought).where(FastAPIMessageAgentThought.id == event.agent_thought_id).limit(1)

@@ -20,6 +20,7 @@ from core.app.entities.app_invoke_entities import (
     AgentChatAppGenerateEntity,
     ModelConfigWithCredentialsEntity,
 )
+from core.app.entities.queue_entities import QueueAgentThoughtEvent
 from core.app.file_access import DatabaseFileAccessController
 from core.callback_handler.agent_tool_callback_handler import DifyAgentCallbackHandler
 from core.callback_handler.index_tool_callback_handler import DatasetIndexToolCallbackHandler
@@ -359,7 +360,7 @@ class BaseAgentRunner(AppRunner):
 
     def create_agent_thought(
         self, message_id: str, message: str, tool_name: str, tool_input: str, messages_ids: list[str]
-    ) -> str:
+    ) -> tuple[str, QueueAgentThoughtEvent]:
         """
         Create agent thought
         """
@@ -397,7 +398,7 @@ class BaseAgentRunner(AppRunner):
             agent_thought_id = str(thought.id)
         self.agent_thought_count += 1
 
-        return agent_thought_id
+        return agent_thought_id, self._build_agent_thought_event(thought)
 
     def save_agent_thought(
         self,
@@ -410,7 +411,7 @@ class BaseAgentRunner(AppRunner):
         answer: str | None,
         messages_ids: list[str],
         llm_usage: LLMUsage | None = None,
-    ):
+    ) -> QueueAgentThoughtEvent | None:
         """
         Save agent thought
         """
@@ -418,7 +419,7 @@ class BaseAgentRunner(AppRunner):
             stmt = select(FastAPIMessageAgentThought).where(FastAPIMessageAgentThought.id == agent_thought_id)
             agent_thought = session.scalar(stmt)
             if not agent_thought:
-                raise ValueError("agent thought not found")
+                return None
 
             if thought:
                 existing_thought = agent_thought.thought or ""
@@ -483,6 +484,20 @@ class BaseAgentRunner(AppRunner):
                         tool_invoke_meta = json.dumps(tool_invoke_meta)
 
                 agent_thought.tool_meta_str = tool_invoke_meta
+
+            return self._build_agent_thought_event(agent_thought)
+
+    def _build_agent_thought_event(self, agent_thought: FastAPIMessageAgentThought) -> QueueAgentThoughtEvent:
+        return QueueAgentThoughtEvent(
+            agent_thought_id=agent_thought.id,
+            position=agent_thought.position,
+            thought=agent_thought.thought,
+            observation=agent_thought.observation,
+            tool=agent_thought.tool,
+            tool_labels=agent_thought.tool_labels,
+            tool_input=agent_thought.tool_input,
+            message_files=agent_thought.files,
+        )
 
     def organize_agent_history(self, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
         """
