@@ -447,6 +447,8 @@ class AppRunner:
                 type=message_file.type,
                 belongs_to=message_file.belongs_to,
                 url=message_file.url,
+                transfer_method=message_file.transfer_method,
+                upload_file_id=message_file.upload_file_id,
             ),
             PublishFrom.APPLICATION_MANAGER,
         )

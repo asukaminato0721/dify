@@ -119,6 +119,8 @@ def test_message_file_to_stream_response_falls_back_to_sync_lookup_when_event_is
         url="/files/tools/tool-file.png",
         type="image",
         belongs_to="assistant",
+        transfer_method="tool_file",
+        upload_file_id="upload-1",
     )
     message_cycle_manager_module.session_factory.create_session = lambda: _SessionStub(message_file)  # type: ignore[assignment]
     try:
@@ -128,6 +130,28 @@ def test_message_file_to_stream_response_falls_back_to_sync_lookup_when_event_is
 
     assert response is not None
     assert response.id == "file-1"
+
+
+def test_message_file_to_stream_response_caches_message_end_files() -> None:
+    manager = _build_manager()
+
+    response = manager.message_file_to_stream_response(
+        QueueMessageFileEvent(
+            message_file_id="file-1",
+            message_id="message-1",
+            url="/files/tools/tool-file.png",
+            type="image",
+            belongs_to="assistant",
+            transfer_method="tool_file",
+            upload_file_id="upload-1",
+        )
+    )
+
+    assert response is not None
+    cached_files = manager.get_cached_message_end_files("message-1")
+    assert cached_files is not None
+    assert cached_files[0]["related_id"] == "file-1"
+    assert cached_files[0]["type"] == "image"
 
 
 def test_generate_conversation_name_worker_uses_app_config_directly() -> None:

@@ -465,35 +465,35 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
         self._task_state.metadata.usage = self._task_state.llm_result.usage
         metadata_dict = self._task_state.metadata.model_dump()
 
-        # Fetch files associated with this message
-        files = None
-        with session_factory.create_session() as session:
-            message_files = session.scalars(
-                select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == self._message_id)
-            ).all()
+        files = self._message_cycle_manager.get_cached_message_end_files(self._message_id)
+        if files is None:
+            with session_factory.create_session() as session:
+                message_files = session.scalars(
+                    select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == self._message_id)
+                ).all()
 
-            if message_files:
-                # Fetch all required UploadFile objects in a single query to avoid N+1 problem
-                upload_file_ids = list(
-                    dict.fromkeys(
-                        mf.upload_file_id
-                        for mf in message_files
-                        if mf.transfer_method == FileTransferMethod.LOCAL_FILE and mf.upload_file_id
+                if message_files:
+                    # Fetch all required UploadFile objects in a single query to avoid N+1 problem
+                    upload_file_ids = list(
+                        dict.fromkeys(
+                            mf.upload_file_id
+                            for mf in message_files
+                            if mf.transfer_method == FileTransferMethod.LOCAL_FILE and mf.upload_file_id
+                        )
                     )
-                )
-                upload_files_map = {}
-                if upload_file_ids:
-                    upload_files = session.scalars(
-                        select(FastAPIUploadFile).where(FastAPIUploadFile.id.in_(upload_file_ids))
-                    ).all()
-                    upload_files_map = {uf.id: uf for uf in upload_files}
+                    upload_files_map = {}
+                    if upload_file_ids:
+                        upload_files = session.scalars(
+                            select(FastAPIUploadFile).where(FastAPIUploadFile.id.in_(upload_file_ids))
+                        ).all()
+                        upload_files_map = {uf.id: uf for uf in upload_files}
 
-                files_list = []
-                for message_file in message_files:
-                    file_dict = prepare_file_dict(message_file, cast(Any, upload_files_map))
-                    files_list.append(file_dict)
+                    files_list = []
+                    for message_file in message_files:
+                        file_dict = prepare_file_dict(message_file, cast(Any, upload_files_map))
+                        files_list.append(file_dict)
 
-                files = files_list or None
+                    files = files_list or None
 
         return MessageEndStreamResponse(
             task_id=self._application_generate_entity.task_id,

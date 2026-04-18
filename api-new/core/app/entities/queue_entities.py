@@ -453,6 +453,8 @@ class QueueMessageFileEvent(AppQueueEvent):
     type: str | None = None
     belongs_to: str | None = None
     url: str | None = None
+    transfer_method: str | None = None
+    upload_file_id: str | None = None
 
 
 class QueueErrorEvent(AppQueueEvent):

@@ -1,13 +1,14 @@
 import hashlib
 import logging
 from threading import Thread, Timer
-from typing import Union
+from typing import Any, cast, Union
 
 from sqlalchemy import select, update
 
 from api_server.models.app import Conversation as FastAPIConversation
 from api_server.models.app import MessageAnnotation as FastAPIMessageAnnotation
 from api_server.models.app import MessageFile as FastAPIMessageFile
+from api_server.models.app import UploadFile as FastAPIUploadFile
 from configs import dify_config
 from core.app.entities.app_invoke_entities import (
     AdvancedChatAppGenerateEntity,
@@ -30,9 +31,11 @@ from core.app.entities.task_entities import (
     StreamEvent,
     WorkflowTaskState,
 )
+from core.app.task_pipeline.message_file_utils import MessageFileInfoDict, prepare_file_dict
 from core.db.session_factory import session_factory
 from core.llm_generator.llm_generator import LLMGenerator
 from core.tools.signature import sign_tool_file
+from graphon.file import FileTransferMethod
 from extensions.ext_redis import redis_client
 from models.enums import MessageFileBelongsTo
 from models.model import MessageAnnotation
@@ -56,6 +59,7 @@ class MessageCycleManager:
         self._application_generate_entity = application_generate_entity
         self._task_state = task_state
         self._message_has_file: set[str] = set()
+        self._message_end_files: dict[str, list[MessageFileInfoDict]] = {}
 
     def get_message_event_type(self, message_id: str) -> StreamEvent:
         if message_id in self._message_has_file:
@@ -70,11 +74,32 @@ class MessageCycleManager:
                 message_id=event.message_id,
                 url=event.url,
                 type=event.type,
+                transfer_method=event.transfer_method,
+                upload_file_id=event.upload_file_id,
                 belongs_to=event.belongs_to or MessageFileBelongsTo.USER.value,
             )
 
         with session_factory.create_session() as session:
             return session.scalar(select(FastAPIMessageFile).where(FastAPIMessageFile.id == event.message_file_id))
+
+    def _cache_message_end_file(self, message_file: FastAPIMessageFile) -> None:
+        upload_files_map: dict[str, FastAPIUploadFile] = {}
+        transfer_method = getattr(message_file, "transfer_method", None)
+        upload_file_id = getattr(message_file, "upload_file_id", None)
+        if transfer_method == FileTransferMethod.LOCAL_FILE and upload_file_id:
+            with session_factory.create_session() as session:
+                upload_file = session.scalar(select(FastAPIUploadFile).where(FastAPIUploadFile.id == upload_file_id))
+            if upload_file is not None:
+                upload_files_map[upload_file.id] = upload_file
+
+        file_info = prepare_file_dict(message_file, cast(dict[str, Any], upload_files_map))
+        self._message_end_files.setdefault(message_file.message_id, []).append(file_info)
+
+    def get_cached_message_end_files(self, message_id: str) -> list[MessageFileInfoDict] | None:
+        files = self._message_end_files.get(message_id)
+        if not files:
+            return None
+        return list(files)
 
     def generate_conversation_name(self, *, conversation_id: str, query: str) -> Thread | None:
         """
@@ -204,6 +229,7 @@ class MessageCycleManager:
 
         if message_file and message_file.url is not None:
             self._message_has_file.add(message_file.message_id)
+            self._cache_message_end_file(message_file)
 
             # get tool file id
             tool_file_id = message_file.url.split("/")[-1]
