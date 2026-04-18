@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -43,6 +44,10 @@ class _EndUserStub:
     session_id = "session-1"
     created_at = datetime(2026, 4, 18, 12, 0, tzinfo=UTC)
     updated_at = datetime(2026, 4, 18, 12, 5, tzinfo=UTC)
+
+
+async def _stream() -> AsyncIterator[str]:
+    yield "data: hi\n\n"
 
 
 async def test_service_api_index_route() -> None:
@@ -244,6 +249,130 @@ async def test_service_api_file_preview_route_streams_owned_file(tmp_path: Path)
     auth_mock.assert_awaited_once()
     owned_file_mock.assert_awaited_once_with(app=context.app, file_id="file-1")
     path_mock.assert_called_once_with(upload_file)
+
+
+async def test_service_api_completion_route_uses_native_generation_service() -> None:
+    context = _ServiceApiContextStub()
+    context.app.mode.value = "completion"
+    end_user = object()
+    runtime_context = object()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiResourceService.build_runtime_context",
+            new=AsyncMock(return_value=runtime_context),
+        ) as runtime_mock,
+        patch(
+            "api_server.routes.service_api.AsyncWebGenerationService.run_completion",
+            new=AsyncMock(return_value={"answer": "hi"}),
+        ) as completion_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/completion-messages",
+                headers={"Authorization": "Bearer app-token"},
+                json={"user": "session-1", "inputs": {}, "query": "hello"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"answer": "hi"}
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    runtime_mock.assert_awaited_once_with(app=context.app, end_user=end_user)
+    completion_mock.assert_awaited_once()
+
+
+async def test_service_api_chat_route_uses_native_generation_service() -> None:
+    context = _ServiceApiContextStub()
+    end_user = object()
+    runtime_context = object()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_end_user",
+            new=AsyncMock(return_value=end_user),
+        ) as end_user_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiResourceService.build_runtime_context",
+            new=AsyncMock(return_value=runtime_context),
+        ) as runtime_mock,
+        patch(
+            "api_server.routes.service_api.AsyncWebGenerationService.run_chat",
+            new=AsyncMock(return_value=_stream()),
+        ) as chat_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/chat-messages",
+                headers={"Authorization": "Bearer app-token"},
+                json={"user": "session-1", "inputs": {}, "query": "hello", "response_mode": "streaming"},
+            )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    auth_mock.assert_awaited_once()
+    end_user_mock.assert_awaited_once_with(app=context.app, user_id="session-1")
+    runtime_mock.assert_awaited_once_with(app=context.app, end_user=end_user)
+    chat_mock.assert_awaited_once()
+
+
+async def test_service_api_completion_stop_route_uses_task_control_service() -> None:
+    context = _ServiceApiContextStub()
+    context.app.mode.value = "completion"
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch("api_server.routes.service_api.TaskControlService.stop_task") as stop_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/completion-messages/task-1/stop",
+                headers={"Authorization": "Bearer app-token"},
+                params={"user": "session-1"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    auth_mock.assert_awaited_once()
+    stop_mock.assert_called_once_with("task-1")
+
+
+async def test_service_api_chat_stop_route_uses_task_control_service() -> None:
+    context = _ServiceApiContextStub()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch("api_server.routes.service_api.TaskControlService.stop_task") as stop_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/chat-messages/task-1/stop",
+                headers={"Authorization": "Bearer app-token"},
+                params={"user": "session-1"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    auth_mock.assert_awaited_once()
+    stop_mock.assert_called_once_with("task-1")
 
 
 async def test_service_api_messages_route_uses_native_message_service() -> None:

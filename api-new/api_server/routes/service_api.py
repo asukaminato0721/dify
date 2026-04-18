@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Form, Query, Request
 from fastapi import File as FastAPIFile
 from fastapi import UploadFile as FastAPIUploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from api_server.errors import forbidden
@@ -21,11 +21,14 @@ from api_server.services.conversation_message import (
     MessagePaginationDict,
     ResultDict,
 )
+from api_server.services.generation import AsyncWebGenerationService
+from api_server.services.generation_bridge import PublicGenerationBridge
 from api_server.services.service_api_apps import AppInfoResponseDict, ServiceApiAppService, ToolIconsResponseDict
 from api_server.services.service_api_auth import ServiceApiAuthService
 from api_server.services.service_api_files import ServiceApiFileService
 from api_server.services.service_api_resources import ServiceApiResourceService
 from api_server.services.suggested_questions import SuggestedQuestionsService
+from api_server.services.task_control import TaskControlService
 from configs import dify_config
 from core.app.app_config.common.parameters_mapping import AppParametersDict
 from graphon.file import helpers as file_helpers
@@ -92,9 +95,35 @@ class ServiceApiConversationRenamePayload(BaseModel):
     auto_generate: bool = Field(default=False)
 
 
+class ServiceApiCompletionPayload(BaseModel):
+    user: str | None = Field(default=None)
+    inputs: dict[str, object] = Field(default_factory=dict)
+    query: str = Field(default="")
+    files: list[dict[str, object]] | None = Field(default=None)
+    response_mode: Literal["blocking", "streaming"] | None = Field(default=None)
+    retriever_from: str = Field(default="dev")
+
+
+class ServiceApiChatPayload(BaseModel):
+    user: str | None = Field(default=None)
+    inputs: dict[str, object] = Field(default_factory=dict)
+    query: str
+    files: list[dict[str, object]] | None = Field(default=None)
+    response_mode: Literal["blocking", "streaming"] | None = Field(default=None)
+    conversation_id: str | None = Field(default=None)
+    parent_message_id: str | None = Field(default=None)
+    retriever_from: str = Field(default="dev")
+    auto_generate_name: bool = Field(default=True)
+    workflow_id: str | None = Field(default=None)
+
+
 class ServiceApiSuggestedQuestionsResponseDict(TypedDict):
     result: str
     data: list[str]
+
+
+class ServiceApiStopResponseDict(TypedDict):
+    result: str
 
 
 def _site_icon_url(site: Site) -> str | None:
@@ -207,6 +236,82 @@ async def preview_service_api_file(
         media_type=upload_file.mime_type,
         as_attachment=as_attachment,
     )
+
+
+@router.post("/v1/completion-messages", response_model=None)
+async def create_service_api_completion(
+    request: Request,
+    payload: ServiceApiCompletionPayload,
+) -> JSONResponse | StreamingResponse:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value != "completion":
+        raise forbidden(
+            "not_completion_app",
+            "Please check if your Completion app mode matches the right API route.",
+        )
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=payload.user)
+    runtime_context = await ServiceApiResourceService.build_runtime_context(app=context.app, end_user=end_user)
+    response = await AsyncWebGenerationService.run_completion(
+        context=runtime_context,
+        inputs=payload.inputs,
+        query=payload.query,
+        files=payload.files,
+        streaming=payload.response_mode == "streaming",
+    )
+    return PublicGenerationBridge.to_fastapi_response(response)
+
+
+@router.post("/v1/completion-messages/{task_id}/stop")
+async def stop_service_api_completion(
+    request: Request,
+    task_id: str,
+    user: str | None = Query(default=None),
+) -> ServiceApiStopResponseDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value != "completion":
+        raise forbidden(
+            "not_completion_app",
+            "Please check if your Completion app mode matches the right API route.",
+        )
+    _ = user
+    TaskControlService.stop_task(task_id)
+    return {"result": "success"}
+
+
+@router.post("/v1/chat-messages", response_model=None)
+async def create_service_api_chat(
+    request: Request,
+    payload: ServiceApiChatPayload,
+) -> JSONResponse | StreamingResponse:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    end_user = await ServiceApiAuthService.resolve_end_user(app=context.app, user_id=payload.user)
+    runtime_context = await ServiceApiResourceService.build_runtime_context(app=context.app, end_user=end_user)
+    response = await AsyncWebGenerationService.run_chat(
+        context=runtime_context,
+        inputs=payload.inputs,
+        query=payload.query,
+        files=payload.files,
+        conversation_id=payload.conversation_id,
+        parent_message_id=payload.parent_message_id,
+        streaming=payload.response_mode == "streaming",
+    )
+    return PublicGenerationBridge.to_fastapi_response(response)
+
+
+@router.post("/v1/chat-messages/{task_id}/stop")
+async def stop_service_api_chat(
+    request: Request,
+    task_id: str,
+    user: str | None = Query(default=None),
+) -> ServiceApiStopResponseDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
+        raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
+    _ = user
+    TaskControlService.stop_task(task_id)
+    return {"result": "success"}
 
 
 @router.get("/v1/messages")
