@@ -1,9 +1,9 @@
 """Public generation services for the FastAPI runtime.
 
 Completion and plain-chat requests are handled natively in this module.
-Workflow-backed public modes still depend on the copied execution stack, so
-they currently cross a narrow compatibility bridge while the async-native
-workflow port continues.
+Workflow and advanced-chat now execute through direct runner paths that avoid
+the broader Flask controller bridge, while agent-chat still crosses the copied
+compatibility stack until its workflow-backed runtime is ported.
 """
 
 from __future__ import annotations
@@ -17,10 +17,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
-from pydantic import ValidationError
 
 import contexts
 from api_server.errors import bad_request, forbidden, not_found, service_unavailable
@@ -35,19 +35,32 @@ from core.app.app_config.easy_ui_based_app.model_config.manager import ModelConf
 from core.app.app_config.easy_ui_based_app.prompt_template.manager import PromptTemplateConfigManager
 from core.app.app_config.easy_ui_based_app.variables.manager import BasicVariablesConfigManager
 from core.app.app_config.features.file_upload.manager import FileUploadConfigManager
+from core.app.apps.advanced_chat.app_config_manager import AdvancedChatAppConfigManager
+from core.app.apps.advanced_chat.app_runner import AdvancedChatAppRunner
+from core.app.apps.advanced_chat.generate_response_converter import AdvancedChatAppGenerateResponseConverter
+from core.app.apps.advanced_chat.generate_task_pipeline import (
+    AdvancedChatAppGenerateTaskPipeline,
+    ConversationSnapshot,
+    MessageSnapshot,
+    WorkflowSnapshot,
+)
 from core.app.apps.base_app_generator import BaseAppGenerator
-from core.app.entities.app_invoke_entities import InvokeFrom
-from core.app.apps.exc import GenerateTaskStoppedError
 from core.app.apps.base_app_queue_manager import PublishFrom
 from core.app.apps.chat.app_config_manager import ChatAppConfig
 from core.app.apps.completion.app_config_manager import CompletionAppConfig
+from core.app.apps.exc import GenerateTaskStoppedError
+from core.app.apps.message_based_app_queue_manager import MessageBasedAppQueueManager
 from core.app.apps.workflow.app_config_manager import WorkflowAppConfigManager
 from core.app.apps.workflow.app_queue_manager import WorkflowAppQueueManager
 from core.app.apps.workflow.app_runner import WorkflowAppRunner
 from core.app.apps.workflow.generate_response_converter import WorkflowAppGenerateResponseConverter
 from core.app.apps.workflow.generate_task_pipeline import WorkflowAppGenerateTaskPipeline
-from core.app.entities.app_invoke_entities import WorkflowAppGenerateEntity
-from core.app.entities.app_invoke_entities import ModelConfigWithCredentialsEntity
+from core.app.entities.app_invoke_entities import (
+    AdvancedChatAppGenerateEntity,
+    InvokeFrom,
+    ModelConfigWithCredentialsEntity,
+    WorkflowAppGenerateEntity,
+)
 from core.app.entities.task_entities import (
     ChatbotAppBlockingResponse,
     ChatbotAppStreamResponse,
@@ -56,32 +69,38 @@ from core.app.entities.task_entities import (
     MessageEndStreamResponse,
     MessageStreamResponse,
 )
-from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig
-from core.app.layers.pause_state_persist_layer import PauseStatePersistenceLayer
-from core.ops.ops_trace_manager import TraceQueueManager
-from core.repositories import DifyCoreRepositoryFactory
+from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig, PauseStatePersistenceLayer
 from core.model_manager import ModelInstance
+from core.ops.ops_trace_manager import TraceQueueManager
 from core.prompt.advanced_prompt_transform import AdvancedPromptTransform
 from core.prompt.entities.advanced_prompt_entities import CompletionModelPromptTemplate, MemoryConfig
 from core.prompt.simple_prompt_transform import SimplePromptTransform
+from core.prompt.utils.extract_thread_messages import extract_thread_messages
+from core.repositories import DifyCoreRepositoryFactory
+from core.repositories.factory import WorkflowExecutionRepository, WorkflowNodeExecutionRepository
+from core.workflow.file_reference import resolve_file_record_id
 from extensions.ext_database import db
 from factories import file_factory
-from graphon.prompt_entities import ChatModelMessage
 from graphon.model_runtime.entities.llm_entities import LLMResult, LLMResultChunk, LLMUsage
-from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
 from graphon.model_runtime.entities.message_entities import (
     AssistantPromptMessage,
     PromptMessage,
     UserPromptMessage,
 )
+from graphon.model_runtime.errors.invoke import InvokeAuthorizationError
+from graphon.prompt_entities import ChatModelMessage
 from graphon.variable_loader import DUMMY_VARIABLE_LOADER
+from libs.datetime_utils import naive_utc_now
 from libs.orjson import orjson_dumps
+from models.enums import ConversationFromSource, CreatorUserRole, MessageFileBelongsTo, WorkflowRunTriggeredFrom
 from models.model import App as LegacyApp
 from models.model import AppMode as LegacyAppMode
 from models.model import AppModelConfigDict
+from models.model import Conversation as LegacyConversation
 from models.model import EndUser as LegacyEndUser
+from models.model import Message as LegacyMessage
+from models.model import MessageFile as LegacyMessageFile
 from models.workflow import Workflow as LegacyWorkflow
-from models.enums import WorkflowRunTriggeredFrom
 from models.workflow import WorkflowNodeExecutionTriggeredFrom
 
 
@@ -154,7 +173,9 @@ class _ConversationMemoryAdapter:
         thread_messages.reverse()
         return thread_messages
 
-    def get_history_prompt_messages(self, *, max_token_limit: int = 2000, message_limit: int | None = None) -> list[PromptMessage]:
+    def get_history_prompt_messages(
+        self, *, max_token_limit: int = 2000, message_limit: int | None = None
+    ) -> list[PromptMessage]:
         del max_token_limit
         thread_messages = self._extract_thread(self._messages)
         if message_limit is not None and message_limit > 0:
@@ -234,9 +255,13 @@ def _build_chat_config(context: WebappContext) -> ChatAppConfig:
     return app_config
 
 
-def _ensure_supported_features(*, files: list[dict[str, Any]] | None, dataset_enabled: bool, external_tools_enabled: bool) -> None:
+def _ensure_supported_features(
+    *, files: list[dict[str, Any]] | None, dataset_enabled: bool, external_tools_enabled: bool
+) -> None:
     if files:
-        raise service_unavailable("files_not_supported", "File generation inputs are not ported to the FastAPI runtime yet.")
+        raise service_unavailable(
+            "files_not_supported", "File generation inputs are not ported to the FastAPI runtime yet."
+        )
     if dataset_enabled:
         raise service_unavailable(
             "dataset_retrieval_unavailable",
@@ -392,7 +417,9 @@ def _run_workflow_runner(
     except GenerateTaskStoppedError:
         return
     except InvokeAuthorizationError:
-        queue_manager.publish_error(InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER)
+        queue_manager.publish_error(
+            InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
+        )
     except ValidationError as exc:
         queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
     except ValueError as exc:
@@ -401,6 +428,412 @@ def _run_workflow_runner(
         queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
     except Exception as exc:
         queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+
+
+def _prepare_advanced_chat_generation_entity(
+    *,
+    app_model: LegacyApp,
+    workflow: LegacyWorkflow,
+    end_user: LegacyEndUser,
+    inputs: dict[str, Any],
+    query: str,
+    files: list[dict[str, Any]] | None,
+    parent_message_id: str | None,
+    auto_generate_name: bool,
+    streaming: bool,
+) -> AdvancedChatAppGenerateEntity:
+    """Build the advanced-chat generate entity without Flask globals."""
+
+    base_generator = BaseAppGenerator()
+    file_extra_config = FileUploadConfigManager.convert(workflow.features_dict, is_vision=False)
+
+    with base_generator._bind_file_access_scope(
+        tenant_id=app_model.tenant_id,
+        user=end_user,
+        invoke_from=InvokeFrom.WEB_APP,
+    ):
+        file_objects = file_factory.build_from_mappings(
+            mappings=files or [],
+            tenant_id=app_model.tenant_id,
+            config=file_extra_config,
+            access_controller=base_generator._file_access_controller,
+        )
+        app_config = AdvancedChatAppConfigManager.get_app_config(app_model=app_model, workflow=workflow)
+        prepared_inputs = base_generator._prepare_user_inputs(
+            user_inputs=inputs,
+            variables=app_config.variables,
+            tenant_id=app_model.tenant_id,
+        )
+
+    trace_manager = TraceQueueManager(app_id=app_model.id, user_id=end_user.session_id)
+    return AdvancedChatAppGenerateEntity(
+        task_id=str(uuid.uuid4()),
+        app_config=app_config,
+        file_upload_config=file_extra_config,
+        conversation_id=None,
+        inputs=prepared_inputs,
+        query=query.replace("\x00", ""),
+        files=list(file_objects),
+        parent_message_id=parent_message_id,
+        user_id=end_user.id,
+        stream=streaming,
+        invoke_from=InvokeFrom.WEB_APP,
+        extras={"auto_generate_conversation_name": auto_generate_name},
+        trace_manager=trace_manager,
+        workflow_run_id=str(uuid.uuid4()),
+    )
+
+
+def _load_owned_legacy_conversation(
+    *,
+    session: Session,
+    app_id: str,
+    end_user_id: str,
+    conversation_id: str,
+) -> LegacyConversation:
+    """Return an existing public conversation only when it belongs to the caller."""
+
+    conversation = session.scalar(
+        select(LegacyConversation).where(
+            LegacyConversation.id == conversation_id,
+            LegacyConversation.app_id == app_id,
+            LegacyConversation.from_source == ConversationFromSource.API,
+            LegacyConversation.from_end_user_id == end_user_id,
+            LegacyConversation.is_deleted.is_(False),
+        )
+    )
+    if conversation is None:
+        raise bad_request("conversation_not_exists", "Conversation Not Exists.")
+    return conversation
+
+
+def _init_advanced_chat_records(
+    *,
+    session: Session,
+    application_generate_entity: AdvancedChatAppGenerateEntity,
+    end_user: LegacyEndUser,
+    conversation: LegacyConversation | None,
+) -> tuple[LegacyConversation, LegacyMessage]:
+    """Persist conversation/message rows for public advanced-chat generation."""
+
+    app_config = application_generate_entity.app_config
+    created_new_conversation = conversation is None
+    query = application_generate_entity.query or "New conversation"
+    conversation_name = (query[:20] + "…") if len(query) > 20 else query
+
+    if conversation is None:
+        conversation = LegacyConversation(
+            app_id=app_config.app_id,
+            app_model_config_id=None,
+            model_provider=None,
+            model_id=None,
+            override_model_configs=None,
+            mode=app_config.app_mode.value,
+            name=conversation_name,
+            inputs=application_generate_entity.inputs,
+            introduction=app_config.additional_features.opening_statement if app_config.additional_features else None,
+            system_instruction="",
+            system_instruction_tokens=0,
+            status="normal",
+            invoke_from=application_generate_entity.invoke_from.value,
+            from_source=ConversationFromSource.API,
+            from_end_user_id=end_user.id,
+            from_account_id=None,
+        )
+        session.add(conversation)
+        session.flush()
+        session.refresh(conversation)
+    else:
+        conversation.updated_at = naive_utc_now()
+
+    message = LegacyMessage(
+        app_id=app_config.app_id,
+        model_provider=None,
+        model_id=None,
+        override_model_configs=None,
+        conversation_id=conversation.id,
+        inputs=application_generate_entity.inputs,
+        query=application_generate_entity.query,
+        message="",
+        message_tokens=0,
+        message_unit_price=0,
+        message_price_unit=0,
+        answer="",
+        answer_tokens=0,
+        answer_unit_price=0,
+        answer_price_unit=0,
+        parent_message_id=application_generate_entity.parent_message_id,
+        provider_response_latency=0,
+        total_price=0,
+        currency="USD",
+        invoke_from=application_generate_entity.invoke_from.value,
+        from_source=ConversationFromSource.API,
+        from_end_user_id=end_user.id,
+        from_account_id=None,
+        app_mode=app_config.app_mode,
+    )
+    session.add(message)
+    session.flush()
+    session.refresh(message)
+
+    message_files: list[LegacyMessageFile] = []
+    for file in application_generate_entity.files:
+        message_files.append(
+            LegacyMessageFile(
+                message_id=message.id,
+                type=file.type,
+                transfer_method=file.transfer_method,
+                belongs_to=MessageFileBelongsTo.USER,
+                url=file.remote_url,
+                upload_file_id=resolve_file_record_id(file.reference),
+                created_by_role=CreatorUserRole.END_USER,
+                created_by=end_user.id,
+            )
+        )
+    if message_files:
+        session.add_all(message_files)
+
+    session.commit()
+    application_generate_entity.conversation_id = conversation.id
+    application_generate_entity.is_new_conversation = created_new_conversation
+    return conversation, message
+
+
+def _load_thread_messages_length(*, session: Session, conversation_id: str) -> int:
+    """Mirror legacy thread counting without relying on Flask-scoped sessions."""
+
+    messages = session.scalars(
+        select(LegacyMessage)
+        .where(LegacyMessage.conversation_id == conversation_id)
+        .order_by(LegacyMessage.created_at.desc())
+    ).all()
+    thread_messages = extract_thread_messages(messages)
+    if thread_messages and not thread_messages[0].answer:
+        thread_messages.pop(0)
+    return len(thread_messages)
+
+
+def _run_advanced_chat_runner(
+    *,
+    application_generate_entity: AdvancedChatAppGenerateEntity,
+    workflow: LegacyWorkflow,
+    app_model: LegacyApp,
+    end_user: LegacyEndUser,
+    conversation_id: str,
+    message_id: str,
+    dialogue_count: int,
+    queue_manager: MessageBasedAppQueueManager,
+    workflow_execution_repository: WorkflowExecutionRepository,
+    workflow_node_execution_repository: WorkflowNodeExecutionRepository,
+    pause_state_config: PauseStateLayerConfig,
+) -> None:
+    """Execute the advanced-chat runner without the Flask controller bridge."""
+
+    contexts.plugin_tool_providers.set({})
+    contexts.plugin_tool_providers_lock.set(threading.Lock())
+
+    if isinstance(pause_state_config.session_factory, Engine):
+        sync_session_factory = sessionmaker(pause_state_config.session_factory, expire_on_commit=False)
+    else:
+        sync_session_factory = pause_state_config.session_factory
+
+    with sync_session_factory() as session:
+        conversation = session.get(LegacyConversation, conversation_id)
+        message = session.get(LegacyMessage, message_id)
+        if conversation is None or message is None:
+            raise ValueError("Conversation or message not found")
+
+    runner = AdvancedChatAppRunner(
+        application_generate_entity=application_generate_entity,
+        queue_manager=queue_manager,
+        conversation=conversation,
+        message=message,
+        dialogue_count=dialogue_count,
+        variable_loader=DUMMY_VARIABLE_LOADER,
+        workflow=workflow,
+        system_user_id=end_user.session_id,
+        app=app_model,
+        workflow_execution_repository=workflow_execution_repository,
+        workflow_node_execution_repository=workflow_node_execution_repository,
+        graph_engine_layers=(
+            PauseStatePersistenceLayer(
+                session_factory=pause_state_config.session_factory,
+                generate_entity=application_generate_entity,
+                state_owner_user_id=pause_state_config.state_owner_user_id,
+            ),
+        ),
+        graph_runtime_state=None,
+    )
+
+    try:
+        runner.run()
+    except GenerateTaskStoppedError:
+        return
+    except InvokeAuthorizationError:
+        queue_manager.publish_error(
+            InvokeAuthorizationError("Incorrect API key provided"), PublishFrom.APPLICATION_MANAGER
+        )
+    except ValidationError as exc:
+        queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+    except ValueError as exc:
+        if dify_config.DEBUG:
+            pass
+        queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+    except Exception as exc:
+        queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+
+
+def _run_native_public_advanced_chat_blocking(
+    *,
+    context: WebappContext,
+    inputs: dict[str, Any],
+    query: str,
+    files: list[dict[str, Any]] | None,
+    conversation_id: str | None,
+    parent_message_id: str | None,
+    auto_generate_name: bool,
+    streaming: bool,
+) -> Mapping[str, Any] | Iterator[str]:
+    """Run public advanced-chat directly on the copied runner/runtime layer."""
+
+    if context.workflow is None:
+        raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
+
+    sync_engine = _get_legacy_sync_engine()
+    sync_session_factory = sessionmaker(bind=sync_engine, expire_on_commit=False)
+
+    with sync_session_factory() as session:
+        app_model = session.get(LegacyApp, context.app.id)
+        workflow = session.scalar(
+            select(LegacyWorkflow).where(
+                LegacyWorkflow.id == context.workflow.id,
+                LegacyWorkflow.app_id == context.app.id,
+            )
+        )
+        end_user = session.get(LegacyEndUser, context.end_user.id)
+        if app_model is None or workflow is None or end_user is None:
+            raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
+
+        conversation = None
+        if conversation_id is not None:
+            conversation = _load_owned_legacy_conversation(
+                session=session,
+                app_id=app_model.id,
+                end_user_id=end_user.id,
+                conversation_id=conversation_id,
+            )
+
+        application_generate_entity = _prepare_advanced_chat_generation_entity(
+            app_model=app_model,
+            workflow=workflow,
+            end_user=end_user,
+            inputs=inputs,
+            query=query,
+            files=files,
+            parent_message_id=parent_message_id,
+            auto_generate_name=auto_generate_name,
+            streaming=streaming,
+        )
+        conversation, message = _init_advanced_chat_records(
+            session=session,
+            application_generate_entity=application_generate_entity,
+            end_user=end_user,
+            conversation=conversation,
+        )
+        dialogue_count = _load_thread_messages_length(session=session, conversation_id=conversation.id) + 1
+
+    workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
+        session_factory=sync_session_factory,
+        user=end_user,
+        app_id=application_generate_entity.app_config.app_id,
+        triggered_from=WorkflowRunTriggeredFrom.APP_RUN,
+    )
+    workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
+        session_factory=sync_session_factory,
+        user=end_user,
+        app_id=application_generate_entity.app_config.app_id,
+        triggered_from=WorkflowNodeExecutionTriggeredFrom.WORKFLOW_RUN,
+    )
+    queue_manager = MessageBasedAppQueueManager(
+        task_id=application_generate_entity.task_id,
+        user_id=end_user.id,
+        invoke_from=InvokeFrom.WEB_APP,
+        conversation_id=conversation.id,
+        app_mode=conversation.mode,
+        message_id=message.id,
+    )
+    pause_state_config = PauseStateLayerConfig(
+        session_factory=sync_session_factory,
+        state_owner_user_id=workflow.created_by,
+    )
+
+    worker = threading.Thread(
+        target=_run_advanced_chat_runner,
+        kwargs={
+            "application_generate_entity": application_generate_entity,
+            "workflow": workflow,
+            "app_model": app_model,
+            "end_user": end_user,
+            "conversation_id": conversation.id,
+            "message_id": message.id,
+            "dialogue_count": dialogue_count,
+            "queue_manager": queue_manager,
+            "workflow_execution_repository": workflow_execution_repository,
+            "workflow_node_execution_repository": workflow_node_execution_repository,
+            "pause_state_config": pause_state_config,
+        },
+        daemon=True,
+    )
+    worker.start()
+
+    response = AdvancedChatAppGenerateTaskPipeline(
+        application_generate_entity=application_generate_entity,
+        workflow=WorkflowSnapshot.from_workflow(workflow),
+        queue_manager=queue_manager,
+        conversation=ConversationSnapshot.from_conversation(conversation),
+        message=MessageSnapshot.from_message(message),
+        user=end_user,
+        dialogue_count=dialogue_count,
+        stream=streaming,
+        draft_var_saver_factory=BaseAppGenerator._get_draft_var_saver_factory(InvokeFrom.WEB_APP, end_user),
+    ).process()
+    converted = AdvancedChatAppGenerateResponseConverter.convert(response=response, invoke_from=InvokeFrom.WEB_APP)
+    return cast(Mapping[str, Any] | Iterator[str], BaseAppGenerator.convert_to_event_stream(converted))
+
+
+async def _run_native_public_advanced_chat(
+    *,
+    context: WebappContext,
+    inputs: dict[str, Any],
+    query: str,
+    files: list[dict[str, Any]] | None,
+    conversation_id: str | None,
+    parent_message_id: str | None,
+    auto_generate_name: bool,
+    streaming: bool,
+) -> Mapping[str, Any] | Iterator[str]:
+    if streaming:
+        return _run_native_public_advanced_chat_blocking(
+            context=context,
+            inputs=inputs,
+            query=query,
+            files=files,
+            conversation_id=conversation_id,
+            parent_message_id=parent_message_id,
+            auto_generate_name=auto_generate_name,
+            streaming=True,
+        )
+    return await asyncio.to_thread(
+        _run_native_public_advanced_chat_blocking,
+        context=context,
+        inputs=inputs,
+        query=query,
+        files=files,
+        conversation_id=conversation_id,
+        parent_message_id=parent_message_id,
+        auto_generate_name=auto_generate_name,
+        streaming=False,
+    )
 
 
 def _run_native_public_workflow_blocking(
@@ -625,7 +1058,10 @@ async def _load_chat_history(*, conversation_id: str) -> list[_HistoryMessage]:
     async with db.session_context() as session:
         rows = (
             await session.scalars(
-                select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(20)
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.created_at.desc())
+                .limit(20)
             )
         ).all()
     return [
@@ -755,7 +1191,12 @@ async def _next_chunk(iterator: Iterator[LLMResultChunk]) -> LLMResultChunk | No
 
 
 class AsyncWebGenerationService:
-    """Async-native completion/chat generation for the FastAPI runtime."""
+    """FastAPI-native public generation entrypoints.
+
+    Completion, chat, workflow, and advanced-chat now stay on direct FastAPI
+    service paths. Agent-chat still falls back to the copied compatibility
+    bridge until its workflow-backed runtime is ported without Flask glue.
+    """
 
     @classmethod
     async def run_completion(
@@ -915,7 +1356,13 @@ class AsyncWebGenerationService:
         conversation_id: str | None,
         parent_message_id: str | None,
         streaming: bool,
-    ) -> ChatbotAppBlockingResponse | CompletionAppBlockingResponse | AsyncIterator[str] | Mapping[str, Any] | Iterator[str]:
+    ) -> (
+        ChatbotAppBlockingResponse
+        | CompletionAppBlockingResponse
+        | AsyncIterator[str]
+        | Mapping[str, Any]
+        | Iterator[str]
+    ):
         if context.app.mode == context.app.mode.CHAT:
             app_config = _build_chat_config(context)
             _ensure_supported_features(
@@ -931,7 +1378,9 @@ class AsyncWebGenerationService:
                 inputs=inputs,
                 conversation_id=conversation_id,
                 parent_message_id=parent_message_id,
-                introduction=app_config.additional_features.opening_statement if app_config.additional_features else None,
+                introduction=app_config.additional_features.opening_statement
+                if app_config.additional_features
+                else None,
             )
             history_messages = await _load_chat_history(conversation_id=conversation.id)
             prompt_messages, stop = _build_chat_prompt_messages(
@@ -977,7 +1426,19 @@ class AsyncWebGenerationService:
                 stop=stop,
             )
 
-        if context.app.mode in {context.app.mode.ADVANCED_CHAT, context.app.mode.AGENT_CHAT}:
+        if context.app.mode == context.app.mode.ADVANCED_CHAT:
+            return await _run_native_public_advanced_chat(
+                context=context,
+                inputs=inputs,
+                query=query,
+                files=files,
+                conversation_id=conversation_id,
+                parent_message_id=parent_message_id,
+                auto_generate_name=False,
+                streaming=streaming,
+            )
+
+        if context.app.mode == context.app.mode.AGENT_CHAT:
             compatibility_args: _CompatibilityGenerationArgs = {
                 "inputs": inputs,
                 "query": query,
@@ -997,7 +1458,7 @@ class AsyncWebGenerationService:
 
         raise service_unavailable(
             "generation_backend_unavailable",
-            "Async-native chat generation is only ported for chat apps so far.",
+            "Async-native chat generation is unavailable for this app mode.",
         )
 
     @classmethod

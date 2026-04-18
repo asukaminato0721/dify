@@ -18,8 +18,28 @@ class _ContextStub:
         self.end_user = object()
 
 
-async def test_run_chat_uses_compatibility_bridge_for_advanced_chat() -> None:
+async def test_run_chat_uses_native_runner_for_advanced_chat() -> None:
     context = _ContextStub(AppMode.ADVANCED_CHAT)
+    with patch(
+        "api_server.services.generation._run_native_public_advanced_chat",
+        new=AsyncMock(return_value={"answer": "hi"}),
+    ) as native_mock:
+        response = await AsyncWebGenerationService.run_chat(
+            context=cast(Any, context),
+            inputs={"name": "Ada"},
+            query="hello",
+            files=None,
+            conversation_id="conversation-1",
+            parent_message_id="message-1",
+            streaming=False,
+        )
+
+    assert response == {"answer": "hi"}
+    native_mock.assert_awaited_once()
+
+
+async def test_run_chat_keeps_agent_chat_on_compatibility_bridge() -> None:
+    context = _ContextStub(AppMode.AGENT_CHAT)
     with patch(
         "api_server.services.generation._run_compat_public_generation",
         new=AsyncMock(return_value={"answer": "hi"}),

@@ -3,9 +3,9 @@ import logging
 from sqlalchemy import select
 
 from core.app.entities.app_invoke_entities import InvokeFrom
+from core.db.session_factory import session_factory
 from core.rag.datasource.vdb.vector_factory import Vector
 from core.rag.index_processor.constant.index_type import IndexTechniqueType
-from extensions.ext_database import db
 from models.dataset import Dataset
 from models.enums import CollectionBindingType, ConversationFromSource
 from models.model import App, AppAnnotationSetting, Message, MessageAnnotation
@@ -30,7 +30,8 @@ class AnnotationReplyFeature:
         from services.dataset_service import DatasetCollectionBindingService
 
         stmt = select(AppAnnotationSetting).where(AppAnnotationSetting.app_id == app_record.id)
-        annotation_setting = db.session.scalar(stmt)
+        with session_factory.create_session() as session:
+            annotation_setting = session.scalar(stmt)
 
         if not annotation_setting:
             return None

@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any, cast
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from core.app.apps.advanced_chat.app_config_manager import AdvancedChatAppConfig
 from core.app.apps.base_app_queue_manager import AppQueueManager
@@ -34,7 +34,6 @@ from core.workflow.system_variables import (
 )
 from core.workflow.variable_pool_initializer import add_node_inputs_to_pool, add_variables_to_pool
 from core.workflow.workflow_entry import WorkflowEntry
-from extensions.ext_database import db
 from extensions.ext_redis import redis_client
 from extensions.otel import WorkflowAppRunnerHandler, trace_span
 from graphon.enums import WorkflowType
@@ -106,7 +105,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
             workflow_execution_id=self.application_generate_entity.workflow_run_id,
         )
 
-        with Session(cast(Any, db.engine), expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             app_record = session.scalar(select(App).where(App.id == app_config.app_id))
 
         if not app_record:
@@ -200,8 +199,6 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
                 root_node_id=root_node_id,
             )
 
-        _ = db.session.close()
-
         # RUN WORKFLOW
         # Create Redis command channel for this workflow execution
         task_id = self.application_generate_entity.task_id
@@ -266,7 +263,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
             workflow_execution_id=self.application_generate_entity.workflow_run_id,
         )
 
-        with Session(cast(Any, db.engine), expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             app_record = session.scalar(select(App).where(App.id == app_config.app_id))
 
         if not app_record:
@@ -352,8 +349,6 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
                 invoke_from=invoke_from,
                 root_node_id=root_node_id,
             )
-
-        _ = db.session.close()
 
         task_id = self.application_generate_entity.task_id
         channel_key = f"workflow:{task_id}:commands"
@@ -512,7 +507,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         :return: List of conversation variables ready for use
         """
-        with sessionmaker(bind=cast(Any, db.engine)).begin() as session:
+        with session_factory.get_session_maker().begin() as session:
             existing_variables = self._load_existing_conversation_variables(session)
 
             if not existing_variables:

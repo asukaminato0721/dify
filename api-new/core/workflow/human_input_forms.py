@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from models.human_input import HumanInputFormRecipient, RecipientType
 
 _FORM_TOKEN_PRIORITY = {
@@ -35,7 +35,7 @@ def load_form_tokens_by_form_id(
     if session is not None:
         return _load_form_tokens_by_form_id(session, unique_form_ids)
 
-    with Session(bind=db.engine, expire_on_commit=False) as new_session:
+    with session_factory.create_session() as new_session:
         return _load_form_tokens_by_form_id(new_session, unique_form_ids)
 
 

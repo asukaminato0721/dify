@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from core.app.entities.app_invoke_entities import DIFY_RUN_CONTEXT_KEY, DifyRunContext
 from core.app.file_access import DatabaseFileAccessController
 from core.callback_handler.workflow_tool_callback_handler import DifyWorkflowCallbackHandler
+from core.db.session_factory import session_factory
 from core.llm_generator.output_parser.errors import OutputParserError
 from core.llm_generator.output_parser.structured_output import invoke_llm_with_structured_output
 from core.model_manager import ModelInstance
@@ -28,7 +28,6 @@ from core.tools.tool_file_manager import ToolFileManager
 from core.tools.tool_manager import ToolManager
 from core.tools.utils.message_transformer import ToolFileMessageTransformer
 from core.workflow.file_reference import build_file_reference
-from extensions.ext_database import db
 from factories import file_factory
 from graphon.file import FileTransferMethod, FileType
 from graphon.model_runtime.entities import LLMMode
@@ -234,7 +233,7 @@ class DifyRetrieverAttachmentLoader(RetrieverAttachmentLoaderProtocol):
         self._file_reference_factory = file_reference_factory
 
     def load(self, *, segment_id: str) -> Sequence[File]:
-        with Session(cast(Any, db.engine), expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             attachments_with_bindings = session.execute(
                 select(SegmentAttachmentBinding, UploadFile)
                 .join(UploadFile, UploadFile.id == SegmentAttachmentBinding.attachment_id)

@@ -3,9 +3,7 @@ import logging
 from threading import Thread, Timer
 from typing import Union
 
-from flask import Flask, current_app
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from configs import dify_config
 from core.app.entities.app_invoke_entities import (
@@ -32,8 +30,8 @@ from core.app.entities.task_entities import (
 from core.db.session_factory import session_factory
 from core.llm_generator.llm_generator import LLMGenerator
 from core.tools.signature import sign_tool_file
-from extensions.ext_database import db
 from extensions.ext_redis import redis_client
+from flask import Flask, current_app
 from models.enums import MessageFileBelongsTo
 from models.model import AppMode, Conversation, MessageAnnotation, MessageFile
 from services.annotation_service import AppAnnotationService
@@ -206,7 +204,7 @@ class MessageCycleManager:
         :param event: event
         :return:
         """
-        with Session(db.engine, expire_on_commit=False) as session:
+        with session_factory.create_session() as session:
             message_file = session.scalar(select(MessageFile).where(MessageFile.id == event.message_file_id))
 
         if message_file and message_file.url is not None:

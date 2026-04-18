@@ -1,8 +1,8 @@
 """FastAPI validation layer for public generation endpoints.
 
-Authentication and request validation stay inside the FastAPI runtime. Native
-completion/plain-chat execution also stays local, while workflow-backed modes
-currently bridge into the copied execution stack behind the service layer.
+Authentication and request validation stay inside the FastAPI runtime.
+Completion, chat, workflow, and advanced-chat now dispatch to direct service
+paths, while agent-chat still uses the copied compatibility stack.
 """
 
 from __future__ import annotations
