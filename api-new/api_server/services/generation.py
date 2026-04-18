@@ -1331,6 +1331,10 @@ async def _prepare_native_public_agent_chat(
             conversation=conversation,
         )
 
+    setattr(conversation, "_cached_app", app_model)
+    setattr(conversation, "_cached_app_model_config", app_model_config)
+    setattr(message, "_cached_app_model_config", app_model_config)
+
     return _PreparedAgentChatRun(
         app_model=app_model,
         end_user=end_user,

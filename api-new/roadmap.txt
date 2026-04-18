@@ -308,6 +308,10 @@ Done
 - Fixed the active FastAPI completion/chat async message write helpers to commit after flush so message creation and answer persistence do not rely on implicit session behavior.
 - Expanded focused generation verification now also passes: `16 passed` for the generation route/bridge/service slice and `8 passed` for the advanced-chat/agent-chat local-model slice.
 - Targeted `pyrefly` is clean for the active generation request-stage async-prep slice.
+- Added prefetched-cache support on the local FastAPI `App`/`AppModelConfig`-backed conversation and message helpers so the active agent path can reuse request-stage-loaded models instead of reopening sync sessions for those property lookups.
+- Wired the active public agent-chat prep path to populate those local-model caches before entering the copied sync runner boundary.
+- Expanded focused agent local-model/generation verification now also passes: `14 passed` for `tests/test_agent_chat_local_models.py` plus `tests/test_generation_service.py`.
+- Targeted `pyrefly` is clean for the local-model cache support slice.
 
 Current status
 --------------

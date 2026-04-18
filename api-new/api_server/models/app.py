@@ -4,7 +4,7 @@ import enum
 import json
 from decimal import Decimal
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy import DateTime, String, func, select
@@ -206,6 +206,9 @@ class App(Base):
 
     @property
     def app_model_config(self) -> "AppModelConfig | None":
+        cached_config = getattr(self, "_cached_app_model_config", None)
+        if isinstance(cached_config, AppModelConfig):
+            return cached_config
         if self.app_model_config_id is None:
             return None
         with configured_sync_session_factory.create_session() as session:
@@ -580,6 +583,9 @@ class Conversation(Base):
 
     @property
     def app(self) -> App | None:
+        cached_app = getattr(self, "_cached_app", None)
+        if isinstance(cached_app, App):
+            return cached_app
         with configured_sync_session_factory.create_session() as session:
             return session.scalar(select(App).where(App.id == self.app_id))
 
@@ -600,8 +606,12 @@ class Conversation(Base):
                 else:
                     model_config["configs"] = override_model_configs
         elif self.app_model_config_id:
-            with configured_sync_session_factory.create_session() as session:
-                app_model_config = session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
+            cached_config = getattr(self, "_cached_app_model_config", None)
+            if isinstance(cached_config, AppModelConfig):
+                app_model_config = cached_config
+            else:
+                with configured_sync_session_factory.create_session() as session:
+                    app_model_config = session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
             if app_model_config is not None:
                 model_config = app_model_config.to_dict()
 
@@ -677,6 +687,9 @@ class Message(Base):
 
     @property
     def app_model_config(self) -> AppModelConfig | None:
+        cached_config = getattr(self, "_cached_app_model_config", None)
+        if isinstance(cached_config, AppModelConfig):
+            return cached_config
         if not self.conversation_id:
             return None
         with configured_sync_session_factory.create_session() as session:
@@ -689,6 +702,10 @@ class Message(Base):
     def message_files(self) -> list[dict[str, Any]]:
         from core.app.file_access import DatabaseFileAccessController
         from factories import file_factory
+
+        cached_files = getattr(self, "_cached_message_files", None)
+        if isinstance(cached_files, list):
+            return cast(list[dict[str, Any]], cached_files)
 
         access_controller = DatabaseFileAccessController()
         with configured_sync_session_factory.create_session() as session:
