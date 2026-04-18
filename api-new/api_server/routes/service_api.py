@@ -25,6 +25,13 @@ from api_server.services.conversation_message import (
 )
 from api_server.services.generation import AsyncWebGenerationService
 from api_server.services.generation_bridge import PublicGenerationBridge
+from api_server.services.service_api_annotations import (
+    ServiceApiAnnotationDict,
+    ServiceApiAnnotationListDict,
+    ServiceApiAnnotationReplyActionResultDict,
+    ServiceApiAnnotationReplyStatusDict,
+    ServiceApiAnnotationService,
+)
 from api_server.services.service_api_apps import AppInfoResponseDict, ServiceApiAppService, ToolIconsResponseDict
 from api_server.services.service_api_auth import ServiceApiAuthService
 from api_server.services.service_api_conversation_variables import (
@@ -45,6 +52,7 @@ from api_server.services.task_control import TaskControlService
 from configs import dify_config
 from core.app.app_config.common.parameters_mapping import AppParametersDict
 from graphon.file import helpers as file_helpers
+from services.model_provider_service import ModelProviderService
 
 router = APIRouter(tags=["service-api"])
 
@@ -94,6 +102,10 @@ class ServiceApiFileUploadResponseDict(TypedDict):
     created_by: str | None
     created_at: int | None
     url: str
+
+
+class ServiceApiWorkspaceModelsResponseDict(TypedDict):
+    data: list[object]
 
 
 class ServiceApiMessageFeedbackPayload(BaseModel):
@@ -179,6 +191,17 @@ class ServiceApiConversationVariableUpdatePayload(BaseModel):
     value: object
 
 
+class ServiceApiAnnotationCreatePayload(BaseModel):
+    question: str = Field(description="Annotation question")
+    answer: str = Field(description="Annotation answer")
+
+
+class ServiceApiAnnotationReplyActionPayload(BaseModel):
+    score_threshold: float = Field(description="Score threshold for annotation matching")
+    embedding_provider_name: str = Field(description="Embedding provider name")
+    embedding_model_name: str = Field(description="Embedding model name")
+
+
 def _site_icon_url(site: Site) -> str | None:
     if site.icon and site.icon_type == "image":
         return file_helpers.get_signed_file_url(site.icon)
@@ -228,6 +251,16 @@ async def get_service_api_index() -> ServiceApiIndexResponseDict:
     }
 
 
+@router.get("/v1/workspaces/current/models/model-types/{model_type}")
+async def get_service_api_workspace_models(
+    request: Request,
+    model_type: str,
+) -> ServiceApiWorkspaceModelsResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    models = ModelProviderService().get_models_by_model_type(tenant_id=context.tenant.id, model_type=model_type)
+    return {"data": [model.model_dump(mode="json") for model in models]}
+
+
 @router.get("/v1/site")
 async def get_service_api_site(request: Request) -> ServiceApiSiteResponseDict:
     context = await ServiceApiAuthService.resolve_app_context(request)
@@ -251,6 +284,96 @@ async def get_service_api_meta(request: Request) -> ToolIconsResponseDict:
 async def get_service_api_info(request: Request) -> AppInfoResponseDict:
     context = await ServiceApiAuthService.resolve_app_context(request)
     return await ServiceApiAppService.get_info(app=context.app)
+
+
+@router.post("/v1/apps/annotation-reply/{action}")
+async def annotation_reply_action(
+    request: Request,
+    action: Literal["enable", "disable"],
+    payload: ServiceApiAnnotationReplyActionPayload,
+) -> ServiceApiAnnotationReplyActionResultDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    owner_account = await ServiceApiAuthService.resolve_owner_account(tenant_id=context.tenant.id)
+    return ServiceApiAnnotationService.trigger_annotation_reply_action(
+        action=action,
+        app=context.app,
+        tenant_id=context.tenant.id,
+        owner_account_id=owner_account.id,
+        score_threshold=payload.score_threshold,
+        embedding_provider_name=payload.embedding_provider_name,
+        embedding_model_name=payload.embedding_model_name,
+    )
+
+
+@router.get("/v1/apps/annotation-reply/{action}/status/{job_id}")
+async def annotation_reply_action_status(
+    request: Request,
+    action: Literal["enable", "disable"],
+    job_id: UUID,
+) -> ServiceApiAnnotationReplyStatusDict:
+    _ = await ServiceApiAuthService.resolve_app_context(request)
+    return ServiceApiAnnotationService.get_annotation_reply_action_status(action=action, job_id=str(job_id))
+
+
+@router.get("/v1/apps/annotations")
+async def list_service_api_annotations(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    keyword: str = Query(default=""),
+) -> ServiceApiAnnotationListDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    return await ServiceApiAnnotationService.list_annotations(
+        app_id=context.app.id,
+        page=page,
+        limit=limit,
+        keyword=keyword,
+    )
+
+
+@router.post("/v1/apps/annotations", status_code=201)
+async def create_service_api_annotation(
+    request: Request,
+    payload: ServiceApiAnnotationCreatePayload,
+) -> ServiceApiAnnotationDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    owner_account = await ServiceApiAuthService.resolve_owner_account(tenant_id=context.tenant.id)
+    return await ServiceApiAnnotationService.create_annotation(
+        app=context.app,
+        account_id=owner_account.id,
+        tenant_id=context.tenant.id,
+        question=payload.question,
+        answer=payload.answer,
+    )
+
+
+@router.put("/v1/apps/annotations/{annotation_id}")
+async def update_service_api_annotation(
+    request: Request,
+    annotation_id: UUID,
+    payload: ServiceApiAnnotationCreatePayload,
+) -> ServiceApiAnnotationDict:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    return await ServiceApiAnnotationService.update_annotation(
+        app=context.app,
+        tenant_id=context.tenant.id,
+        annotation_id=str(annotation_id),
+        question=payload.question,
+        answer=payload.answer,
+    )
+
+
+@router.delete("/v1/apps/annotations/{annotation_id}", status_code=204, response_model=None)
+async def delete_service_api_annotation(
+    request: Request,
+    annotation_id: UUID,
+) -> None:
+    context = await ServiceApiAuthService.resolve_app_context(request)
+    await ServiceApiAnnotationService.delete_annotation(
+        app=context.app,
+        tenant_id=context.tenant.id,
+        annotation_id=str(annotation_id),
+    )
 
 
 @router.post("/v1/files/upload", status_code=201)

@@ -640,6 +640,78 @@ class MessageFeedback(Base):
     )
 
 
+class MessageAnnotation(Base):
+    __tablename__ = "message_annotations"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="message_annotation_pkey"),
+        sa.Index("message_annotation_app_idx", "app_id"),
+        sa.Index("message_annotation_conversation_idx", "conversation_id"),
+        sa.Index("message_annotation_message_idx", "message_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    question: Mapped[str] = mapped_column(LongText)
+    content: Mapped[str] = mapped_column(LongText)
+    account_id: Mapped[str] = mapped_column(StringUUID)
+    conversation_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    message_id: Mapped[str | None] = mapped_column(StringUUID, default=None)
+    hit_count: Mapped[int] = mapped_column(sa.Integer, server_default=sa.text("0"), default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+class AppAnnotationHitHistory(Base):
+    __tablename__ = "app_annotation_hit_histories"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="app_annotation_hit_histories_pkey"),
+        sa.Index("app_annotation_hit_histories_app_idx", "app_id"),
+        sa.Index("app_annotation_hit_histories_account_idx", "account_id"),
+        sa.Index("app_annotation_hit_histories_annotation_idx", "annotation_id"),
+        sa.Index("app_annotation_hit_histories_message_idx", "message_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    annotation_id: Mapped[str] = mapped_column(StringUUID)
+    source: Mapped[str] = mapped_column(LongText)
+    question: Mapped[str] = mapped_column(LongText)
+    account_id: Mapped[str] = mapped_column(StringUUID)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    score: Mapped[float] = mapped_column(sa.Float, server_default=sa.text("0"))
+    message_id: Mapped[str] = mapped_column(StringUUID)
+    annotation_question: Mapped[str] = mapped_column(LongText)
+    annotation_content: Mapped[str] = mapped_column(LongText)
+
+
+class AppAnnotationSetting(Base):
+    __tablename__ = "app_annotation_settings"
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("id", name="app_annotation_settings_pkey"),
+        sa.Index("app_annotation_settings_app_idx", "app_id"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[str] = mapped_column(StringUUID)
+    app_id: Mapped[str] = mapped_column(StringUUID)
+    score_threshold: Mapped[float] = mapped_column(sa.Float, server_default=sa.text("0"))
+    collection_binding_id: Mapped[str] = mapped_column(StringUUID)
+    created_user_id: Mapped[str] = mapped_column(StringUUID)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_user_id: Mapped[str] = mapped_column(StringUUID)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
 class SavedMessage(Base):
     __tablename__ = "saved_messages"
     __table_args__ = (

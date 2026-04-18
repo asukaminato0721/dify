@@ -59,6 +59,36 @@ async def test_service_api_index_route() -> None:
     assert response.json()["api_version"] == "v1"
 
 
+async def test_service_api_workspace_models_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    model_response = type(
+        "ModelResponseStub",
+        (),
+        {"model_dump": lambda self, mode="json": {"provider": "openai", "models": []}},
+    )()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ModelProviderService.get_models_by_model_type",
+            return_value=[model_response],
+        ) as models_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/v1/workspaces/current/models/model-types/llm",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"data": [{"provider": "openai", "models": []}]}
+    auth_mock.assert_awaited_once()
+    models_mock.assert_called_once_with(tenant_id="tenant-1", model_type="llm")
+
+
 async def test_service_api_site_route_uses_auth_and_resource_services() -> None:
     with (
         patch(
@@ -77,6 +107,197 @@ async def test_service_api_site_route_uses_auth_and_resource_services() -> None:
     assert response.json()["title"] == "Dify"
     auth_mock.assert_awaited_once()
     site_mock.assert_awaited_once_with(app_id="app-1")
+
+
+async def test_service_api_annotation_reply_action_route_uses_native_annotation_service() -> None:
+    context = _ServiceApiContextStub()
+    owner = type("OwnerStub", (), {"id": "owner-1"})()
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_owner_account",
+            new=AsyncMock(return_value=owner),
+        ) as owner_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAnnotationService.trigger_annotation_reply_action",
+            return_value={"job_id": "job-1", "job_status": "waiting"},
+        ) as action_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/apps/annotation-reply/enable",
+                headers={"Authorization": "Bearer app-token"},
+                json={
+                    "score_threshold": 0.8,
+                    "embedding_provider_name": "openai",
+                    "embedding_model_name": "text-embedding-3-small",
+                },
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"job_id": "job-1", "job_status": "waiting"}
+    auth_mock.assert_awaited_once()
+    owner_mock.assert_awaited_once_with(tenant_id="tenant-1")
+    action_mock.assert_called_once()
+
+
+async def test_service_api_annotation_reply_status_route_uses_native_annotation_service() -> None:
+    context = _ServiceApiContextStub()
+    job_id = str(uuid4())
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAnnotationService.get_annotation_reply_action_status",
+            return_value={"job_id": job_id, "job_status": "completed", "error_msg": ""},
+        ) as status_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/apps/annotation-reply/enable/status/{job_id}",
+                headers={"Authorization": "Bearer app-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json()["job_status"] == "completed"
+    auth_mock.assert_awaited_once()
+    status_mock.assert_called_once_with(action="enable", job_id=job_id)
+
+
+async def test_service_api_annotations_list_route_uses_native_annotation_service() -> None:
+    context = _ServiceApiContextStub()
+    payload = {"data": [], "has_more": False, "limit": 20, "total": 0, "page": 1}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAnnotationService.list_annotations",
+            new=AsyncMock(return_value=payload),
+        ) as list_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/v1/apps/annotations",
+                headers={"Authorization": "Bearer app-token"},
+                params={"keyword": "weather"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    list_mock.assert_awaited_once_with(app_id="app-1", page=1, limit=20, keyword="weather")
+
+
+async def test_service_api_annotations_create_route_uses_native_annotation_service() -> None:
+    context = _ServiceApiContextStub()
+    owner = type("OwnerStub", (), {"id": "owner-1"})()
+    payload = {"id": "annotation-1", "question": "q", "answer": "a", "hit_count": 0, "created_at": 1710000000}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_owner_account",
+            new=AsyncMock(return_value=owner),
+        ) as owner_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAnnotationService.create_annotation",
+            new=AsyncMock(return_value=payload),
+        ) as create_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/apps/annotations",
+                headers={"Authorization": "Bearer app-token"},
+                json={"question": "q", "answer": "a"},
+            )
+
+    assert response.status_code == 201
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    owner_mock.assert_awaited_once_with(tenant_id="tenant-1")
+    create_mock.assert_awaited_once_with(
+        app=context.app,
+        account_id="owner-1",
+        tenant_id="tenant-1",
+        question="q",
+        answer="a",
+    )
+
+
+async def test_service_api_annotations_update_route_uses_native_annotation_service() -> None:
+    context = _ServiceApiContextStub()
+    annotation_id = str(uuid4())
+    payload = {"id": annotation_id, "question": "q", "answer": "a", "hit_count": 0, "created_at": 1710000000}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAnnotationService.update_annotation",
+            new=AsyncMock(return_value=payload),
+        ) as update_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.put(
+                f"/v1/apps/annotations/{annotation_id}",
+                headers={"Authorization": "Bearer app-token"},
+                json={"question": "q", "answer": "a"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    auth_mock.assert_awaited_once()
+    update_mock.assert_awaited_once_with(
+        app=context.app,
+        tenant_id="tenant-1",
+        annotation_id=annotation_id,
+        question="q",
+        answer="a",
+    )
+
+
+async def test_service_api_annotations_delete_route_uses_native_annotation_service() -> None:
+    context = _ServiceApiContextStub()
+    annotation_id = str(uuid4())
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiAnnotationService.delete_annotation",
+            new=AsyncMock(return_value=None),
+        ) as delete_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.delete(
+                f"/v1/apps/annotations/{annotation_id}",
+                headers={"Authorization": "Bearer app-token"},
+            )
+
+    assert response.status_code == 204
+    auth_mock.assert_awaited_once()
+    delete_mock.assert_awaited_once_with(
+        app=context.app,
+        tenant_id="tenant-1",
+        annotation_id=annotation_id,
+    )
 
 
 async def test_service_api_parameters_route_uses_app_service() -> None:
