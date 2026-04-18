@@ -328,6 +328,9 @@ Done
 - Taught the active easy-ui generate task pipeline to build agent-thought stream responses directly from queue-event metadata first, with the existing sync lookup retained only as a fallback for legacy id-only publishers.
 - Expanded focused agent-thought verification now also passes: `21 passed` for `tests/test_easy_ui_generate_task_pipeline.py`, `tests/test_message_cycle_manager.py`, `tests/test_base_agent_runner.py`, `tests/test_token_buffer_memory.py`, `tests/test_agent_chat_local_models.py`, and `tests/test_generation_service.py`.
 - Targeted `pyrefly` is clean for the active agent-thought metadata slice.
+- Removed the active conversation-name worker’s extra sync read path for conversation/app lookup; it now derives `app_mode`, `tenant_id`, and `app_id` directly from the generate entity and issues a direct conversation-name update.
+- Expanded focused message-cycle verification now also passes: `22 passed` for `tests/test_message_cycle_manager.py`, `tests/test_easy_ui_generate_task_pipeline.py`, `tests/test_base_agent_runner.py`, `tests/test_token_buffer_memory.py`, `tests/test_agent_chat_local_models.py`, and `tests/test_generation_service.py`.
+- Targeted `pyrefly` is clean for the active conversation-name worker slice.
 
 Current status
 --------------

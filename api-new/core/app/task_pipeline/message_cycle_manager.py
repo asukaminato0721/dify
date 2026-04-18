@@ -3,7 +3,7 @@ import logging
 from threading import Thread, Timer
 from typing import Union
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from api_server.models.app import Conversation as FastAPIConversation
 from api_server.models.app import MessageAnnotation as FastAPIMessageAnnotation
@@ -108,38 +108,36 @@ class MessageCycleManager:
         return thread
 
     def _generate_conversation_name_worker(self, conversation_id: str, query: str) -> None:
+        app_config = self._application_generate_entity.app_config
+        if str(app_config.app_mode) == "completion":
+            return
+
+        query_hash = hashlib.md5(query.encode()).hexdigest()[:16]
+        cache_key = f"conv_name:{conversation_id}:{query_hash}"
+
+        cached_name = redis_client.get(cache_key)
+        if cached_name:
+            name = cached_name.decode("utf-8")
+        else:
+            try:
+                name = LLMGenerator.generate_conversation_name(
+                    app_config.tenant_id,
+                    query,
+                    conversation_id,
+                    app_config.app_id,
+                )
+                redis_client.setex(cache_key, 3600, name)
+            except Exception:
+                if dify_config.DEBUG:
+                    logger.exception("generate conversation name failed, conversation_id: %s", conversation_id)
+                name = query[:47] + "..." if len(query) > 50 else query
+
         with session_factory.get_session_maker().begin() as session:
-            stmt = select(FastAPIConversation).where(FastAPIConversation.id == conversation_id)
-            conversation = session.scalar(stmt)
-
-            if not conversation:
-                return
-
-            if str(conversation.mode) == "completion":
-                return
-
-            app_model = conversation.app
-            if not app_model:
-                return
-
-            query_hash = hashlib.md5(query.encode()).hexdigest()[:16]
-            cache_key = f"conv_name:{conversation_id}:{query_hash}"
-
-            cached_name = redis_client.get(cache_key)
-            if cached_name:
-                name = cached_name.decode("utf-8")
-            else:
-                try:
-                    name = LLMGenerator.generate_conversation_name(
-                        app_model.tenant_id, query, conversation_id, conversation.app_id
-                    )
-                    redis_client.setex(cache_key, 3600, name)
-                except Exception:
-                    if dify_config.DEBUG:
-                        logger.exception("generate conversation name failed, conversation_id: %s", conversation_id)
-                    name = query[:47] + "..." if len(query) > 50 else query
-
-            conversation.name = name
+            session.execute(
+                update(FastAPIConversation)
+                .where(FastAPIConversation.id == conversation_id)
+                .values(name=name)
+            )
 
     def handle_annotation_reply(
         self, event: QueueAnnotationReplyEvent

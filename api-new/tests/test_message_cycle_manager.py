@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import core.app.task_pipeline.message_cycle_manager as message_cycle_manager_module
 from core.app.entities.queue_entities import QueueMessageFileEvent
@@ -24,10 +25,32 @@ class _SessionStub:
         return self._scalar_result
 
 
+class _SessionMakerStub:
+    def __init__(self) -> None:
+        self.executed: list[object] = []
+
+    def begin(self) -> "_SessionMakerStub":
+        return self
+
+    def __enter__(self) -> "_SessionMakerStub":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def execute(self, stmt: object) -> None:
+        self.executed.append(stmt)
+
+
 def _build_manager() -> MessageCycleManager:
     application_generate_entity = SimpleNamespace(
         task_id="task-1",
-        app_config=SimpleNamespace(additional_features=SimpleNamespace(show_retrieve_source=False)),
+        app_config=SimpleNamespace(
+            additional_features=SimpleNamespace(show_retrieve_source=False),
+            app_mode="agent-chat",
+            tenant_id="tenant-1",
+            app_id="app-1",
+        ),
         is_new_conversation=False,
         extras={},
     )
@@ -105,3 +128,24 @@ def test_message_file_to_stream_response_falls_back_to_sync_lookup_when_event_is
 
     assert response is not None
     assert response.id == "file-1"
+
+
+def test_generate_conversation_name_worker_uses_app_config_directly() -> None:
+    manager = _build_manager()
+    session_maker = _SessionMakerStub()
+
+    with (
+        patch.object(message_cycle_manager_module.session_factory, "get_session_maker", return_value=session_maker),
+        patch.object(message_cycle_manager_module.redis_client, "get", return_value=None),
+        patch.object(message_cycle_manager_module.redis_client, "setex") as setex_mock,
+        patch.object(
+            message_cycle_manager_module.LLMGenerator,
+            "generate_conversation_name",
+            return_value="generated-name",
+        ) as generate_mock,
+    ):
+        manager._generate_conversation_name_worker("conversation-1", "hello")
+
+    generate_mock.assert_called_once_with("tenant-1", "hello", "conversation-1", "app-1")
+    setex_mock.assert_called_once()
+    assert len(session_maker.executed) == 1
