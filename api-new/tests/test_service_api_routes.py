@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -273,6 +274,45 @@ async def test_service_api_document_download_route_uses_dataset_context() -> Non
         dataset_id=dataset_id,
         document_id=document_id,
     )
+
+
+async def test_service_api_document_batch_zip_route_uses_dataset_context(tmp_path: Path) -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    zip_path = tmp_path / "download.zip"
+    zip_path.write_bytes(b"zip-data")
+    upload_file = type("UploadFileStub", (), {"name": "doc.txt", "key": "key"})()
+
+    @contextmanager
+    def _zip_context() -> Iterator[str]:
+        yield str(zip_path)
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDocumentService.prepare_document_batch_download_zip",
+            new=AsyncMock(return_value=([upload_file], "bundle.zip")),
+        ) as document_mock,
+        patch(
+            "api_server.routes.service_api.FileService.build_upload_files_zip_tempfile",
+            return_value=_zip_context(),
+        ) as zip_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                f"/v1/datasets/{dataset_id}/documents/download-zip",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"document_ids": [str(uuid4())]},
+            )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    auth_mock.assert_awaited_once()
+    document_mock.assert_awaited_once()
+    zip_mock.assert_called_once()
 
 
 async def test_service_api_document_indexing_status_route_uses_dataset_context() -> None:

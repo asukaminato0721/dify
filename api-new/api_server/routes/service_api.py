@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from datetime import datetime
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Form, Query, Request
@@ -11,6 +12,7 @@ from fastapi import File as FastAPIFile
 from fastapi import UploadFile as FastAPIUploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from api_server.errors import forbidden
 from api_server.models.app import EndUser, Site
@@ -71,6 +73,7 @@ from api_server.services.task_control import TaskControlService
 from configs import dify_config
 from core.app.app_config.common.parameters_mapping import AppParametersDict
 from graphon.file import helpers as file_helpers
+from services.file_service import FileService
 from services.model_provider_service import ModelProviderService
 
 router = APIRouter(tags=["service-api"])
@@ -140,6 +143,10 @@ class ServiceApiDocumentListQuery(BaseModel):
     limit: int = Field(default=20)
     keyword: str | None = Field(default=None)
     status: str | None = Field(default=None)
+
+
+class ServiceApiDocumentBatchDownloadZipPayload(BaseModel):
+    document_ids: list[UUID]
 
 
 class ServiceApiMessageFeedbackPayload(BaseModel):
@@ -380,6 +387,31 @@ async def list_service_api_documents(
         limit=limit,
         keyword=keyword,
         status=status,
+    )
+
+
+@router.post("/v1/datasets/{dataset_id}/documents/download-zip", response_model=None)
+async def download_service_api_documents_zip(
+    request: Request,
+    dataset_id: UUID,
+    payload: ServiceApiDocumentBatchDownloadZipPayload,
+) -> FileResponse:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    upload_files, download_name = await ServiceApiDocumentService.prepare_document_batch_download_zip(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_ids=[str(document_id) for document_id in payload.document_ids],
+    )
+
+    stack = ExitStack()
+    zip_path = stack.enter_context(
+        FileService.build_upload_files_zip_tempfile(upload_files=cast(Any, upload_files))
+    )
+    return FileResponse(
+        path=zip_path,
+        media_type="application/zip",
+        filename=download_name,
+        background=BackgroundTask(stack.close),
     )
 
 

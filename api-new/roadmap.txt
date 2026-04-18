@@ -205,6 +205,8 @@ Done
   - `GET /v1/datasets/{dataset_id}/documents/{document_id}`
 - Ported dataset-token service API document download endpoint:
   - `GET /v1/datasets/{dataset_id}/documents/{document_id}/download`
+- Ported dataset-token service API document download endpoint:
+  - `GET /v1/datasets/{dataset_id}/documents/{document_id}/download`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused service API route tests in `tests/test_service_api_routes.py`.
@@ -261,6 +263,8 @@ Done
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata-mutation/document-metadata/tags/datasets slice.
 - Further expanded targeted service API route/auth verification now also passes: `56 passed` for the focused service-route slice.
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata-mutation/document-metadata/tags/datasets/documents slice.
+- Further expanded targeted service API route/auth verification now also passes: `58 passed` for the focused service-route slice.
+- Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata-mutation/document-metadata/tags/datasets/documents/download slice.
 - Further expanded targeted service API route/auth verification now also passes: `57 passed` for the focused service-route slice.
 - Targeted `pyrefly` is clean for the expanded FastAPI `/v1` service API app/file/message/conversation/generation/workflow/audio/feedback/variables/logs/annotations/workspace-models/dataset-metadata-mutation/document-metadata/tags/datasets/documents/download slice.
 

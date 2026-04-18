@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import TypedDict
 
 from sqlalchemy import desc, func, select
@@ -44,6 +45,11 @@ class ServiceApiDocumentStatusResponseDict(TypedDict):
 
 class ServiceApiDocumentDownloadResponseDict(TypedDict):
     url: str
+
+
+class ServiceApiDocumentBatchDownloadZipResultDict(TypedDict):
+    path: str
+    filename: str
 
 
 class ServiceApiDocumentService:
@@ -437,3 +443,73 @@ class ServiceApiDocumentService:
                 raise not_found("upload_file_not_found", "Uploaded file not found.")
 
         return {"url": file_helpers.get_signed_file_url(upload_file_id=upload_file.id, as_attachment=True)}
+
+    @classmethod
+    async def prepare_document_batch_download_zip(
+        cls,
+        *,
+        tenant_id: str,
+        dataset_id: str,
+        document_ids: list[str],
+    ) -> tuple[list[UploadFile], str]:
+        await cls._get_dataset(tenant_id=tenant_id, dataset_id=dataset_id)
+        if not document_ids:
+            raise not_found("document_not_found", "Document not found.")
+
+        async with db.session_context() as session:
+            documents = (
+                await session.scalars(
+                    select(Document).where(
+                        Document.dataset_id == dataset_id,
+                        Document.id.in_(document_ids),
+                    )
+                )
+            ).all()
+
+            documents_by_id = {document.id: document for document in documents}
+            missing_document_ids = set(document_ids) - set(documents_by_id)
+            if missing_document_ids:
+                raise not_found("document_not_found", "Document not found.")
+
+            upload_file_ids: list[str] = []
+            upload_file_ids_by_document_id: dict[str, str] = {}
+            for document_id, document in documents_by_id.items():
+                if document.tenant_id != tenant_id:
+                    raise not_found("document_not_found", "Document not found.")
+                if document.data_source_type != "upload_file":
+                    raise not_found(
+                        "document_download_unavailable",
+                        "Only uploaded-file documents can be downloaded as ZIP.",
+                    )
+                data_source_info = cls._data_source_info(document)
+                upload_file_id = data_source_info.get("upload_file_id")
+                if not isinstance(upload_file_id, str) or not upload_file_id:
+                    raise not_found(
+                        "document_download_unavailable",
+                        "Only uploaded-file documents can be downloaded as ZIP.",
+                    )
+                upload_file_ids.append(upload_file_id)
+                upload_file_ids_by_document_id[document_id] = upload_file_id
+
+            upload_files = (
+                await session.scalars(
+                    select(UploadFile).where(
+                        UploadFile.tenant_id == tenant_id,
+                        UploadFile.id.in_(upload_file_ids),
+                    )
+                )
+            ).all()
+
+        upload_files_by_id = {upload_file.id: upload_file for upload_file in upload_files}
+        missing_upload_file_ids = set(upload_file_ids) - set(upload_files_by_id)
+        if missing_upload_file_ids:
+            raise not_found(
+                "document_download_unavailable",
+                "Only uploaded-file documents can be downloaded as ZIP.",
+            )
+
+        ordered_upload_files = [
+            upload_files_by_id[upload_file_ids_by_document_id[document_id]]
+            for document_id in document_ids
+        ]
+        return ordered_upload_files, f"{uuid.uuid4().hex}.zip"
