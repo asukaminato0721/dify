@@ -19,9 +19,10 @@ from sqlalchemy import select
 from api_server.errors import bad_request, forbidden, not_found, precondition_failed, too_many_requests
 from api_server.models.app import App, Site, Tenant
 from api_server.models.human_input import HumanInputForm, HumanInputFormRecipient
+from api_server.services.broker_dispatch import apply_async_task
 from configs import dify_config
 from extensions.ext_database import db
-from extensions.ext_redis import redis_client
+from extensions.ext_redis import async_redis_client
 from graphon.nodes.human_input.entities import FormDefinition, validate_human_input_submission
 from graphon.nodes.human_input.enums import HumanInputFormKind, HumanInputFormStatus
 from libs.datetime_utils import ensure_naive_utc, naive_utc_now
@@ -86,18 +87,20 @@ class HumanInputFormService:
         return f"{prefix}:{ip_address}"
 
     @classmethod
-    def check_rate_limit(cls, *, prefix: str, max_attempts: int, time_window: int, ip_address: str) -> None:
+    async def check_rate_limit(
+        cls, *, prefix: str, max_attempts: int, time_window: int, ip_address: str
+    ) -> None:
         key = cls._get_rate_limit_key(prefix, ip_address)
         current_time = int(datetime.now().timestamp())
         window_start_time = current_time - time_window
 
-        redis_client.zremrangebyscore(key, "-inf", window_start_time)
-        attempts = redis_client.zcard(key)
+        await async_redis_client.zremrangebyscore(key, "-inf", window_start_time)
+        attempts = await async_redis_client.zcard(key)
         if attempts and int(attempts) >= max_attempts:
             raise too_many_requests("web_form_rate_limit_exceeded", "Too many form requests. Please try again later.")
 
-        redis_client.zadd(key, {f"{current_time}:{key}": current_time})
-        redis_client.expire(key, time_window * 2)
+        await async_redis_client.zadd(key, {f"{current_time}:{key}": current_time})
+        await async_redis_client.expire(key, time_window * 2)
 
     @staticmethod
     def extract_remote_ip(*, forwarded_for: str | None, cf_connecting_ip: str | None, client_host: str | None) -> str:
@@ -213,7 +216,12 @@ class HumanInputFormService:
     @classmethod
     async def get_site_payload(cls, *, form: HumanInputFormRecord) -> SitePayloadDict:
         async with db.session_context() as session:
-            app = await session.scalar(select(App).where(App.id == form.app_id, App.tenant_id == form.tenant_id).limit(1))
+            app = await session.scalar(
+                select(App).where(
+                    App.id == form.app_id,
+                    App.tenant_id == form.tenant_id,
+                ).limit(1)
+            )
             if app is None:
                 raise not_found("human_input_form_not_found", "Form not found")
 
@@ -317,12 +325,15 @@ class HumanInputFormService:
             await session.flush()
 
         if form.workflow_run_id and form.form_kind == HumanInputFormKind.RUNTIME:
-            cls.enqueue_resume(workflow_run_id=form.workflow_run_id)
+            await cls.enqueue_resume(workflow_run_id=form.workflow_run_id)
 
     @staticmethod
-    def enqueue_resume(*, workflow_run_id: str) -> None:
+    async def enqueue_resume(*, workflow_run_id: str) -> None:
         try:
             workflow_task_module = import_module("tasks.app_generate.workflow_execute_task")
-            workflow_task_module.resume_app_execution.apply_async(kwargs={"payload": {"workflow_run_id": workflow_run_id}})
+            await apply_async_task(
+                workflow_task_module.resume_app_execution,
+                kwargs={"payload": {"workflow_run_id": workflow_run_id}},
+            )
         except Exception:
             logger.exception("Failed to enqueue resume task for workflow run %s", workflow_run_id)

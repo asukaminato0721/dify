@@ -25,7 +25,7 @@ async def get_human_input_form(request: Request, form_token: str) -> FormDefinit
         cf_connecting_ip=request.headers.get("CF-Connecting-IP"),
         client_host=request.client.host if request.client else None,
     )
-    HumanInputFormService.check_rate_limit(
+    await HumanInputFormService.check_rate_limit(
         prefix="web_form_access_rate_limit",
         max_attempts=dify_config.WEB_FORM_SUBMIT_RATE_LIMIT_MAX_ATTEMPTS,
         time_window=dify_config.WEB_FORM_SUBMIT_RATE_LIMIT_WINDOW_SECONDS,
@@ -45,7 +45,7 @@ async def submit_human_input_form(
         cf_connecting_ip=request.headers.get("CF-Connecting-IP"),
         client_host=request.client.host if request.client else None,
     )
-    HumanInputFormService.check_rate_limit(
+    await HumanInputFormService.check_rate_limit(
         prefix="web_form_submit_rate_limit",
         max_attempts=dify_config.WEB_FORM_SUBMIT_RATE_LIMIT_MAX_ATTEMPTS,
         time_window=dify_config.WEB_FORM_SUBMIT_RATE_LIMIT_WINDOW_SECONDS,

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import uuid
 from pathlib import Path
 from typing import Literal, TypedDict
-
-from sqlalchemy import select
 
 from api_server.errors import bad_request, forbidden
 from api_server.models.app import CreatorUserRole, EndUser, StorageType, UploadFile
@@ -27,7 +26,17 @@ class UploadedFileResponseDict(TypedDict):
 
 
 class FileUploadService:
-    """Local filesystem-backed upload service for the FastAPI port."""
+    """Local filesystem-backed upload service for the FastAPI port.
+
+    Filesystem writes are dispatched to a worker thread so the async upload
+    handlers do not block the event loop while preserving the same storage
+    layout and validation behavior.
+    """
+
+    @staticmethod
+    def _persist_upload_file(*, file_path: Path, content: bytes) -> None:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(content)
 
     @staticmethod
     async def upload_file(
@@ -52,12 +61,14 @@ class FileUploadService:
             raise forbidden("file_too_large", "File is too large.")
 
         storage_root = Path(dify_config.STORAGE_LOCAL_PATH)
-        storage_root.mkdir(parents=True, exist_ok=True)
         file_id = str(uuid.uuid4())
         file_key = f"upload_files/{user.tenant_id}/{file_id}.{extension}"
         file_path = storage_root / file_key
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_bytes(content)
+        await asyncio.to_thread(
+            FileUploadService._persist_upload_file,
+            file_path=file_path,
+            content=content,
+        )
 
         upload_file = UploadFile(
             id=file_id,

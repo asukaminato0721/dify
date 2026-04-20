@@ -23,7 +23,7 @@ async def stop_completion_task(request: Request, task_id: str) -> ResultResponse
             "not_completion_app",
             "Please check if your Completion app mode matches the right API route.",
         )
-    TaskControlService.stop_task(task_id)
+    await TaskControlService.stop_task(task_id)
     return {"result": "success"}
 
 
@@ -32,7 +32,7 @@ async def stop_chat_task(request: Request, task_id: str) -> ResultResponseDict:
     context = await WebappContextService.resolve(request)
     if context.app.mode not in {"chat", "agent-chat", "advanced-chat"}:
         raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
-    TaskControlService.stop_task(task_id)
+    await TaskControlService.stop_task(task_id)
     return {"result": "success"}
 
 
@@ -41,5 +41,5 @@ async def stop_workflow_task(request: Request, task_id: str) -> ResultResponseDi
     context = await WebappContextService.resolve(request)
     if context.app.mode != "workflow":
         raise forbidden("not_workflow_app", "Please check if your Workflow app mode matches the right API route.")
-    TaskControlService.stop_task(task_id)
+    await TaskControlService.stop_task(task_id)
     return {"result": "success"}

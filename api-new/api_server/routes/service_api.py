@@ -696,7 +696,7 @@ async def annotation_reply_action(
 ) -> ServiceApiAnnotationReplyActionResultDict:
     context = await ServiceApiAuthService.resolve_app_context(request)
     owner_account = await ServiceApiAuthService.resolve_owner_account(tenant_id=context.tenant.id)
-    return ServiceApiAnnotationService.trigger_annotation_reply_action(
+    return await ServiceApiAnnotationService.trigger_annotation_reply_action(
         action=action,
         app=context.app,
         tenant_id=context.tenant.id,
@@ -714,7 +714,7 @@ async def annotation_reply_action_status(
     job_id: UUID,
 ) -> ServiceApiAnnotationReplyStatusDict:
     _ = await ServiceApiAuthService.resolve_app_context(request)
-    return ServiceApiAnnotationService.get_annotation_reply_action_status(action=action, job_id=str(job_id))
+    return await ServiceApiAnnotationService.get_annotation_reply_action_status(action=action, job_id=str(job_id))
 
 
 @router.get("/v1/apps/annotations")
@@ -890,7 +890,7 @@ async def stop_service_api_completion(
             "Please check if your Completion app mode matches the right API route.",
         )
     _ = user
-    TaskControlService.stop_task(task_id)
+    await TaskControlService.stop_task(task_id)
     return {"result": "success"}
 
 
@@ -926,7 +926,7 @@ async def stop_service_api_chat(
     if context.app.mode.value not in {"chat", "agent-chat", "advanced-chat"}:
         raise forbidden("not_chat_app", "Please check if your app mode matches the right API route.")
     _ = user
-    TaskControlService.stop_task(task_id)
+    await TaskControlService.stop_task(task_id)
     return {"result": "success"}
 
 
@@ -995,7 +995,7 @@ async def stop_service_api_workflow(
     if context.app.mode.value != "workflow":
         raise forbidden("not_workflow_app", "Please check if your Workflow app mode matches the right API route.")
     _ = user
-    TaskControlService.stop_task(task_id)
+    await TaskControlService.stop_task(task_id)
     return {"result": "success"}
 
 

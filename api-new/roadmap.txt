@@ -5,3 +5,6 @@ models/dataset.py | done: restore postponed annotation evaluation so async-port 
 repo-wide Session/sessionmaker(db.engine) usage | done: direct sync SQLAlchemy constructor sites now route through async-backed session adapters
 services/workflow_draft_variable_service.py | done: draft variable loading/persistence now accepts async-backed session adapters instead of requiring a real sync Engine
 models/_session.py and model legacy helpers | done: removed `legacy_*` / `with_legacy_sync_session` usage from model modules
+extensions/ext_redis.py + active api_server Redis consumers | done: FastAPI request paths now use an async-safe Redis facade for stop flags, rate limits, and annotation-job cache polling
+api_server/services/broker_dispatch.py + active broker callers | done: FastAPI request paths now offload Celery `.delay()` / `.apply_async()` submissions through async-safe broker helpers
+api_server/services/file_upload.py | done: FastAPI upload service now persists filesystem writes through `asyncio.to_thread` instead of blocking the event loop

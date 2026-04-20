@@ -17,7 +17,10 @@ async def test_get_human_input_form_route_returns_service_payload() -> None:
     }
 
     with (
-        patch("api_server.routes.human_input_form.HumanInputFormService.check_rate_limit"),
+        patch(
+            "api_server.routes.human_input_form.HumanInputFormService.check_rate_limit",
+            new=AsyncMock(),
+        ),
         patch(
             "api_server.routes.human_input_form.HumanInputFormService.get_form_definition_response",
             new=AsyncMock(return_value=expected_payload),
@@ -32,7 +35,10 @@ async def test_get_human_input_form_route_returns_service_payload() -> None:
 
 async def test_submit_human_input_form_route_calls_service() -> None:
     with (
-        patch("api_server.routes.human_input_form.HumanInputFormService.check_rate_limit"),
+        patch(
+            "api_server.routes.human_input_form.HumanInputFormService.check_rate_limit",
+            new=AsyncMock(),
+        ),
         patch(
             "api_server.routes.human_input_form.HumanInputFormService.submit_form_by_token",
             new=AsyncMock(),

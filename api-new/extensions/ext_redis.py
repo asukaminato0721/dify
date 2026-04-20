@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import logging
 import ssl
@@ -212,7 +213,109 @@ class RedisClientWrapper:
         return getattr(self._require_client(), item)
 
 
+class AsyncRedisClientWrapper:
+    """Async facade for request-path Redis access in the FastAPI runtime.
+
+    The broader repo still contains sync Redis consumers, so the canonical
+    client remains the existing sync wrapper. FastAPI request handlers should
+    use this facade instead so cache and stop-flag operations run off the event
+    loop until the rest of the stack is ported.
+    """
+
+    _client_wrapper: RedisClientWrapper
+
+    def __init__(self, client_wrapper: RedisClientWrapper) -> None:
+        self._client_wrapper = client_wrapper
+
+    async def _call(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        method = getattr(self._client_wrapper, method_name)
+        return await asyncio.to_thread(method, *args, **kwargs)
+
+    async def get(self, name: str | bytes) -> Any:
+        return await self._call("get", name)
+
+    async def set(
+        self,
+        name: str | bytes,
+        value: Any,
+        ex: int | None = None,
+        px: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        keepttl: bool = False,
+        get: bool = False,
+        exat: int | None = None,
+        pxat: int | None = None,
+    ) -> Any:
+        return await self._call(
+            "set",
+            name,
+            value,
+            ex=ex,
+            px=px,
+            nx=nx,
+            xx=xx,
+            keepttl=keepttl,
+            get=get,
+            exat=exat,
+            pxat=pxat,
+        )
+
+    async def setex(self, name: str | bytes, time: int | timedelta, value: Any) -> Any:
+        return await self._call("setex", name, time, value)
+
+    async def setnx(self, name: str | bytes, value: Any) -> Any:
+        return await self._call("setnx", name, value)
+
+    async def delete(self, *names: str | bytes) -> Any:
+        return await self._call("delete", *names)
+
+    async def incr(self, name: str | bytes, amount: int = 1) -> Any:
+        return await self._call("incr", name, amount)
+
+    async def expire(
+        self,
+        name: str | bytes,
+        time: int | timedelta,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any:
+        return await self._call("expire", name, time, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    async def zadd(
+        self,
+        name: str | bytes,
+        mapping: dict[str | bytes | int | float, float | int | str | bytes],
+        nx: bool = False,
+        xx: bool = False,
+        ch: bool = False,
+        incr: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any:
+        return await self._call(
+            "zadd",
+            name,
+            mapping,
+            nx=nx,
+            xx=xx,
+            ch=ch,
+            incr=incr,
+            gt=gt,
+            lt=lt,
+        )
+
+    async def zremrangebyscore(self, name: str | bytes, min: float | str, max: float | str) -> Any:
+        return await self._call("zremrangebyscore", name, min, max)
+
+    async def zcard(self, name: str | bytes) -> Any:
+        return await self._call("zcard", name)
+
+
 redis_client: RedisClientWrapper = RedisClientWrapper()
+async_redis_client = AsyncRedisClientWrapper(redis_client)
 _pubsub_redis_client: redis.Redis | RedisCluster | None = None
 
 

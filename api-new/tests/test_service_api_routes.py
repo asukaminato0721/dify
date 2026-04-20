@@ -782,7 +782,7 @@ async def test_service_api_annotation_reply_action_route_uses_native_annotation_
         ) as owner_mock,
         patch(
             "api_server.routes.service_api.ServiceApiAnnotationService.trigger_annotation_reply_action",
-            return_value={"job_id": "job-1", "job_status": "waiting"},
+            new=AsyncMock(return_value={"job_id": "job-1", "job_status": "waiting"}),
         ) as action_mock,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
@@ -800,7 +800,7 @@ async def test_service_api_annotation_reply_action_route_uses_native_annotation_
     assert response.json() == {"job_id": "job-1", "job_status": "waiting"}
     auth_mock.assert_awaited_once()
     owner_mock.assert_awaited_once_with(tenant_id="tenant-1")
-    action_mock.assert_called_once()
+    action_mock.assert_awaited_once()
 
 
 async def test_service_api_annotation_reply_status_route_uses_native_annotation_service() -> None:
@@ -814,7 +814,7 @@ async def test_service_api_annotation_reply_status_route_uses_native_annotation_
         ) as auth_mock,
         patch(
             "api_server.routes.service_api.ServiceApiAnnotationService.get_annotation_reply_action_status",
-            return_value={"job_id": job_id, "job_status": "completed", "error_msg": ""},
+            new=AsyncMock(return_value={"job_id": job_id, "job_status": "completed", "error_msg": ""}),
         ) as status_mock,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
@@ -826,7 +826,7 @@ async def test_service_api_annotation_reply_status_route_uses_native_annotation_
     assert response.status_code == 200
     assert response.json()["job_status"] == "completed"
     auth_mock.assert_awaited_once()
-    status_mock.assert_called_once_with(action="enable", job_id=job_id)
+    status_mock.assert_awaited_once_with(action="enable", job_id=job_id)
 
 
 async def test_service_api_annotations_list_route_uses_native_annotation_service() -> None:
@@ -1216,7 +1216,7 @@ async def test_service_api_completion_stop_route_uses_task_control_service() -> 
             "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
             new=AsyncMock(return_value=context),
         ) as auth_mock,
-        patch("api_server.routes.service_api.TaskControlService.stop_task") as stop_mock,
+        patch("api_server.routes.service_api.TaskControlService.stop_task", new=AsyncMock()) as stop_mock,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
             response = await client.post(
@@ -1228,7 +1228,7 @@ async def test_service_api_completion_stop_route_uses_task_control_service() -> 
     assert response.status_code == 200
     assert response.json() == {"result": "success"}
     auth_mock.assert_awaited_once()
-    stop_mock.assert_called_once_with("task-1")
+    stop_mock.assert_awaited_once_with("task-1")
 
 
 async def test_service_api_chat_stop_route_uses_task_control_service() -> None:
@@ -1239,7 +1239,7 @@ async def test_service_api_chat_stop_route_uses_task_control_service() -> None:
             "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
             new=AsyncMock(return_value=context),
         ) as auth_mock,
-        patch("api_server.routes.service_api.TaskControlService.stop_task") as stop_mock,
+        patch("api_server.routes.service_api.TaskControlService.stop_task", new=AsyncMock()) as stop_mock,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
             response = await client.post(
@@ -1251,7 +1251,7 @@ async def test_service_api_chat_stop_route_uses_task_control_service() -> None:
     assert response.status_code == 200
     assert response.json() == {"result": "success"}
     auth_mock.assert_awaited_once()
-    stop_mock.assert_called_once_with("task-1")
+    stop_mock.assert_awaited_once_with("task-1")
 
 
 async def test_service_api_workflow_route_uses_native_generation_service() -> None:
@@ -1434,7 +1434,7 @@ async def test_service_api_workflow_stop_route_uses_task_control_service() -> No
             "api_server.routes.service_api.ServiceApiAuthService.resolve_app_context",
             new=AsyncMock(return_value=context),
         ) as auth_mock,
-        patch("api_server.routes.service_api.TaskControlService.stop_task") as stop_mock,
+        patch("api_server.routes.service_api.TaskControlService.stop_task", new=AsyncMock()) as stop_mock,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
             response = await client.post(
@@ -1446,7 +1446,7 @@ async def test_service_api_workflow_stop_route_uses_task_control_service() -> No
     assert response.status_code == 200
     assert response.json() == {"result": "success"}
     auth_mock.assert_awaited_once()
-    stop_mock.assert_called_once_with("task-1")
+    stop_mock.assert_awaited_once_with("task-1")
 
 
 async def test_service_api_feedbacks_route_uses_native_feedback_service() -> None:

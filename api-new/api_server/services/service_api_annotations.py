@@ -9,8 +9,9 @@ from sqlalchemy import delete, or_, select
 
 from api_server.errors import not_found
 from api_server.models.app import App, AppAnnotationHitHistory, AppAnnotationSetting, MessageAnnotation
+from api_server.services.broker_dispatch import delay_task
 from extensions.ext_database import db
-from extensions.ext_redis import redis_client
+from extensions.ext_redis import async_redis_client
 from tasks.annotation.add_annotation_to_index_task import add_annotation_to_index_task
 from tasks.annotation.delete_annotation_index_task import delete_annotation_index_task
 from tasks.annotation.disable_annotation_reply_task import disable_annotation_reply_task
@@ -122,7 +123,8 @@ class ServiceApiAnnotationService:
             )
 
         if annotation_setting is not None:
-            cast(Any, add_annotation_to_index_task).delay(
+            await delay_task(
+                cast(Any, add_annotation_to_index_task),
                 annotation.id,
                 question,
                 tenant_id,
@@ -162,7 +164,8 @@ class ServiceApiAnnotationService:
             )
 
         if annotation_setting is not None:
-            cast(Any, update_annotation_to_index_task).delay(
+            await delay_task(
+                cast(Any, update_annotation_to_index_task),
                 annotation.id,
                 annotation.question or annotation.content,
                 tenant_id,
@@ -200,7 +203,8 @@ class ServiceApiAnnotationService:
                 await session.delete(annotation)
 
         if annotation_setting is not None:
-            cast(Any, delete_annotation_index_task).delay(
+            await delay_task(
+                cast(Any, delete_annotation_index_task),
                 annotation.id,
                 app.id,
                 tenant_id,
@@ -208,7 +212,7 @@ class ServiceApiAnnotationService:
             )
 
     @staticmethod
-    def trigger_annotation_reply_action(
+    async def trigger_annotation_reply_action(
         *,
         action: str,
         app: App,
@@ -222,14 +226,15 @@ class ServiceApiAnnotationService:
             case "enable":
                 cache_key = f"enable_app_annotation_{app.id}"
                 job_prefix = "enable_app_annotation_job_"
-                cached = redis_client.get(cache_key)
+                cached = await async_redis_client.get(cache_key)
                 if cached is not None:
                     cached_job_id = cached.decode() if isinstance(cached, bytes) else str(cached)
                     return {"job_id": cached_job_id, "job_status": "processing"}
 
                 job_id = str(uuid.uuid4())
-                redis_client.setnx(f"{job_prefix}{job_id}", "waiting")
-                cast(Any, enable_annotation_reply_task).delay(
+                await async_redis_client.setnx(f"{job_prefix}{job_id}", "waiting")
+                await delay_task(
+                    cast(Any, enable_annotation_reply_task),
                     job_id,
                     app.id,
                     owner_account_id,
@@ -242,28 +247,28 @@ class ServiceApiAnnotationService:
             case "disable":
                 cache_key = f"disable_app_annotation_{app.id}"
                 job_prefix = "disable_app_annotation_job_"
-                cached = redis_client.get(cache_key)
+                cached = await async_redis_client.get(cache_key)
                 if cached is not None:
                     cached_job_id = cached.decode() if isinstance(cached, bytes) else str(cached)
                     return {"job_id": cached_job_id, "job_status": "processing"}
 
                 job_id = str(uuid.uuid4())
-                redis_client.setnx(f"{job_prefix}{job_id}", "waiting")
-                cast(Any, disable_annotation_reply_task).delay(job_id, app.id, tenant_id)
+                await async_redis_client.setnx(f"{job_prefix}{job_id}", "waiting")
+                await delay_task(cast(Any, disable_annotation_reply_task), job_id, app.id, tenant_id)
                 return {"job_id": job_id, "job_status": "waiting"}
             case _:
                 raise not_found("annotation_action_not_found", "The annotation action does not exist.")
 
     @staticmethod
-    def get_annotation_reply_action_status(*, action: str, job_id: str) -> ServiceApiAnnotationReplyStatusDict:
-        cache_result = redis_client.get(f"{action}_app_annotation_job_{job_id}")
+    async def get_annotation_reply_action_status(*, action: str, job_id: str) -> ServiceApiAnnotationReplyStatusDict:
+        cache_result = await async_redis_client.get(f"{action}_app_annotation_job_{job_id}")
         if cache_result is None:
             raise not_found("annotation_job_not_found", "The job does not exist.")
 
         job_status = cache_result.decode() if isinstance(cache_result, bytes) else str(cache_result)
         error_msg = ""
         if job_status == "error":
-            error_result = redis_client.get(f"{action}_app_annotation_error_{job_id}")
+            error_result = await async_redis_client.get(f"{action}_app_annotation_error_{job_id}")
             if error_result is not None:
                 error_msg = error_result.decode() if isinstance(error_result, bytes) else str(error_result)
 
