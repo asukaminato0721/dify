@@ -115,6 +115,9 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
             application_generate_entity=application_generate_entity,
             task_state=self._task_state,
         )
+        prefetched_message_end_files = getattr(message, "_cached_message_end_files", None)
+        if isinstance(prefetched_message_end_files, list):
+            self._message_cycle_manager.seed_message_end_files(self._message_id, prefetched_message_end_files)
 
         self._conversation_name_generate_thread: Thread | None = None
 

@@ -101,6 +101,13 @@ class MessageCycleManager:
             return None
         return list(files)
 
+    def seed_message_end_files(self, message_id: str, files: list[MessageFileInfoDict]) -> None:
+        """Prime cached message-end files from async request-stage prefetched data."""
+
+        if not files:
+            return
+        self._message_end_files[message_id] = list(files)
+
     def generate_conversation_name(self, *, conversation_id: str, query: str) -> Thread | None:
         """
         Generate conversation name.

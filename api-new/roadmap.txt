@@ -345,6 +345,9 @@ Done
 - Switched the active agent tool-invocation path to publish fully populated `QueueMessageFileEvent`s directly from `ToolEngine`, so downstream message-cycle/easy-ui streaming no longer needs a sync `message_files` lookup for those tool-file events.
 - Focused agent tool-file event verification now also passes: `9 passed` for `tests/test_tool_engine.py`, `tests/test_message_cycle_manager.py`, and `tests/test_easy_ui_generate_task_pipeline.py`.
 - Targeted `pyrefly` is clean for the agent tool-file event payload slice.
+- Extended the async agent-chat request-stage prefetch to attach current-message file metadata (`_cached_message_end_files`) from `AsyncSession`, and taught the active easy-ui pipeline to seed its message-end file cache from that prefetched data before streaming starts.
+- Focused agent message-end file prefetch verification now also passes: `18 passed` for `tests/test_generation_service.py`, `tests/test_message_cycle_manager.py`, and `tests/test_easy_ui_generate_task_pipeline.py`.
+- Targeted `pyrefly` is clean for the agent message-end file prefetch slice.
 
 Current status
 --------------
@@ -508,6 +511,7 @@ Current status
 - The shared active generation/config layer now accepts local FastAPI `AppMode` and local FastAPI workflow/advanced-chat/agent-chat model shapes on the public path, so the remaining live legacy dependency surface is concentrated deeper in the copied runtime modules rather than at the FastAPI entry/model layer.
 - The shared message-cycle helper on the active advanced/agent path now reads local FastAPI `Conversation` and `MessageFile` rows instead of the legacy ORM classes.
 - The active agent tool-file event path now ships queue-ready message-file payloads from `ToolEngine` through the agent runners, removing another sync fallback read from the active message-cycle stream path when tool outputs include files.
+- The active agent-chat request stage now also precomputes current-message file metadata for user-uploaded files and seeds it into the easy-ui pipeline, removing the remaining sync `message_files`/`upload_files` lookup on the active agent `message_end` response path.
 - The copied chat/completion config and runner entry signatures now also accept local FastAPI `App`, `AppModelConfig`, `Conversation`, and `Message` shapes, and local `AppModelConfig.to_dict()` now carries the legacy `prompt_type` field they expect.
 - The shared chat/completion/agent runtime helpers now type-check and operate against the local FastAPI model shapes on the active path, with the remaining live legacy dependency surface pushed further inward into deeper copied generator/runtime modules.
 - The shared message-based generator layer and the copied chat/completion generators now also accept local FastAPI app/config/conversation/message shapes, and the copied chat-path conversation lookup no longer depends on legacy ORM classes on that entry path.

@@ -32,6 +32,7 @@ from api_server.models.app import (
     Message,
     MessageAgentThought,
     MessageFile,
+    UploadFile as FastAPIUploadFile,
     Workflow as FastAPIWorkflow,
 )
 from api_server.services.webapp_context import WebappContext
@@ -84,6 +85,7 @@ from core.app.entities.task_entities import (
 )
 from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig, PauseStatePersistenceLayer
 from core.app.task_pipeline.easy_ui_based_generate_task_pipeline import EasyUIBasedGenerateTaskPipeline
+from core.app.task_pipeline.message_file_utils import MessageFileInfoDict, prepare_file_dict
 from core.db.session_factory import session_factory as configured_sync_session_factory
 from core.model_manager import ModelInstance
 from core.ops.ops_trace_manager import TraceQueueManager
@@ -987,6 +989,20 @@ async def _prefetch_agent_chat_memory_async(
     for message_file in history_files:
         files_by_message_id.setdefault(message_file.message_id, []).append(message_file)
 
+    upload_file_ids = list(
+        dict.fromkeys(
+            message_file.upload_file_id
+            for message_file in history_files
+            if message_file.transfer_method == "local_file" and message_file.upload_file_id
+        )
+    )
+    upload_files_map: dict[str, FastAPIUploadFile] = {}
+    if upload_file_ids:
+        upload_files = (
+            await session.scalars(select(FastAPIUploadFile).where(FastAPIUploadFile.id.in_(upload_file_ids)))
+        ).all()
+        upload_files_map = {upload_file.id: upload_file for upload_file in upload_files}
+
     thoughts_by_message_id: dict[str, list[MessageAgentThought]] = {message_id: [] for message_id in message_ids}
     for agent_thought in agent_thoughts:
         thoughts_by_message_id.setdefault(agent_thought.message_id, []).append(agent_thought)
@@ -1002,12 +1018,16 @@ async def _prefetch_agent_chat_memory_async(
             message_file for message_file in message_files if message_file.belongs_to == MessageFileBelongsTo.ASSISTANT.value
         ]
         cached_thoughts = thoughts_by_message_id.get(history_message.id, [])
+        prefetched_message_end_files = [
+            prepare_file_dict(message_file, cast(dict[str, Any], upload_files_map)) for message_file in message_files
+        ]
         setattr(history_message, "_cached_user_message_files", user_files)
         setattr(history_message, "_cached_assistant_message_files", assistant_files)
         setattr(history_message, "_cached_app_model_config", app_model_config)
         setattr(history_message, "_cached_conversation", conversation)
         setattr(history_message, "_cached_agent_thoughts", cached_thoughts)
         setattr(history_message, "_cached_agent_thought_count", len(cached_thoughts))
+        setattr(history_message, "_cached_message_end_files", cast(list[MessageFileInfoDict], prefetched_message_end_files))
 
 
 def _run_advanced_chat_runner(

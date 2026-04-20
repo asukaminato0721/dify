@@ -7,14 +7,22 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from api_server.models.app import App as FastAPIApp
+from api_server.models.app import AppModelConfig
+from api_server.models.app import Conversation
+from api_server.models.app import Message
+from api_server.models.app import MessageFile
+from api_server.models.app import UploadFile as FastAPIUploadFile
 from api_server.errors import ApiError
 from api_server.models.app import AppMode
 from api_server.services.generation import (
     AsyncWebGenerationService,
     _create_completion_message,
     _get_legacy_sync_session_maker,
+    _prefetch_agent_chat_memory_async,
     _save_message_result,
 )
+from graphon.file import FileTransferMethod
 
 
 class _AsyncSessionStub:
@@ -39,6 +47,14 @@ class _AsyncSessionStub:
 
     async def scalar(self, *_args: object, **_kwargs: object) -> object | None:
         return self.scalar_result
+
+
+class _AsyncScalarsResultStub:
+    def __init__(self, values: list[object]) -> None:
+        self._values = values
+
+    def all(self) -> list[object]:
+        return list(self._values)
 
 
 def _session_context(session: _AsyncSessionStub):
@@ -199,3 +215,145 @@ async def test_save_message_result_commits_async_session() -> None:
     assert message.status == "normal"
     assert session.flush_calls == 1
     assert session.commit_calls == 1
+
+
+async def test_prefetch_agent_chat_memory_attaches_message_end_file_cache() -> None:
+    app = FastAPIApp(
+        id="app-1",
+        tenant_id="tenant-1",
+        name="Agent",
+        description="",
+        mode=AppMode.AGENT_CHAT,
+        icon_type=None,
+        icon=None,
+        icon_background=None,
+        created_by=None,
+        app_model_config_id="config-1",
+        workflow_id=None,
+        status="normal",
+        enable_site=True,
+        enable_api=True,
+        use_icon_as_answer_icon=False,
+    )
+    app_model_config = AppModelConfig(id="config-1", app_id="app-1")
+    conversation = Conversation(
+        id="conversation-1",
+        app_id="app-1",
+        app_model_config_id="config-1",
+        model_provider=None,
+        model_id=None,
+        override_model_configs=None,
+        mode=AppMode.AGENT_CHAT.value,
+        name="Test",
+        summary=None,
+        inputs={},
+        introduction=None,
+        system_instruction=None,
+        system_instruction_tokens=0,
+        status="normal",
+        invoke_from="web-app",
+        from_source="api",
+        from_end_user_id="end-user-1",
+        from_account_id=None,
+        read_at=None,
+        read_account_id=None,
+        dialogue_count=0,
+        is_deleted=False,
+    )
+    message = Message(
+        id="message-1",
+        app_id="app-1",
+        model_provider=None,
+        model_id=None,
+        override_model_configs=None,
+        conversation_id="conversation-1",
+        inputs={},
+        query="hello",
+        message={},
+        message_tokens=0,
+        message_unit_price=0,
+        message_price_unit=0,
+        answer="",
+        answer_tokens=0,
+        answer_unit_price=0,
+        answer_price_unit=0,
+        parent_message_id=None,
+        provider_response_latency=0.0,
+        total_price=0,
+        currency="USD",
+        status="normal",
+        error=None,
+        message_metadata=None,
+        invoke_from="web-app",
+        from_source="api",
+        from_end_user_id="end-user-1",
+        from_account_id=None,
+        agent_based=False,
+        workflow_run_id=None,
+        app_mode=AppMode.AGENT_CHAT.value,
+    )
+    message_file = MessageFile(
+        id="message-file-1",
+        message_id="message-1",
+        type="image",
+        transfer_method=FileTransferMethod.LOCAL_FILE,
+        belongs_to="user",
+        url=None,
+        upload_file_id="upload-1",
+        created_by_role="end_user",
+        created_by="end-user-1",
+    )
+    upload_file = FastAPIUploadFile(
+        id="upload-1",
+        tenant_id="tenant-1",
+        storage_type="local",
+        key="key-1",
+        name="image.png",
+        size=12,
+        extension="png",
+        mime_type="image/png",
+        created_by_role="end_user",
+        created_by="end-user-1",
+        used=False,
+        used_by=None,
+        used_at=None,
+        hash=None,
+        source_url="",
+    )
+    session = SimpleNamespace(
+        scalars=AsyncMock(
+            side_effect=[
+                _AsyncScalarsResultStub([message]),
+                _AsyncScalarsResultStub([message_file]),
+                _AsyncScalarsResultStub([]),
+                _AsyncScalarsResultStub([upload_file]),
+            ]
+        )
+    )
+
+    with patch(
+        "api_server.services.generation.prepare_file_dict",
+        return_value={
+            "related_id": "message-file-1",
+            "extension": ".png",
+            "filename": "image.png",
+            "size": 12,
+            "mime_type": "image/png",
+            "transfer_method": "local_file",
+            "type": "image",
+            "url": "https://example.com/file",
+            "upload_file_id": "upload-1",
+            "remote_url": "",
+        },
+    ):
+        await _prefetch_agent_chat_memory_async(
+            session=cast(Any, session),
+            conversation=conversation,
+            app_model=app,
+            app_model_config=app_model_config,
+        )
+
+    cached_files = getattr(message, "_cached_message_end_files", None)
+    assert isinstance(cached_files, list)
+    assert cached_files[0]["related_id"] == "message-file-1"
+    assert cached_files[0]["upload_file_id"] == "upload-1"

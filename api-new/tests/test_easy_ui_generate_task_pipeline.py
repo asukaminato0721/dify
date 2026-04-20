@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
 
-from api_server.models.app import Message
+from api_server.models.app import Conversation, Message
 from core.app.entities.task_entities import EasyUITaskState
 from core.app.task_pipeline.message_cycle_manager import MessageCycleManager
 from core.app.entities.queue_entities import QueueAgentThoughtEvent, QueueMessageFileEvent
@@ -76,6 +76,119 @@ def test_message_end_to_stream_response_uses_cached_files_without_sync_lookup() 
             belongs_to="assistant",
             transfer_method="tool_file",
             upload_file_id="upload-1",
+        )
+    )
+
+    with patch(
+        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.session_factory.create_session",
+        side_effect=AssertionError("sync session should not be used"),
+    ):
+        response = pipeline._message_end_to_stream_response()
+
+    assert response.files is not None
+    assert response.files[0]["related_id"] == "file-1"
+
+
+def test_pipeline_init_seeds_prefetched_message_end_files_without_sync_lookup() -> None:
+    message = Message(
+        id="message-1",
+        app_id="app-1",
+        model_provider=None,
+        model_id=None,
+        override_model_configs=None,
+        conversation_id="conversation-1",
+        inputs={},
+        query="hello",
+        message={},
+        message_tokens=0,
+        message_unit_price=0,
+        message_price_unit=0,
+        answer="",
+        answer_tokens=0,
+        answer_unit_price=0,
+        answer_price_unit=0,
+        parent_message_id=None,
+        provider_response_latency=0.0,
+        total_price=0,
+        currency="USD",
+        status="normal",
+        error=None,
+        message_metadata=None,
+        invoke_from="web-app",
+        from_source="api",
+        from_end_user_id="end-user-1",
+        from_account_id=None,
+        agent_based=False,
+        workflow_run_id=None,
+        app_mode="agent-chat",
+    )
+    setattr(
+        message,
+        "_cached_message_end_files",
+        [
+            {
+                "related_id": "file-1",
+                "extension": ".png",
+                "filename": "image.png",
+                "size": 12,
+                "mime_type": "image/png",
+                "transfer_method": "local_file",
+                "type": "image",
+                "url": "https://example.com/file",
+                "upload_file_id": "upload-1",
+                "remote_url": "",
+            }
+        ],
+    )
+
+    pipeline = EasyUIBasedGenerateTaskPipeline(
+        application_generate_entity=cast(
+            Any,
+                SimpleNamespace(
+                    task_id="task-1",
+                    model_conf=SimpleNamespace(mode="chat", model="test-model"),
+                    app_config=SimpleNamespace(
+                        app_mode="agent-chat",
+                        app_model_config_dict={},
+                    sensitive_word_avoidance=None,
+                ),
+                trace_manager=None,
+            ),
+        ),
+        queue_manager=cast(Any, SimpleNamespace()),
+        conversation=Conversation(
+            id="conversation-1",
+            app_id="app-1",
+            app_model_config_id=None,
+            model_provider=None,
+            model_id=None,
+            override_model_configs=None,
+            mode="agent-chat",
+            name="Test",
+            summary=None,
+            inputs={},
+            introduction=None,
+            system_instruction=None,
+            system_instruction_tokens=0,
+            status="normal",
+            invoke_from="web-app",
+            from_source="api",
+            from_end_user_id="end-user-1",
+            from_account_id=None,
+            read_at=None,
+            read_account_id=None,
+            dialogue_count=0,
+            is_deleted=False,
+        ),
+        message=message,
+        stream=True,
+    )
+    pipeline._task_state = EasyUITaskState(
+        llm_result=LLMResult(
+            model="test-model",
+            prompt_messages=[],
+            message=AssistantPromptMessage(content="done"),
+            usage=LLMUsage.empty_usage(),
         )
     )
 
