@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from datetime import datetime
 from enum import StrEnum, auto
 from typing import Annotated, Any, Literal, TypeAlias
 
@@ -22,6 +23,9 @@ class HumanInputRequired(BaseModel):
     actions: list[UserAction] = Field(default_factory=list)
     node_id: str
     node_title: str
+    expiration_time: datetime | None = None
+    display_in_ui: bool = False
+    form_token: str | None = None
 
     # The `resolved_default_values` stores the resolved values of variable
     # defaults. It's a mapping from `output_variable_name` to their

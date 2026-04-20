@@ -78,6 +78,12 @@ class HumanInputFormEntity(Protocol):
     def id(self) -> str: ...
 
     @property
+    def display_in_ui(self) -> bool: ...
+
+    @property
+    def preferred_access_token(self) -> str | None: ...
+
+    @property
     def submission_token(self) -> str | None: ...
 
     @property
@@ -127,6 +133,8 @@ class _HumanInputFormEntityImpl(HumanInputFormEntity):
     def __init__(self, form_model: HumanInputForm, recipient_models: Sequence[HumanInputFormRecipient]):
         self._form_model = form_model
         self._recipients = [_HumanInputFormRecipientEntityImpl(recipient) for recipient in recipient_models]
+        definition_payload = json.loads(form_model.form_definition) if form_model.form_definition else {}
+        self._display_in_ui = bool(definition_payload.get("display_in_ui", False))
         self._interactive_surface_recipient = next(
             (
                 recipient
@@ -146,6 +154,33 @@ class _HumanInputFormEntityImpl(HumanInputFormEntity):
     @property
     def id(self) -> str:
         return self._form_model.id
+
+    @property
+    def display_in_ui(self) -> bool:
+        return self._display_in_ui
+
+    @property
+    def preferred_access_token(self) -> str | None:
+        priority = {
+            RecipientType.BACKSTAGE: 0,
+            RecipientType.CONSOLE: 1,
+            RecipientType.STANDALONE_WEB_APP: 2,
+        }
+        best_candidate: tuple[int, str] | None = None
+        for recipient in self._recipients:
+            recipient_model = recipient._recipient_model
+            access_token = recipient_model.access_token
+            if access_token is None:
+                continue
+            candidate_priority = priority.get(recipient_model.recipient_type)
+            if candidate_priority is None:
+                continue
+            candidate = (candidate_priority, access_token)
+            if best_candidate is None or candidate[0] < best_candidate[0]:
+                best_candidate = candidate
+        if best_candidate is None:
+            return None
+        return best_candidate[1]
 
     @property
     def submission_token(self) -> str | None:

@@ -6,13 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, NewType, TypedDict, Union
 
-from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from api_server.models.app import Account as FastAPIAccount
 from api_server.models.app import EndUser as FastAPIEndUser
-from api_server.models.human_input import HumanInputForm
 from api_server.models.workflow import WorkflowRun
 from core.app.entities.app_invoke_entities import AdvancedChatAppGenerateEntity, InvokeFrom, WorkflowAppGenerateEntity
 from core.app.entities.queue_entities import (
@@ -51,13 +49,11 @@ from core.app.entities.task_entities import (
     WorkflowPauseStreamResponse,
     WorkflowStartStreamResponse,
 )
-from core.db.session_factory import session_factory as sync_session_factory
 from core.plugin.impl.datasource import PluginDatasourceManager
 from core.tools.entities.tool_entities import ToolProviderType
 from core.tools.tool_manager import ToolManager
 from core.trigger.constants import TRIGGER_PLUGIN_NODE_TYPE
 from core.trigger.trigger_manager import TriggerManager
-from core.workflow.human_input_forms import load_form_tokens_by_form_id
 from core.workflow.system_variables import SystemVariableKey, system_variables_to_mapping
 from core.workflow.workflow_entry import WorkflowEntry
 from graphon.entities import WorkflowStartReason
@@ -137,14 +133,6 @@ class WorkflowResponseConverter:
         self._node_snapshots: dict[NodeExecutionId, _NodeSnapshot] = {}
         self._workflow_execution_id: str | None = None
         self._workflow_started_at: datetime | None = None
-
-    def _open_session(self) -> Session:
-        session_factory = self._session_factory
-        if isinstance(session_factory, sessionmaker):
-            return session_factory()
-        if isinstance(session_factory, Engine):
-            return Session(bind=session_factory)
-        return sync_session_factory.create_session()
 
     # ------------------------------------------------------------------
     # Workflow lifecycle helpers
@@ -334,32 +322,12 @@ class WorkflowResponseConverter:
         if self._application_generate_entity.invoke_from == InvokeFrom.SERVICE_API:
             encoded_outputs = {}
         pause_reasons = [reason.model_dump(mode="json") for reason in event.reasons]
-        human_input_form_ids = [reason.form_id for reason in event.reasons if isinstance(reason, HumanInputRequired)]
-        expiration_times_by_form_id: dict[str, datetime] = {}
-        display_in_ui_by_form_id: dict[str, bool] = {}
-        form_token_by_form_id: dict[str, str] = {}
-        if human_input_form_ids:
-            stmt = select(
-                HumanInputForm.id,
-                HumanInputForm.expiration_time,
-                HumanInputForm.form_definition,
-            ).where(HumanInputForm.id.in_(human_input_form_ids))
-            with self._open_session() as session:
-                for form_id, expiration_time, form_definition in session.execute(stmt):
-                    expiration_times_by_form_id[str(form_id)] = expiration_time
-                    try:
-                        definition_payload = json.loads(form_definition) if form_definition else {}
-                    except (TypeError, json.JSONDecodeError):
-                        definition_payload = {}
-                    display_in_ui_by_form_id[str(form_id)] = bool(definition_payload.get("display_in_ui"))
-                form_token_by_form_id = load_form_tokens_by_form_id(human_input_form_ids, session=session)
 
         responses: list[StreamResponse] = []
 
         for reason in event.reasons:
             if isinstance(reason, HumanInputRequired):
-                expiration_time = expiration_times_by_form_id.get(reason.form_id)
-                if expiration_time is None:
+                if reason.expiration_time is None:
                     raise ValueError(f"HumanInputForm not found for pause reason, form_id={reason.form_id}")
                 responses.append(
                     HumanInputRequiredResponse(
@@ -372,10 +340,10 @@ class WorkflowResponseConverter:
                             form_content=reason.form_content,
                             inputs=reason.inputs,
                             actions=reason.actions,
-                            display_in_ui=display_in_ui_by_form_id.get(reason.form_id, False),
-                            form_token=form_token_by_form_id.get(reason.form_id),
+                            display_in_ui=reason.display_in_ui,
+                            form_token=reason.form_token,
                             resolved_default_values=reason.resolved_default_values,
-                            expiration_time=int(expiration_time.timestamp()),
+                            expiration_time=int(reason.expiration_time.timestamp()),
                         ),
                     )
                 )

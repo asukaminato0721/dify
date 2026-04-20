@@ -11,6 +11,7 @@ from yarl import URL
 
 from api_server.models.app import Message as FastAPIMessage
 from api_server.models.app import MessageFile as FastAPIMessageFile
+from core.app.entities.queue_entities import QueueMessageFileEvent
 from core.app.entities.app_invoke_entities import InvokeFrom
 from core.callback_handler.agent_tool_callback_handler import DifyAgentCallbackHandler
 from core.callback_handler.workflow_tool_callback_handler import DifyWorkflowCallbackHandler
@@ -58,7 +59,7 @@ class ToolEngine:
         conversation_id: str | None = None,
         app_id: str | None = None,
         message_id: str | None = None,
-    ) -> tuple[str, list[str], ToolInvokeMeta]:
+    ) -> tuple[str, list[QueueMessageFileEvent], ToolInvokeMeta]:
         """
         Agent invokes the tool with the given arguments.
         """
@@ -106,8 +107,9 @@ class ToolEngine:
 
             # extract binary data from tool invoke message
             binary_files = ToolEngine._extract_tool_response_binary_and_text(message_list)
-            # create message file
-            message_files = ToolEngine._create_message_files(
+            # Create queue-ready message-file payloads so downstream stream code
+            # can avoid reopening a sync session on the active path.
+            message_file_events = ToolEngine._create_message_files(
                 tool_messages=binary_files, agent_message=message, invoke_from=invoke_from, user_id=user_id
             )
 
@@ -125,7 +127,7 @@ class ToolEngine:
             )
 
             # transform tool invoke message to get LLM friendly message
-            return plain_text, message_files, meta
+            return plain_text, message_file_events, meta
         except ToolProviderCredentialValidationError as e:
             logger.error(e, exc_info=True)
             error_response = "Please check your tool provider credentials"
@@ -362,13 +364,14 @@ class ToolEngine:
         agent_message: FastAPIMessage,
         invoke_from: InvokeFrom,
         user_id: str,
-    ) -> list[str]:
+    ) -> list[QueueMessageFileEvent]:
         """
-        Create message file
+        Create persisted message files and return queue-ready payloads.
 
-        :return: message file ids
+        Downstream task pipelines can consume these payloads without reopening
+        a sync session to re-read the inserted `message_files` rows.
         """
-        result = []
+        result: list[QueueMessageFileEvent] = []
 
         for message in tool_messages:
             if "image" in message.mimetype:
@@ -404,6 +407,16 @@ class ToolEngine:
                 session.flush()
                 session.refresh(message_file)
 
-            result.append(message_file.id)
+            result.append(
+                QueueMessageFileEvent(
+                    message_file_id=message_file.id,
+                    message_id=message_file.message_id,
+                    type=message_file.type,
+                    belongs_to=message_file.belongs_to,
+                    url=message_file.url,
+                    transfer_method=message_file.transfer_method,
+                    upload_file_id=message_file.upload_file_id,
+                )
+            )
 
         return result

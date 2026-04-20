@@ -186,6 +186,9 @@ class HumanInputNode(Node[HumanInputNodeData]):
             actions=node_data.user_actions,
             node_id=self.id,
             node_title=node_data.title,
+            expiration_time=form_entity.expiration_time,
+            display_in_ui=form_entity.display_in_ui,
+            form_token=form_entity.preferred_access_token,
             resolved_default_values=resolved_default_values,
         )
 

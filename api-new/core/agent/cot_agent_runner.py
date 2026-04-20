@@ -10,7 +10,7 @@ from core.agent.entities import AgentScratchpadUnit
 from core.agent.errors import AgentMaxIterationError
 from core.agent.output_parser.cot_output_parser import CotAgentOutputParser
 from core.app.apps.base_app_queue_manager import PublishFrom
-from core.app.entities.queue_entities import QueueAgentThoughtEvent, QueueMessageEndEvent, QueueMessageFileEvent
+from core.app.entities.queue_entities import QueueAgentThoughtEvent, QueueMessageEndEvent
 from core.ops.ops_trace_manager import TraceQueueManager
 from core.prompt.agent_history_prompt_transform import AgentHistoryPromptTransform
 from core.tools.__base.tool import Tool
@@ -318,7 +318,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 pass
 
         # invoke tool
-        tool_invoke_response, message_files, tool_invoke_meta = ToolEngine.agent_invoke(
+        tool_invoke_response, message_file_events, tool_invoke_meta = ToolEngine.agent_invoke(
             tool=tool_instance,
             tool_parameters=tool_call_args,
             user_id=self.user_id,
@@ -330,13 +330,9 @@ class CotAgentRunner(BaseAgentRunner, ABC):
         )
 
         # publish files
-        for message_file_id in message_files:
-            # publish message file
-            self.queue_manager.publish(
-                QueueMessageFileEvent(message_file_id=message_file_id), PublishFrom.APPLICATION_MANAGER
-            )
-            # add message file ids
-            message_file_ids.append(message_file_id)
+        for message_file_event in message_file_events:
+            self.queue_manager.publish(message_file_event, PublishFrom.APPLICATION_MANAGER)
+            message_file_ids.append(message_file_event.message_file_id)
 
         return tool_invoke_response, tool_invoke_meta
 
