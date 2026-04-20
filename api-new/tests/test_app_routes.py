@@ -450,6 +450,76 @@ async def test_trigger_webhook_debug_route_returns_conflict_without_listener() -
     assert response.json()["error"] == "No active debug listener"
 
 
+async def test_inner_enterprise_mail_route_requires_valid_key() -> None:
+    with patch("api_server.routes.inner_api._ensure_setup", new=AsyncMock()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/inner/api/enterprise/mail",
+                json={"to": ["a@example.com"], "subject": "s", "body": "b"},
+            )
+
+    assert response.status_code == 404 or response.status_code == 401
+
+
+async def test_inner_enterprise_mail_route_uses_wrapper() -> None:
+    with (
+        patch("api_server.routes.inner_api._ensure_setup", new=AsyncMock()),
+        patch("api_server.routes.inner_api._check_inner_api_access"),
+        patch("api_server.routes.inner_api.asyncio.to_thread", new=AsyncMock(return_value={"message": "success"})),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"X-Inner-Api-Key": "test-key"},
+        ) as client:
+            response = await client.post(
+                "/inner/api/enterprise/mail",
+                json={"to": ["a@example.com"], "subject": "s", "body": "b"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "success"}
+
+
+async def test_inner_workspace_route_uses_wrapper() -> None:
+    payload = {"message": "enterprise workspace created.", "tenant": {"id": "tenant-1"}}
+    with (
+        patch("api_server.routes.inner_api._ensure_setup", new=AsyncMock()),
+        patch("api_server.routes.inner_api._check_inner_api_access"),
+        patch("api_server.routes.inner_api.asyncio.to_thread", new=AsyncMock(return_value=(payload, 200))),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"X-Inner-Api-Key": "test-key"},
+        ) as client:
+            response = await client.post(
+                "/inner/api/enterprise/workspace",
+                json={"name": "Demo", "owner_email": "owner@example.com"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
+async def test_inner_dsl_export_route_uses_wrapper() -> None:
+    payload = {"data": "dsl"}
+    with (
+        patch("api_server.routes.inner_api._ensure_setup", new=AsyncMock()),
+        patch("api_server.routes.inner_api._check_inner_api_access"),
+        patch("api_server.routes.inner_api.asyncio.to_thread", new=AsyncMock(return_value=(payload, 200))),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"X-Inner-Api-Key": "test-key"},
+        ) as client:
+            response = await client.get("/inner/api/enterprise/apps/app-1/dsl")
+
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
 async def test_finished_workflow_events_return_sse_payload() -> None:
     context = WebappContext(
         app=type("AppStub", (), {"mode": AppMode.WORKFLOW, "id": "app-1"})(),

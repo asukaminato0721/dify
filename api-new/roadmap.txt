@@ -20,3 +20,4 @@ api_server/routes/service_api.py + dataset/rag helpers | done: FastAPI now cover
 api_server/services/generation.py + shared chat/completion generators | done: FastAPI completion, chat, and more-like-this now route through the shared generator/runtime path, unlocking file inputs and shared dataset/external-tool behavior on the active FastAPI surface
 api_server/routes/mcp.py | done: FastAPI now serves the MCP JSON-RPC endpoint for app MCP servers without relying on the legacy Flask MCP controller
 api_server/routes/trigger.py | done: FastAPI now serves the plugin trigger and webhook trigger entrypoints through a Flask-request adapter instead of relying on the legacy Flask trigger controllers
+api_server/routes/inner_api.py | done: FastAPI now serves the smaller inner admin API subset (enterprise/billing mail, enterprise workspace creation, DSL import/export) without relying on the legacy Flask inner controllers
