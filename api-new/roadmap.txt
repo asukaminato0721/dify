@@ -8,5 +8,6 @@ models/_session.py and model legacy helpers | done: removed `legacy_*` / `with_l
 extensions/ext_redis.py + active api_server Redis consumers | done: FastAPI request paths now use an async-safe Redis facade for stop flags, rate limits, and annotation-job cache polling
 api_server/services/broker_dispatch.py + active broker callers | done: FastAPI request paths now offload Celery `.delay()` / `.apply_async()` submissions through async-safe broker helpers
 api_server/services/file_upload.py | done: FastAPI upload service now persists filesystem writes through `asyncio.to_thread` instead of blocking the event loop
-api_server/services/audio.py + api_server/services/suggested_questions.py | done: active FastAPI model lookup and model-runtime calls now offload sync model-manager / LLM invocations with `asyncio.to_thread`
+api_server/services/audio.py + api_server/services/suggested_questions.py | done: active FastAPI model lookup and model-runtime calls now offload sync model-manager / LLM invocations with `asyncio.to_thread`, preserve typed `ModelInstance` helpers, and translate missing default models at the service boundary
 services/enterprise/base.py + active api_server enterprise callers | done: FastAPI bootstrap/webapp routes now use async enterprise HTTP requests instead of blocking `httpx.Client` calls on the event loop
+core/app/task_pipeline/message_cycle_manager.py | done: active conversation-name generation now uses async Redis plus `AsyncSession` persistence; message-file DB fallbacks remain legacy sync seams outside this first active-path cut

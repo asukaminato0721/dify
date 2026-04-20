@@ -13,7 +13,8 @@ from api_server.errors import bad_request, not_found
 from api_server.models.app import AppMode, Message
 from api_server.services.webapp_context import WebappContext
 from constants import AUDIO_EXTENSIONS
-from core.model_manager import ModelManager
+from core.errors.error import ProviderTokenNotInitError
+from core.model_manager import ModelInstance, ModelManager
 from extensions.ext_database import db
 from graphon.model_runtime.entities.model_entities import ModelType
 from services.errors.audio import (
@@ -74,28 +75,33 @@ class PublicAudioService:
         *,
         context: WebappContext,
         model_type: ModelType,
-    ):
-        return await asyncio.to_thread(
-            cls._get_model_manager(context=context).get_default_model_instance,
-            context.app.tenant_id,
-            model_type,
-        )
+    ) -> ModelInstance | None:
+        """Return the configured runtime model or `None` when the tenant has no default model."""
+
+        try:
+            return await asyncio.to_thread(
+                cls._get_model_manager(context=context).get_default_model_instance,
+                context.app.tenant_id,
+                model_type,
+            )
+        except ProviderTokenNotInitError:
+            return None
 
     @staticmethod
-    async def _invoke_speech_to_text(*, model_instance: object, filename: str, content: bytes) -> str:
+    async def _invoke_speech_to_text(*, model_instance: ModelInstance, filename: str, content: bytes) -> str:
         buffer = io.BytesIO(content)
         buffer.name = filename
         return await asyncio.to_thread(model_instance.invoke_speech2text, file=buffer)
 
     @staticmethod
-    async def _resolve_tts_voice(*, model_instance: object) -> str | None:
+    async def _resolve_tts_voice(*, model_instance: ModelInstance) -> str | None:
         voices = await asyncio.to_thread(model_instance.get_tts_voices)
         if not voices:
             return None
         return cast(str | None, voices[0].get("value"))
 
     @staticmethod
-    async def _invoke_tts(*, model_instance: object, text: str, voice: str) -> bytes | Iterable[bytes]:
+    async def _invoke_tts(*, model_instance: ModelInstance, text: str, voice: str) -> bytes | Iterable[bytes]:
         result = await asyncio.to_thread(model_instance.invoke_tts, content_text=text, voice=voice)
         if isinstance(result, (bytes, bytearray)):
             return bytes(result)

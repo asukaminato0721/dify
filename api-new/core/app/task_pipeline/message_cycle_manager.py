@@ -1,3 +1,12 @@
+"""Message-cycle helpers for streamed app responses.
+
+The active FastAPI runtime reuses this module while the surrounding graph and
+task pipeline stack is still being ported. Keep request-path cache, Redis, and
+conversation-name persistence work async-safe where possible so the remaining
+sync bridges stay isolated to legacy workflow execution seams.
+"""
+
+import asyncio
 import hashlib
 import logging
 from types import SimpleNamespace
@@ -37,7 +46,7 @@ from core.db.session_factory import session_factory
 from core.llm_generator.llm_generator import LLMGenerator
 from core.tools.signature import sign_tool_file
 from graphon.file import FileTransferMethod
-from extensions.ext_redis import redis_client
+from extensions.ext_redis import async_redis_client, redis_client
 from models.enums import MessageFileBelongsTo
 from models.model import MessageAnnotation
 from services.annotation_service import AppAnnotationService
@@ -141,6 +150,13 @@ class MessageCycleManager:
         return thread
 
     def _generate_conversation_name_worker(self, conversation_id: str, query: str) -> None:
+        """Bridge the timer callback into the async conversation-name worker."""
+
+        asyncio.run(self._generate_conversation_name_worker_async(conversation_id, query))
+
+    async def _generate_conversation_name_worker_async(self, conversation_id: str, query: str) -> None:
+        """Generate and persist a conversation name without sync DB/Redis access."""
+
         app_config = self._application_generate_entity.app_config
         if str(app_config.app_mode) == "completion":
             return
@@ -148,29 +164,34 @@ class MessageCycleManager:
         query_hash = hashlib.md5(query.encode()).hexdigest()[:16]
         cache_key = f"conv_name:{conversation_id}:{query_hash}"
 
-        cached_name = redis_client.get(cache_key)
+        cached_name = await async_redis_client.get(cache_key)
         if cached_name:
-            name = cached_name.decode("utf-8")
+            if isinstance(cached_name, bytes):
+                name = cached_name.decode("utf-8")
+            else:
+                name = str(cached_name)
         else:
             try:
-                name = LLMGenerator.generate_conversation_name(
+                name = await asyncio.to_thread(
+                    LLMGenerator.generate_conversation_name,
                     app_config.tenant_id,
                     query,
                     conversation_id,
                     app_config.app_id,
                 )
-                redis_client.setex(cache_key, 3600, name)
+                await async_redis_client.setex(cache_key, 3600, name)
             except Exception:
                 if dify_config.DEBUG:
                     logger.exception("generate conversation name failed, conversation_id: %s", conversation_id)
                 name = query[:47] + "..." if len(query) > 50 else query
 
-        with session_factory.get_sync_session_maker().begin() as session:
-            session.execute(
+        async with session_factory.create_session() as session:
+            await session.execute(
                 update(FastAPIConversation)
                 .where(FastAPIConversation.id == conversation_id)
                 .values(name=name)
             )
+            await session.commit()
 
     def handle_annotation_reply(self, event: QueueAnnotationReplyEvent) -> SimpleNamespace | MessageAnnotation | None:
         """

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import core.app.task_pipeline.message_cycle_manager as message_cycle_manager_module
 from core.app.entities.queue_entities import QueueAnnotationReplyEvent, QueueMessageFileEvent
@@ -40,6 +41,26 @@ class _SessionMakerStub:
 
     def execute(self, stmt: object) -> None:
         self.executed.append(stmt)
+
+
+class _AsyncSessionStub:
+    def __init__(self) -> None:
+        self.executed: list[object] = []
+        self.commit_calls = 0
+
+    async def execute(self, stmt: object) -> None:
+        self.executed.append(stmt)
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
+
+
+def _async_session_context(session: _AsyncSessionStub):
+    @asynccontextmanager
+    async def _manager():
+        yield session
+
+    return _manager()
 
 
 def _build_manager() -> MessageCycleManager:
@@ -156,12 +177,16 @@ def test_message_file_to_stream_response_caches_message_end_files() -> None:
 
 def test_generate_conversation_name_worker_uses_app_config_directly() -> None:
     manager = _build_manager()
-    session_maker = _SessionMakerStub()
+    session = _AsyncSessionStub()
 
     with (
-        patch.object(message_cycle_manager_module.session_factory, "get_sync_session_maker", return_value=session_maker),
-        patch.object(message_cycle_manager_module.redis_client, "get", return_value=None),
-        patch.object(message_cycle_manager_module.redis_client, "setex") as setex_mock,
+        patch.object(
+            message_cycle_manager_module.session_factory,
+            "create_session",
+            return_value=_async_session_context(session),
+        ),
+        patch.object(message_cycle_manager_module.async_redis_client, "get", new=AsyncMock(return_value=None)),
+        patch.object(message_cycle_manager_module.async_redis_client, "setex", new=AsyncMock()) as setex_mock,
         patch.object(
             message_cycle_manager_module.LLMGenerator,
             "generate_conversation_name",
@@ -171,8 +196,9 @@ def test_generate_conversation_name_worker_uses_app_config_directly() -> None:
         manager._generate_conversation_name_worker("conversation-1", "hello")
 
     generate_mock.assert_called_once_with("tenant-1", "hello", "conversation-1", "app-1")
-    setex_mock.assert_called_once()
-    assert len(session_maker.executed) == 1
+    setex_mock.assert_awaited_once()
+    assert len(session.executed) == 1
+    assert session.commit_calls == 1
 
 
 def test_handle_annotation_reply_uses_event_payload_without_sync_lookup() -> None:
