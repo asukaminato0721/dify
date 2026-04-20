@@ -14,6 +14,7 @@ from api_server.models.app import EndUser as FastAPIEndUser
 from api_server.models.app import Message
 from api_server.models.app import MessageFile
 from api_server.models.app import UploadFile as FastAPIUploadFile
+from api_server.models.workflow import WorkflowAppLogCreatedFrom
 from api_server.errors import ApiError
 from api_server.models.app import AppMode
 from api_server.services.generation import (
@@ -22,8 +23,10 @@ from api_server.services.generation import (
     _get_legacy_sync_session_maker,
     _prepare_native_public_agent_chat,
     _prefetch_agent_chat_memory_async,
+    _save_workflow_app_log_async,
     _save_message_result,
 )
+from models.enums import CreatorUserRole
 from graphon.file import FileTransferMethod
 
 
@@ -215,6 +218,36 @@ async def test_save_message_result_commits_async_session() -> None:
 
     assert message.answer == "updated"
     assert message.status == "normal"
+    assert session.flush_calls == 1
+    assert session.commit_calls == 1
+
+
+async def test_save_workflow_app_log_async_persists_async_log_row() -> None:
+    session = _AsyncSessionStub()
+    application_generate_entity = SimpleNamespace(
+        app_config=SimpleNamespace(tenant_id="tenant-1", app_id="app-1"),
+        invoke_from="web-app",
+        workflow_execution_id="workflow-run-1",
+    )
+    workflow = SimpleNamespace(id="workflow-1")
+
+    with patch("api_server.services.generation.db.session_context", return_value=_session_context(session)):
+        await _save_workflow_app_log_async(
+            application_generate_entity=cast(Any, application_generate_entity),
+            workflow=cast(Any, workflow),
+            created_by_role=CreatorUserRole.END_USER,
+            created_by="end-user-1",
+        )
+
+    assert len(session.added) == 1
+    workflow_app_log = session.added[0]
+    assert getattr(workflow_app_log, "tenant_id") == "tenant-1"
+    assert getattr(workflow_app_log, "app_id") == "app-1"
+    assert getattr(workflow_app_log, "workflow_id") == "workflow-1"
+    assert getattr(workflow_app_log, "workflow_run_id") == "workflow-run-1"
+    assert getattr(workflow_app_log, "created_from") is WorkflowAppLogCreatedFrom.WEB_APP
+    assert getattr(workflow_app_log, "created_by_role") is CreatorUserRole.END_USER
+    assert getattr(workflow_app_log, "created_by") == "end-user-1"
     assert session.flush_calls == 1
     assert session.commit_calls == 1
 

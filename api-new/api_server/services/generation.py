@@ -44,6 +44,7 @@ from api_server.models.app import (
     Workflow as FastAPIWorkflow,
 )
 from api_server.services.webapp_context import WebappContext
+from api_server.models.workflow import WorkflowAppLog, WorkflowAppLogCreatedFrom
 from configs import dify_config
 from core.app.app_config.base_app_config_manager import BaseAppConfigManager
 from core.app.app_config.common.sensitive_word_avoidance.manager import SensitiveWordAvoidanceConfigManager
@@ -143,6 +144,47 @@ def _set_runtime_cache(target: object, name: str, value: object) -> None:
     """Attach ad-hoc cache state to ORM rows that are later consumed by legacy sync runners."""
 
     setattr(target, name, value)
+
+
+def _resolve_workflow_app_log_created_from(invoke_from: InvokeFrom) -> WorkflowAppLogCreatedFrom | None:
+    match invoke_from:
+        case InvokeFrom.SERVICE_API:
+            return WorkflowAppLogCreatedFrom.SERVICE_API
+        case InvokeFrom.EXPLORE:
+            return WorkflowAppLogCreatedFrom.INSTALLED_APP
+        case InvokeFrom.WEB_APP:
+            return WorkflowAppLogCreatedFrom.WEB_APP
+        case InvokeFrom.DEBUGGER | InvokeFrom.TRIGGER | InvokeFrom.PUBLISHED_PIPELINE | InvokeFrom.VALIDATION:
+            return None
+
+
+async def _save_workflow_app_log_async(
+    *,
+    application_generate_entity: WorkflowAppGenerateEntity,
+    workflow: FastAPIWorkflow,
+    created_by_role: CreatorUserRole,
+    created_by: str,
+) -> None:
+    """Persist the workflow-app log on the async request path before runner startup."""
+
+    created_from = _resolve_workflow_app_log_created_from(application_generate_entity.invoke_from)
+    if created_from is None:
+        return
+
+    async with db.session_context() as session:
+        session.add(
+            WorkflowAppLog(
+                tenant_id=application_generate_entity.app_config.tenant_id,
+                app_id=application_generate_entity.app_config.app_id,
+                workflow_id=workflow.id,
+                workflow_run_id=application_generate_entity.workflow_execution_id,
+                created_from=created_from,
+                created_by_role=created_by_role,
+                created_by=created_by,
+            )
+        )
+        await session.flush()
+        await session.commit()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1388,7 +1430,6 @@ def _start_native_public_workflow(
         user=end_user,
         draft_var_saver_factory=BaseAppGenerator._get_draft_var_saver_factory(InvokeFrom.WEB_APP, end_user),
         stream=streaming,
-        session_factory=sync_session_factory,
     ).process()
     converted = WorkflowAppGenerateResponseConverter.convert(response=response, invoke_from=InvokeFrom.WEB_APP)
     return cast(Mapping[str, Any] | Iterator[str], BaseAppGenerator.convert_to_event_stream(converted))
@@ -1408,6 +1449,12 @@ async def _run_native_public_workflow(
         files=files,
         streaming=streaming,
         workflow_id=workflow_id,
+    )
+    await _save_workflow_app_log_async(
+        application_generate_entity=prepared.application_generate_entity,
+        workflow=prepared.workflow,
+        created_by_role=CreatorUserRole.END_USER,
+        created_by=prepared.end_user.id,
     )
     if streaming:
         return _start_native_public_workflow(
