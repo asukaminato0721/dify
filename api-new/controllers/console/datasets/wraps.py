@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from functools import wraps
 
+from flask import current_app
 from sqlalchemy import select
 
 from controllers.console.datasets.error import PipelineNotFoundError
@@ -22,9 +23,7 @@ def get_rag_pipeline[**P, R](view_func: Callable[P, R]) -> Callable[P, R]:
 
         del kwargs["pipeline_id"]
 
-        pipeline = db.session.scalar(
-            select(Pipeline).where(Pipeline.id == pipeline_id, Pipeline.tenant_id == current_tenant_id).limit(1)
-        )
+        pipeline = current_app.ensure_sync(_load_pipeline)(pipeline_id, current_tenant_id)
 
         if not pipeline:
             raise PipelineNotFoundError()
@@ -34,3 +33,10 @@ def get_rag_pipeline[**P, R](view_func: Callable[P, R]) -> Callable[P, R]:
         return view_func(*args, **kwargs)
 
     return decorated_view
+
+
+async def _load_pipeline(pipeline_id: str, tenant_id: str) -> Pipeline | None:
+    async with db.session_context() as session:
+        return await session.scalar(
+            select(Pipeline).where(Pipeline.id == pipeline_id, Pipeline.tenant_id == tenant_id).limit(1)
+        )

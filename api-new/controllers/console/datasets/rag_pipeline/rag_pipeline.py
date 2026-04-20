@@ -1,10 +1,9 @@
 import logging
 
-from flask import request
+from flask import current_app, request
 from flask_restx import Resource
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
 
 from controllers.common.schema import register_schema_models
 from controllers.console import console_ns
@@ -14,6 +13,7 @@ from controllers.console.wraps import (
     knowledge_pipeline_publish_enabled,
     setup_required,
 )
+from core.db.session_factory import session_factory
 from extensions.ext_database import db
 from libs.login import login_required
 from models.dataset import PipelineCustomizedTemplate
@@ -86,14 +86,9 @@ class CustomizedPipelineTemplateApi(Resource):
     @account_initialization_required
     @enterprise_license_required
     def post(self, template_id: str):
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
-            template = session.scalar(
-                select(PipelineCustomizedTemplate).where(PipelineCustomizedTemplate.id == template_id).limit(1)
-            )
-            if not template:
-                raise ValueError("Customized pipeline template not found.")
+        template_yaml = current_app.ensure_sync(_get_customized_template_yaml)(template_id)
 
-        return {"data": template.yaml_content}, 200
+        return {"data": template_yaml}, 200
 
 
 @console_ns.route("/rag/pipelines/<string:pipeline_id>/customized/publish")
@@ -109,3 +104,13 @@ class PublishCustomizedPipelineTemplateApi(Resource):
         rag_pipeline_service = RagPipelineService()
         rag_pipeline_service.publish_customized_pipeline_template(pipeline_id, payload.model_dump())
         return {"result": "success"}
+
+
+async def _get_customized_template_yaml(template_id: str) -> str:
+    async with db.session_context() as session:
+        template = await session.scalar(
+            select(PipelineCustomizedTemplate).where(PipelineCustomizedTemplate.id == template_id).limit(1)
+        )
+        if not template:
+            raise ValueError("Customized pipeline template not found.")
+        return template.yaml_content

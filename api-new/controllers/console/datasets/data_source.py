@@ -2,15 +2,15 @@ import json
 from collections.abc import Generator
 from typing import Any, Literal, cast
 
-from flask import request
+from flask import current_app, request
 from flask_restx import Resource, fields, marshal_with
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
 from werkzeug.exceptions import NotFound
 
 from controllers.common.schema import get_or_create_model, register_schema_model
 from core.datasource.entities.datasource_entities import DatasourceProviderType, OnlineDocumentPagesMessage
+from core.db.session_factory import session_factory
 from core.datasource.online_document.online_document_plugin import OnlineDocumentDatasourcePlugin
 from core.indexing_runner import IndexingRunner
 from core.rag.extractor.entity.datasource_type import DatasourceType
@@ -112,12 +112,7 @@ class DataSourceApi(Resource):
         _, current_tenant_id = current_account_with_tenant()
 
         # get workspace data source integrates
-        data_source_integrates = db.session.scalars(
-            select(DataSourceOauthBinding).where(
-                DataSourceOauthBinding.tenant_id == current_tenant_id,
-                DataSourceOauthBinding.disabled == False,
-            )
-        ).all()
+        data_source_integrates = current_app.ensure_sync(_list_data_source_integrates)(current_tenant_id)
 
         base_url = request.url_root.rstrip("/")
         data_source_oauth_base_path = "/console/api/oauth/data-source"
@@ -160,33 +155,7 @@ class DataSourceApi(Resource):
     def patch(self, binding_id, action: Literal["enable", "disable"]):
         _, current_tenant_id = current_account_with_tenant()
         binding_id = str(binding_id)
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
-            data_source_binding = session.execute(
-                select(DataSourceOauthBinding).where(
-                    DataSourceOauthBinding.id == binding_id, DataSourceOauthBinding.tenant_id == current_tenant_id
-                )
-            ).scalar_one_or_none()
-        if data_source_binding is None:
-            raise NotFound("Data source binding not found.")
-        # enable binding
-        match action:
-            case "enable":
-                if data_source_binding.disabled:
-                    data_source_binding.disabled = False
-                    data_source_binding.updated_at = naive_utc_now()
-                    db.session.add(data_source_binding)
-                    db.session.commit()
-                else:
-                    raise ValueError("Data source is not disabled.")
-            # disable binding
-            case "disable":
-                if not data_source_binding.disabled:
-                    data_source_binding.disabled = True
-                    data_source_binding.updated_at = naive_utc_now()
-                    db.session.add(data_source_binding)
-                    db.session.commit()
-                else:
-                    raise ValueError("Data source is disabled.")
+        current_app.ensure_sync(_toggle_data_source_binding)(binding_id, current_tenant_id, action)
         return {"result": "success"}, 200
 
 
@@ -213,28 +182,15 @@ class DataSourceNotionListApi(Resource):
         )
         if not credential:
             raise NotFound("Credential not found.")
-        exist_page_ids = []
-        with sessionmaker(db.engine).begin() as session:
-            # import notion in the exist dataset
-            if query.dataset_id:
-                dataset = DatasetService.get_dataset(query.dataset_id)
-                if not dataset:
-                    raise NotFound("Dataset not found.")
-                if dataset.data_source_type != "notion_import":
-                    raise ValueError("Dataset is not notion type.")
-
-                documents = session.scalars(
-                    select(Document).where(
-                        Document.dataset_id == query.dataset_id,
-                        Document.tenant_id == current_tenant_id,
-                        Document.data_source_type == "notion_import",
-                        Document.enabled.is_(True),
-                    )
-                ).all()
-                if documents:
-                    for document in documents:
-                        data_source_info = json.loads(document.data_source_info)
-                        exist_page_ids.append(data_source_info["notion_page_id"])
+        exist_page_ids: list[str] = []
+        # import notion in the exist dataset
+        if query.dataset_id:
+            dataset = DatasetService.get_dataset(query.dataset_id)
+            if not dataset:
+                raise NotFound("Dataset not found.")
+            if dataset.data_source_type != "notion_import":
+                raise ValueError("Dataset is not notion type.")
+            exist_page_ids = current_app.ensure_sync(_list_bound_notion_page_ids)(query.dataset_id, current_tenant_id)
             # get all authorized pages
             from core.datasource.datasource_manager import DatasourceManager
 
@@ -370,7 +326,7 @@ class DataSourceNotionDatasetSyncApi(Resource):
 
         documents = DocumentService.get_document_by_dataset_id(dataset_id_str)
         for document in documents:
-            document_indexing_sync_task.delay(dataset_id_str, document.id)
+            _enqueue_document_index_sync(dataset_id_str, document.id)
         return {"result": "success"}, 200
 
 
@@ -389,5 +345,60 @@ class DataSourceNotionDocumentSyncApi(Resource):
         document = DocumentService.get_document(dataset_id_str, document_id_str)
         if document is None:
             raise NotFound("Document not found.")
-        document_indexing_sync_task.delay(dataset_id_str, document_id_str)
+        _enqueue_document_index_sync(dataset_id_str, document_id_str)
         return {"result": "success"}, 200
+
+
+async def _list_data_source_integrates(tenant_id: str) -> list[DataSourceOauthBinding]:
+    async with db.session_context() as session:
+        result = await session.scalars(
+            select(DataSourceOauthBinding).where(
+                DataSourceOauthBinding.tenant_id == tenant_id,
+                DataSourceOauthBinding.disabled == False,
+            )
+        )
+        return list(result.all())
+
+
+async def _toggle_data_source_binding(binding_id: str, tenant_id: str, action: Literal["enable", "disable"]) -> None:
+    async with db.session_context() as session:
+        data_source_binding = await session.scalar(
+            select(DataSourceOauthBinding).where(
+                DataSourceOauthBinding.id == binding_id,
+                DataSourceOauthBinding.tenant_id == tenant_id,
+            )
+        )
+        if data_source_binding is None:
+            raise NotFound("Data source binding not found.")
+
+        match action:
+            case "enable":
+                if not data_source_binding.disabled:
+                    raise ValueError("Data source is not disabled.")
+                data_source_binding.disabled = False
+            case "disable":
+                if data_source_binding.disabled:
+                    raise ValueError("Data source is disabled.")
+                data_source_binding.disabled = True
+
+        data_source_binding.updated_at = naive_utc_now()
+        await session.commit()
+
+
+async def _list_bound_notion_page_ids(dataset_id: str, tenant_id: str) -> list[str]:
+    async with db.session_context() as session:
+        result = await session.scalars(
+            select(Document).where(
+                Document.dataset_id == dataset_id,
+                Document.tenant_id == tenant_id,
+                Document.data_source_type == "notion_import",
+                Document.enabled.is_(True),
+            )
+        )
+        documents = list(result.all())
+
+    return [json.loads(document.data_source_info)["notion_page_id"] for document in documents]
+
+
+def _enqueue_document_index_sync(dataset_id: str, document_id: str) -> None:
+    getattr(document_indexing_sync_task, "delay")(dataset_id, document_id)

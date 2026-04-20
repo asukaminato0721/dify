@@ -1,3 +1,12 @@
+"""Dataset, document, and pipeline models.
+
+These models still expose sync convenience properties for legacy callers that
+expect attribute-style access. Those properties must go through the
+`models._session` compatibility helpers instead of touching `db.session`
+directly, and async loader methods should be added where callers can `await`
+safely.
+"""
+
 import base64
 import enum
 import hashlib
@@ -28,6 +37,16 @@ from core.tools.signature import sign_upload_file
 from extensions.ext_storage import storage
 from libs.uuid_utils import uuidv7
 
+from ._session import (
+    async_get,
+    async_scalar_as,
+    async_scalars_as,
+    legacy_get,
+    legacy_scalar,
+    legacy_scalar_as,
+    legacy_scalars_as,
+    with_legacy_sync_session,
+)
 from .account import Account
 from .base import Base, TypeBase
 from .engine import db
@@ -51,6 +70,11 @@ from .model import App, Tag, TagBinding, UploadFile
 from .types import AdjustedJSON, BinaryData, EnumText, LongText, StringUUID, adjusted_json_index
 
 logger = logging.getLogger(__name__)
+
+
+def _legacy_count(statement: sa.Executable) -> int:
+    count = legacy_scalar(statement)
+    return int(count) if count is not None else 0
 
 
 class PreProcessingRuleItem(TypedDict):
@@ -212,33 +236,33 @@ class Dataset(Base):
     is_multimodal = mapped_column(sa.Boolean, default=False, nullable=False, server_default=db.text("false"))
 
     @property
-    def total_documents(self):
-        return db.session.scalar(select(func.count(Document.id)).where(Document.dataset_id == self.id)) or 0
+    def total_documents(self) -> int:
+        return _legacy_count(select(func.count(Document.id)).where(Document.dataset_id == self.id))
 
     @property
-    def total_available_documents(self):
-        return (
-            db.session.scalar(
-                select(func.count(Document.id)).where(
-                    Document.dataset_id == self.id,
-                    Document.indexing_status == "completed",
-                    Document.enabled == True,
-                    Document.archived == False,
-                )
+    def total_available_documents(self) -> int:
+        return _legacy_count(
+            select(func.count(Document.id)).where(
+                Document.dataset_id == self.id,
+                Document.indexing_status == "completed",
+                Document.enabled.is_(True),
+                Document.archived.is_(False),
             )
-            or 0
         )
 
     @property
-    def dataset_keyword_table(self):
-        return db.session.scalar(select(DatasetKeywordTable).where(DatasetKeywordTable.dataset_id == self.id))
+    def dataset_keyword_table(self) -> DatasetKeywordTable | None:
+        return legacy_scalar_as(
+            select(DatasetKeywordTable).where(DatasetKeywordTable.dataset_id == self.id),
+            DatasetKeywordTable,
+        )
 
     @property
-    def index_struct_dict(self):
+    def index_struct_dict(self) -> dict[str, Any] | None:
         return json.loads(self.index_struct) if self.index_struct else None
 
     @property
-    def external_retrieval_model(self):
+    def external_retrieval_model(self) -> dict[str, Any]:
         default_retrieval_model = {
             "top_k": 2,
             "score_threshold": 0.0,
@@ -246,78 +270,72 @@ class Dataset(Base):
         return self.retrieval_model or default_retrieval_model
 
     @property
-    def created_by_account(self):
-        return db.session.get(Account, self.created_by)
+    def created_by_account(self) -> Account | None:
+        return legacy_get(Account, self.created_by)
+
+    async def aload_created_by_account(self) -> Account | None:
+        return await async_get(Account, self.created_by)
 
     @property
     def author_name(self) -> str | None:
-        account = db.session.get(Account, self.created_by)
+        account = self.created_by_account
         if account:
             return account.name
         return None
 
     @property
-    def latest_process_rule(self):
-        return db.session.scalar(
+    def latest_process_rule(self) -> DatasetProcessRule | None:
+        return legacy_scalar_as(
             select(DatasetProcessRule)
             .where(DatasetProcessRule.dataset_id == self.id)
             .order_by(DatasetProcessRule.created_at.desc())
-            .limit(1)
+            .limit(1),
+            DatasetProcessRule,
         )
 
     @property
-    def app_count(self):
-        return (
-            db.session.scalar(
-                select(func.count(AppDatasetJoin.id)).where(
-                    AppDatasetJoin.dataset_id == self.id, App.id == AppDatasetJoin.app_id
-                )
+    def app_count(self) -> int:
+        return _legacy_count(
+            select(func.count(AppDatasetJoin.id)).where(AppDatasetJoin.dataset_id == self.id, App.id == AppDatasetJoin.app_id)
+        )
+
+    @property
+    def document_count(self) -> int:
+        return _legacy_count(select(func.count(Document.id)).where(Document.dataset_id == self.id))
+
+    @property
+    def available_document_count(self) -> int:
+        return _legacy_count(
+            select(func.count(Document.id)).where(
+                Document.dataset_id == self.id,
+                Document.indexing_status == "completed",
+                Document.enabled.is_(True),
+                Document.archived.is_(False),
             )
-            or 0
         )
 
     @property
-    def document_count(self):
-        return db.session.scalar(select(func.count(Document.id)).where(Document.dataset_id == self.id)) or 0
-
-    @property
-    def available_document_count(self):
-        return (
-            db.session.scalar(
-                select(func.count(Document.id)).where(
-                    Document.dataset_id == self.id,
-                    Document.indexing_status == "completed",
-                    Document.enabled == True,
-                    Document.archived == False,
-                )
+    def available_segment_count(self) -> int:
+        return _legacy_count(
+            select(func.count(DocumentSegment.id)).where(
+                DocumentSegment.dataset_id == self.id,
+                DocumentSegment.status == "completed",
+                DocumentSegment.enabled.is_(True),
             )
-            or 0
         )
 
     @property
-    def available_segment_count(self):
-        return (
-            db.session.scalar(
-                select(func.count(DocumentSegment.id)).where(
-                    DocumentSegment.dataset_id == self.id,
-                    DocumentSegment.status == "completed",
-                    DocumentSegment.enabled == True,
-                )
-            )
-            or 0
-        )
-
-    @property
-    def word_count(self):
-        return db.session.scalar(
+    def word_count(self) -> int:
+        count = legacy_scalar(
             select(func.coalesce(func.sum(Document.word_count), 0)).where(Document.dataset_id == self.id)
         )
+        return int(count) if count is not None else 0
 
     @property
     def doc_form(self) -> str | None:
         if self.chunk_structure:
             return self.chunk_structure
-        document = db.session.scalar(select(Document).where(Document.dataset_id == self.id).limit(1))
+        document = legacy_scalar_as(select(Document).where(Document.dataset_id == self.id).limit(1), Document)
         if document:
             return document.doc_form
         return None
@@ -334,8 +352,8 @@ class Dataset(Base):
         return self.retrieval_model or default_retrieval_model
 
     @property
-    def tags(self):
-        tags = db.session.scalars(
+    def tags(self) -> Sequence[Tag]:
+        tags = legacy_scalars_as(
             select(Tag)
             .join(TagBinding, Tag.id == TagBinding.tag_id)
             .where(
@@ -343,28 +361,44 @@ class Dataset(Base):
                 TagBinding.tenant_id == self.tenant_id,
                 Tag.tenant_id == self.tenant_id,
                 Tag.type == "knowledge",
-            )
-        ).all()
+            ),
+            Tag,
+        )
 
         return tags or []
 
+    async def aload_tags(self) -> list[Tag]:
+        return await async_scalars_as(
+            select(Tag)
+            .join(TagBinding, Tag.id == TagBinding.tag_id)
+            .where(
+                TagBinding.target_id == self.id,
+                TagBinding.tenant_id == self.tenant_id,
+                Tag.tenant_id == self.tenant_id,
+                Tag.type == "knowledge",
+            ),
+            Tag,
+        )
+
     @property
-    def external_knowledge_info(self):
+    def external_knowledge_info(self) -> dict[str, Any] | None:
         if self.provider != "external":
             return None
-        external_knowledge_binding = db.session.scalar(
+        external_knowledge_binding = legacy_scalar_as(
             select(ExternalKnowledgeBindings).where(
                 ExternalKnowledgeBindings.dataset_id == self.id,
                 ExternalKnowledgeBindings.tenant_id == self.tenant_id,
-            )
+            ),
+            ExternalKnowledgeBindings,
         )
         if not external_knowledge_binding:
             return None
-        external_knowledge_api = db.session.scalar(
+        external_knowledge_api = legacy_scalar_as(
             select(ExternalKnowledgeApis).where(
                 ExternalKnowledgeApis.id == external_knowledge_binding.external_knowledge_api_id,
                 ExternalKnowledgeApis.tenant_id == self.tenant_id,
-            )
+            ),
+            ExternalKnowledgeApis,
         )
         if external_knowledge_api is None or external_knowledge_api.settings is None:
             return None
@@ -376,18 +410,19 @@ class Dataset(Base):
         }
 
     @property
-    def is_published(self):
+    def is_published(self) -> bool:
         if self.pipeline_id:
-            pipeline = db.session.scalar(select(Pipeline).where(Pipeline.id == self.pipeline_id))
+            pipeline = legacy_scalar_as(select(Pipeline).where(Pipeline.id == self.pipeline_id), Pipeline)
             if pipeline:
                 return pipeline.is_published
         return False
 
     @property
-    def doc_metadata(self):
-        dataset_metadatas = db.session.scalars(
-            select(DatasetMetadata).where(DatasetMetadata.dataset_id == self.id)
-        ).all()
+    def doc_metadata(self) -> list[dict[str, str]]:
+        dataset_metadatas = legacy_scalars_as(
+            select(DatasetMetadata).where(DatasetMetadata.dataset_id == self.id),
+            DatasetMetadata,
+        )
 
         doc_metadata = [
             {

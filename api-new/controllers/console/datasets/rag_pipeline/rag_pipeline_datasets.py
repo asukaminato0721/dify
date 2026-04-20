@@ -1,6 +1,5 @@
 from flask_restx import Resource, marshal
 from pydantic import BaseModel
-from sqlalchemy.orm import sessionmaker
 from werkzeug.exceptions import Forbidden
 
 import services
@@ -12,6 +11,7 @@ from controllers.console.wraps import (
     cloud_edition_billing_rate_limit_check,
     setup_required,
 )
+from core.db.session_factory import session_factory
 from extensions.ext_database import db
 from fields.dataset_fields import dataset_detail_fields
 from libs.login import current_account_with_tenant, login_required
@@ -54,7 +54,7 @@ class CreateRagPipelineDatasetApi(Resource):
             yaml_content=payload.yaml_content,
         )
         try:
-            with sessionmaker(db.engine).begin() as session:
+            with session_factory.get_session_maker().begin() as session:
                 rag_pipeline_dsl_service = RagPipelineDslService(session)
                 import_info = rag_pipeline_dsl_service.create_rag_pipeline_dataset(
                     tenant_id=current_tenant_id,
