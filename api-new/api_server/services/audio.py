@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 from collections.abc import Iterable
 from typing import cast
@@ -29,7 +30,11 @@ _AUDIO_MIME_TYPES = {f"audio/{ext.lower()}" for ext in AUDIO_EXTENSIONS} | {"aud
 
 
 class PublicAudioService:
-    """Execute public STT/TTS requests using the active FastAPI webapp context."""
+    """Execute public STT/TTS requests using the active FastAPI webapp context.
+
+    Model lookup and model-runtime invocation are still sync in the shared
+    model stack, so the FastAPI surface must offload them from the event loop.
+    """
 
     @staticmethod
     def _get_speech_to_text_feature(*, context: WebappContext) -> dict[str, object]:
@@ -40,7 +45,10 @@ class PublicAudioService:
 
         if context.app_model_config is None:
             raise bad_request("speech_to_text_disabled", "Speech to text is not enabled.")
-        return cast(dict[str, object], context.app_model_config.to_feature_dict().get("speech_to_text", {"enabled": False}))
+        return cast(
+            dict[str, object],
+            context.app_model_config.to_feature_dict().get("speech_to_text", {"enabled": False}),
+        )
 
     @staticmethod
     def _get_text_to_speech_feature(*, context: WebappContext) -> dict[str, object]:
@@ -51,11 +59,47 @@ class PublicAudioService:
 
         if context.app_model_config is None:
             raise bad_request("text_to_speech_disabled", "Text to speech is not enabled.")
-        return cast(dict[str, object], context.app_model_config.to_feature_dict().get("text_to_speech", {"enabled": False}))
+        return cast(
+            dict[str, object],
+            context.app_model_config.to_feature_dict().get("text_to_speech", {"enabled": False}),
+        )
 
     @classmethod
     def _get_model_manager(cls, *, context: WebappContext) -> ModelManager:
         return ModelManager.for_tenant(tenant_id=context.app.tenant_id, user_id=context.end_user.id)
+
+    @classmethod
+    async def _get_default_model_instance(
+        cls,
+        *,
+        context: WebappContext,
+        model_type: ModelType,
+    ):
+        return await asyncio.to_thread(
+            cls._get_model_manager(context=context).get_default_model_instance,
+            context.app.tenant_id,
+            model_type,
+        )
+
+    @staticmethod
+    async def _invoke_speech_to_text(*, model_instance: object, filename: str, content: bytes) -> str:
+        buffer = io.BytesIO(content)
+        buffer.name = filename
+        return await asyncio.to_thread(model_instance.invoke_speech2text, file=buffer)
+
+    @staticmethod
+    async def _resolve_tts_voice(*, model_instance: object) -> str | None:
+        voices = await asyncio.to_thread(model_instance.get_tts_voices)
+        if not voices:
+            return None
+        return cast(str | None, voices[0].get("value"))
+
+    @staticmethod
+    async def _invoke_tts(*, model_instance: object, text: str, voice: str) -> bytes | Iterable[bytes]:
+        result = await asyncio.to_thread(model_instance.invoke_tts, content_text=text, voice=voice)
+        if isinstance(result, (bytes, bytearray)):
+            return bytes(result)
+        return cast(Iterable[bytes], result)
 
     @classmethod
     async def transcribe_audio(
@@ -76,16 +120,19 @@ class PublicAudioService:
         if len(content) > FILE_SIZE_LIMIT:
             raise AudioTooLargeServiceError(f"Audio size larger than {FILE_SIZE_MB} mb")
 
-        model_instance = cls._get_model_manager(context=context).get_default_model_instance(
-            tenant_id=context.app.tenant_id,
+        model_instance = await cls._get_default_model_instance(
+            context=context,
             model_type=ModelType.SPEECH2TEXT,
         )
         if model_instance is None:
             raise ProviderNotSupportSpeechToTextServiceError()
 
-        buffer = io.BytesIO(content)
-        buffer.name = filename
-        return {"text": model_instance.invoke_speech2text(file=buffer)}
+        text = await cls._invoke_speech_to_text(
+            model_instance=model_instance,
+            filename=filename,
+            content=content,
+        )
+        return {"text": text}
 
     @classmethod
     async def synthesize_audio(
@@ -116,22 +163,16 @@ class PublicAudioService:
         if resolved_text is None:
             raise bad_request("text_required", "Text is required.")
 
-        model_instance = cls._get_model_manager(context=context).get_default_model_instance(
-            tenant_id=context.app.tenant_id,
+        model_instance = await cls._get_default_model_instance(
+            context=context,
             model_type=ModelType.TTS,
         )
         if model_instance is None:
             raise ProviderNotSupportTextToSpeechServiceError()
 
         if not resolved_voice:
-            voices = model_instance.get_tts_voices()
-            if not voices:
-                raise bad_request("tts_voice_unavailable", "Sorry, no voice available.")
-            resolved_voice = cast(str | None, voices[0].get("value"))
+            resolved_voice = await cls._resolve_tts_voice(model_instance=model_instance)
             if not resolved_voice:
                 raise bad_request("tts_voice_unavailable", "Sorry, no voice available.")
 
-        result = model_instance.invoke_tts(content_text=resolved_text.strip(), voice=resolved_voice)
-        if isinstance(result, (bytes, bytearray)):
-            return bytes(result)
-        return result
+        return await cls._invoke_tts(model_instance=model_instance, text=resolved_text.strip(), voice=resolved_voice)

@@ -274,7 +274,7 @@ async def get_webapp_access_mode(
     if not resolved_app_id:
         return AppAccessModeResponse(accessMode="public")
 
-    access_mode = EnterpriseService.WebAppAuth.get_app_access_mode_by_id(resolved_app_id)
+    access_mode = await EnterpriseService.WebAppAuth.aget_app_access_mode_by_id(resolved_app_id)
     return AppAccessModeResponse(accessMode=access_mode.access_mode)
 
 
@@ -290,7 +290,7 @@ async def get_webapp_permission(
     if not bool(getattr(dify_config, "ENTERPRISE_ENABLED", False)):
         return AppPermissionResponse(result=True)
 
-    access_mode = EnterpriseService.WebAppAuth.get_app_access_mode_by_id(app_id)
+    access_mode = await EnterpriseService.WebAppAuth.aget_app_access_mode_by_id(app_id)
     if access_mode.access_mode not in {"private", "private_all"}:
         return AppPermissionResponse(result=True)
 
@@ -305,7 +305,7 @@ async def get_webapp_permission(
         raise unauthorized("invalid_passport", "Invalid token.")
 
     user_id = str(decoded.get("user_id", "visitor"))
-    result = EnterpriseService.WebAppAuth.is_user_allowed_to_access_webapp(user_id, app_id)
+    result = await EnterpriseService.WebAppAuth.ais_user_allowed_to_access_webapp(user_id, app_id)
     return AppPermissionResponse(result=result)
 
 

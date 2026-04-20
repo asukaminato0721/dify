@@ -4,7 +4,7 @@ import json
 import urllib.parse
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, NotRequired, TypedDict
+from typing import Annotated, Any, NotRequired, TypedDict
 
 import httpx
 from fastapi import APIRouter, Query, Request
@@ -278,7 +278,9 @@ async def get_meta(request: Request) -> ToolIconMapDict:
             if provider_type == "builtin":
                 meta["tool_icons"][tool_name] = url_prefix + provider_id + "/icon"
             elif provider_type == "api":
-                provider = await session.scalar(select(ApiToolProvider).where(ApiToolProvider.id == provider_id).limit(1))
+                provider = await session.scalar(
+                    select(ApiToolProvider).where(ApiToolProvider.id == provider_id).limit(1)
+                )
                 if provider is None:
                     meta["tool_icons"][tool_name] = {"background": "#252525", "content": "\ud83d\ude01"}
                 else:
@@ -333,7 +335,7 @@ async def upload_remote_file(
 @router.post("/api/files/upload")
 async def upload_file(
     request: Request,
-    file: FastAPIUploadFile = FastAPIFile(...),
+    file: Annotated[FastAPIUploadFile, FastAPIFile(...)],
 ) -> FileUploadResponseDict:
     context = await WebappContextService.resolve(request)
     content = await file.read()
@@ -367,7 +369,9 @@ async def get_passport(
     enterprise_payload = _decode_webapp_access_token(access_token) if access_token else None
 
     if bool(getattr(dify_config, "ENTERPRISE_ENABLED", False)):
-        access_mode = EnterpriseService.WebAppAuth.get_app_access_mode_by_id(await AppLookupService.get_app_id_by_code(app_code))
+        access_mode = await EnterpriseService.WebAppAuth.aget_app_access_mode_by_id(
+            await AppLookupService.get_app_id_by_code(app_code)
+        )
         if access_mode.access_mode != "public":
             if enterprise_payload is None:
                 raise unauthorized("web_sso_auth_required", "Web app authentication required.")
@@ -389,7 +393,7 @@ async def get_login_status(
     access_mode = "public"
     if bool(getattr(dify_config, "ENTERPRISE_ENABLED", False)):
         app_id = await AppLookupService.get_app_id_by_code(app_code)
-        access_mode = EnterpriseService.WebAppAuth.get_app_access_mode_by_id(app_id).access_mode
+        access_mode = (await EnterpriseService.WebAppAuth.aget_app_access_mode_by_id(app_id)).access_mode
 
     user_logged_in = access_mode == "public"
     if not user_logged_in and token:
@@ -624,7 +628,9 @@ async def _issue_authenticated_passport(
 async def _generate_session_id(session) -> str:
     while True:
         session_id = str(uuid.uuid4())
-        existing_count = await session.scalar(select(func.count()).select_from(EndUser).where(EndUser.session_id == session_id))
+        existing_count = await session.scalar(
+            select(func.count()).select_from(EndUser).where(EndUser.session_id == session_id)
+        )
         if int(existing_count or 0) == 0:
             return session_id
 

@@ -40,6 +40,48 @@ class BaseRequest:
         return mounts or None
 
     @classmethod
+    def _build_async_mounts(cls) -> dict[str, httpx.AsyncBaseTransport] | None:
+        if not cls.proxies:
+            return None
+
+        mounts: dict[str, httpx.AsyncBaseTransport] = {}
+        for scheme, value in cls.proxies.items():
+            if not value:
+                continue
+            key = f"{scheme}://" if not scheme.endswith("://") else scheme
+            mounts[key] = httpx.AsyncHTTPTransport(proxy=value)
+        return mounts or None
+
+    @classmethod
+    def _build_request_headers(cls) -> dict[str, str]:
+        headers = {"Content-Type": "application/json", cls.secret_key_header: cls.secret_key}
+        try:
+            traceparent = generate_traceparent_header()
+            if traceparent:
+                headers["traceparent"] = traceparent
+        except Exception:
+            logger.debug("Failed to generate traceparent header", exc_info=True)
+        return headers
+
+    @classmethod
+    def _build_request_kwargs(
+        cls,
+        *,
+        json: Any | None,
+        params: Mapping[str, Any] | None,
+        headers: Mapping[str, str],
+        timeout: float | httpx.Timeout | None,
+    ) -> dict[str, Any]:
+        request_kwargs: dict[str, Any] = {"json": json, "params": params, "headers": dict(headers)}
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
+        return request_kwargs
+
+    @staticmethod
+    def _parse_success_response(response: httpx.Response) -> Any:
+        return response.json()
+
+    @classmethod
     def send_request(
         cls,
         method: str,
@@ -50,32 +92,50 @@ class BaseRequest:
         timeout: float | httpx.Timeout | None = None,
         raise_for_status: bool = False,
     ) -> Any:
-        headers = {"Content-Type": "application/json", cls.secret_key_header: cls.secret_key}
+        headers = cls._build_request_headers()
         url = f"{cls.base_url}{endpoint}"
         mounts = cls._build_mounts()
 
-        try:
-            # ensure traceparent even when OTEL is disabled
-            traceparent = generate_traceparent_header()
-            if traceparent:
-                headers["traceparent"] = traceparent
-        except Exception:
-            logger.debug("Failed to generate traceparent header", exc_info=True)
-
         with httpx.Client(mounts=mounts) as client:
-            # IMPORTANT:
-            # - In httpx, passing timeout=None disables timeouts (infinite) and overrides the library default.
-            # - To preserve httpx's default timeout behavior for existing call sites, only pass the kwarg when set.
-            request_kwargs: dict[str, Any] = {"json": json, "params": params, "headers": headers}
-            if timeout is not None:
-                request_kwargs["timeout"] = timeout
-
+            request_kwargs = cls._build_request_kwargs(
+                json=json,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+            )
             response = client.request(method, url, **request_kwargs)
 
-            # Validate HTTP status and raise domain-specific errors
             if not response.is_success:
                 cls._handle_error_response(response)
-        return response.json()
+        return cls._parse_success_response(response)
+
+    @classmethod
+    async def send_request_async(
+        cls,
+        method: str,
+        endpoint: str,
+        json: Any | None = None,
+        params: Mapping[str, Any] | None = None,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        raise_for_status: bool = False,
+    ) -> Any:
+        del raise_for_status
+        headers = cls._build_request_headers()
+        url = f"{cls.base_url}{endpoint}"
+        mounts = cls._build_async_mounts()
+
+        async with httpx.AsyncClient(mounts=mounts) as client:
+            request_kwargs = cls._build_request_kwargs(
+                json=json,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+            )
+            response = await client.request(method, url, **request_kwargs)
+            if not response.is_success:
+                cls._handle_error_response(response)
+        return cls._parse_success_response(response)
 
     @classmethod
     def _handle_error_response(cls, response: httpx.Response) -> None:

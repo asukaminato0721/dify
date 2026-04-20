@@ -167,6 +167,22 @@ class EnterpriseService:
 
     class WebAppAuth:
         @classmethod
+        async def ais_user_allowed_to_access_webapp(cls, user_id: str, app_id: str) -> bool:
+            params = {"userId": user_id, "appId": app_id}
+            data = await EnterpriseRequest.send_request_async("GET", "/webapp/permission", params=params)
+            return data.get("result", False)
+
+        @classmethod
+        async def aget_app_access_mode_by_id(cls, app_id: str) -> WebAppSettings:
+            if not app_id:
+                raise ValueError("app_id must be provided.")
+            params = {"appId": app_id}
+            data = await EnterpriseRequest.send_request_async("GET", "/webapp/access-mode/id", params=params)
+            if not data:
+                raise ValueError("No data found.")
+            return WebAppSettings.model_validate(data)
+
+        @classmethod
         def is_user_allowed_to_access_webapp(cls, user_id: str, app_id: str):
             params = {"userId": user_id, "appId": app_id}
             data = EnterpriseRequest.send_request("GET", "/webapp/permission", params=params)

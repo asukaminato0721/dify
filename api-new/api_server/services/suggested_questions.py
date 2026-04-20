@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import select
 
 from api_server.errors import bad_request, not_found
@@ -43,6 +45,33 @@ class SuggestedQuestionsService:
             lines.append(f"Assistant: {message.answer}")
         return "\n".join(lines)
 
+    @staticmethod
+    async def _get_default_llm_instance(*, tenant_id: str):
+        return await asyncio.to_thread(
+            ModelManager.for_tenant(tenant_id=tenant_id).get_default_model_instance,
+            tenant_id,
+            ModelType.LLM,
+        )
+
+    @staticmethod
+    async def _get_configured_llm_instance(*, tenant_id: str, provider: str, model_name: str):
+        return await asyncio.to_thread(
+            ModelManager.for_tenant(tenant_id=tenant_id).get_model_instance,
+            tenant_id,
+            provider,
+            ModelType.LLM,
+            model_name,
+        )
+
+    @staticmethod
+    async def _generate_questions(*, tenant_id: str, histories: str) -> list[str]:
+        questions = await asyncio.to_thread(
+            LLMGenerator.generate_suggested_questions_after_answer,
+            tenant_id,
+            histories,
+        )
+        return list(questions)
+
     @classmethod
     async def get_suggested_questions(cls, *, context: WebappContext, message_id: str) -> list[str]:
         async with db.session_context() as session:
@@ -75,7 +104,10 @@ class SuggestedQuestionsService:
 
             message_rows = (
                 await session.scalars(
-                    select(Message).where(Message.conversation_id == conversation.id).order_by(Message.created_at.desc()).limit(10)
+                    select(Message)
+                    .where(Message.conversation_id == conversation.id)
+                    .order_by(Message.created_at.desc())
+                    .limit(10)
                 )
             ).all()
 
@@ -96,9 +128,8 @@ class SuggestedQuestionsService:
                     "suggested_questions_after_answer_disabled",
                     "Suggested questions after answer is disabled.",
                 )
-            model_instance = ModelManager.for_tenant(tenant_id=context.app.tenant_id).get_default_model_instance(
+            model_instance = await cls._get_default_llm_instance(
                 tenant_id=context.app.tenant_id,
-                model_type=ModelType.LLM,
             )
         else:
             if app_model_config is None:
@@ -115,18 +146,13 @@ class SuggestedQuestionsService:
             model_name = model_dict.get("name")
             if not provider or not model_name:
                 raise bad_request("app_unavailable", "App unavailable, please check your app configurations.")
-            model_instance = ModelManager.for_tenant(tenant_id=context.app.tenant_id).get_model_instance(
+            model_instance = await cls._get_configured_llm_instance(
                 tenant_id=context.app.tenant_id,
                 provider=provider,
-                model_type=ModelType.LLM,
-                model=model_name,
+                model_name=model_name,
             )
 
         thread_messages = cls._extract_thread_messages(list(message_rows))
         histories = cls._format_histories(thread_messages[-3:])
-        return list(
-            LLMGenerator.generate_suggested_questions_after_answer(
-                tenant_id=context.app.tenant_id,
-                histories=histories,
-            )
-        )
+        _ = model_instance
+        return await cls._generate_questions(tenant_id=context.app.tenant_id, histories=histories)
