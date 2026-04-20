@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -23,6 +23,7 @@ from api_server.services.generation import (
     _get_legacy_sync_session_maker,
     _prepare_native_public_agent_chat,
     _prefetch_agent_chat_memory_async,
+    _run_advanced_chat_runner,
     _save_workflow_app_log_async,
     _save_message_result,
 )
@@ -250,6 +251,43 @@ async def test_save_workflow_app_log_async_persists_async_log_row() -> None:
     assert getattr(workflow_app_log, "created_by") == "end-user-1"
     assert session.flush_calls == 1
     assert session.commit_calls == 1
+
+
+def test_run_advanced_chat_runner_uses_async_runner_path() -> None:
+    class _RunnerStub:
+        def __init__(self) -> None:
+            self.run_called = False
+            self.run_async_called = False
+
+        def run(self) -> None:
+            self.run_called = True
+            raise AssertionError("sync runner path should not be used")
+
+        async def run_async(self):
+            self.run_async_called = True
+            yield object()
+
+    runner_stub = _RunnerStub()
+    queue_manager = SimpleNamespace(publish_error=MagicMock())
+
+    with patch("api_server.services.generation.AdvancedChatAppRunner", return_value=runner_stub):
+        _run_advanced_chat_runner(
+            application_generate_entity=cast(Any, SimpleNamespace(task_id="task-1")),
+            workflow=cast(Any, SimpleNamespace(created_by="owner")),
+            app_model=cast(Any, SimpleNamespace()),
+            end_user=cast(Any, SimpleNamespace(session_id="session-1")),
+            conversation=cast(Any, SimpleNamespace()),
+            message=cast(Any, SimpleNamespace()),
+            dialogue_count=0,
+            queue_manager=cast(Any, queue_manager),
+            workflow_execution_repository=cast(Any, object()),
+            workflow_node_execution_repository=cast(Any, object()),
+            pause_state_config=cast(Any, SimpleNamespace(session_factory=object(), state_owner_user_id="owner")),
+        )
+
+    assert runner_stub.run_async_called is True
+    assert runner_stub.run_called is False
+    queue_manager.publish_error.assert_not_called()
 
 
 async def test_prefetch_agent_chat_memory_attaches_message_end_file_cache() -> None:

@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any, cast
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from api_server.models.app import (
@@ -267,7 +268,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         workflow_entry.graph_engine.layer(persistence_layer)
         conversation_variable_layer = ConversationVariablePersistenceLayer(
-            ConversationVariableUpdater(session_factory.get_sync_session_maker())
+            ConversationVariableUpdater(session_factory.get_session_maker())
         )
         workflow_entry.graph_engine.layer(conversation_variable_layer)
         for layer in self._graph_engine_layers:
@@ -354,7 +355,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
             ):
                 return
 
-            conversation_variables = self._initialize_conversation_variables()
+            conversation_variables = await self._ainitialize_conversation_variables()
 
             variable_pool = VariablePool()
             add_variables_to_pool(
@@ -569,6 +570,20 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
             return cast(list[Variable], conversation_variables)
 
+    async def _ainitialize_conversation_variables(self) -> list[Variable]:
+        """Async variant of conversation-variable initialization for FastAPI runtime paths."""
+
+        async with session_factory.get_session_maker().begin() as session:
+            existing_variables = await self._aload_existing_conversation_variables(session)
+
+            if not existing_variables:
+                existing_variables = await self._acreate_all_conversation_variables(session)
+            else:
+                existing_variables = await self._async_missing_conversation_variables(session, existing_variables)
+
+            conversation_variables = [var.to_variable() for var in existing_variables]
+            return cast(list[Variable], conversation_variables)
+
     def _load_existing_conversation_variables(
         self, session: Session
     ) -> list[ConversationVariable | FastAPIConversationVariable]:
@@ -583,6 +598,16 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
             FastAPIConversationVariable.conversation_id == self.conversation.id,
         )
         return list(session.scalars(stmt).all())
+
+    async def _aload_existing_conversation_variables(
+        self,
+        session: AsyncSession,
+    ) -> list[FastAPIConversationVariable]:
+        stmt = select(FastAPIConversationVariable).where(
+            FastAPIConversationVariable.app_id == self.conversation.app_id,
+            FastAPIConversationVariable.conversation_id == self.conversation.id,
+        )
+        return list((await session.scalars(stmt)).all())
 
     def _create_all_conversation_variables(self, session: Session) -> list[FastAPIConversationVariable]:
         """
@@ -600,6 +625,22 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         if new_variables:
             session.add_all(new_variables)
+
+        return new_variables
+
+    async def _acreate_all_conversation_variables(self, session: AsyncSession) -> list[FastAPIConversationVariable]:
+        new_variables = [
+            FastAPIConversationVariable.from_variable(
+                app_id=self.conversation.app_id,
+                conversation_id=self.conversation.id,
+                variable=variable,
+            )
+            for variable in self._resolve_conversation_variables(self._workflow)
+        ]
+
+        if new_variables:
+            session.add_all(new_variables)
+            await session.flush()
 
         return new_variables
 
@@ -641,4 +682,30 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         session.add_all(new_variables)
 
         # Return combined list
+        return existing_variables + new_variables
+
+    async def _async_missing_conversation_variables(
+        self,
+        session: AsyncSession,
+        existing_variables: list[FastAPIConversationVariable],
+    ) -> list[FastAPIConversationVariable]:
+        existing_ids = {var.id for var in existing_variables}
+        workflow_variables = {var.id: var for var in self._resolve_conversation_variables(self._workflow)}
+
+        missing_ids = set(workflow_variables.keys()) - existing_ids
+
+        if not missing_ids:
+            return existing_variables
+
+        new_variables = [
+            FastAPIConversationVariable.from_variable(
+                app_id=self.conversation.app_id,
+                conversation_id=self.conversation.id,
+                variable=workflow_variables[var_id],
+            )
+            for var_id in missing_ids
+        ]
+
+        session.add_all(new_variables)
+        await session.flush()
         return existing_variables + new_variables

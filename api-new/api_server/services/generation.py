@@ -58,6 +58,7 @@ from core.app.apps.advanced_chat.app_config_manager import AdvancedChatAppConfig
 from core.app.apps.advanced_chat.app_runner import AdvancedChatAppRunner
 from core.app.apps.advanced_chat.generate_response_converter import AdvancedChatAppGenerateResponseConverter
 from core.app.apps.advanced_chat.generate_task_pipeline import (
+    AdvancedChatMessagePersistence,
     AdvancedChatAppGenerateTaskPipeline,
     ConversationSnapshot,
     MessageSnapshot,
@@ -1006,7 +1007,7 @@ def _run_advanced_chat_runner(
     )
 
     try:
-        runner.run()
+        asyncio.run(_drain_advanced_chat_runner_async(runner))
     except GenerateTaskStoppedError:
         return
     except InvokeAuthorizationError:
@@ -1021,6 +1022,13 @@ def _run_advanced_chat_runner(
         queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
     except Exception as exc:
         queue_manager.publish_error(exc, PublishFrom.APPLICATION_MANAGER)
+
+
+async def _drain_advanced_chat_runner_async(runner: AdvancedChatAppRunner) -> None:
+    """Consume the async advanced-chat runner inside a worker thread."""
+
+    async for _ in runner.run_async():
+        continue
 
 
 def _run_agent_chat_runner(
@@ -1128,6 +1136,7 @@ def _start_native_public_advanced_chat(
         dialogue_count=dialogue_count,
         stream=streaming,
         draft_var_saver_factory=BaseAppGenerator._get_draft_var_saver_factory(InvokeFrom.WEB_APP, end_user),
+        message_persistence=AdvancedChatMessagePersistence(configured_sync_session_factory.get_session_maker()),
     ).process()
     converted = AdvancedChatAppGenerateResponseConverter.convert(response=response, invoke_from=InvokeFrom.WEB_APP)
     return cast(Mapping[str, Any] | Iterator[str], BaseAppGenerator.convert_to_event_stream(converted))
