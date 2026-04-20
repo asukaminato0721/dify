@@ -332,6 +332,124 @@ async def test_mcp_request_route_returns_jsonrpc_payload() -> None:
     handler_mock.assert_called_once()
 
 
+async def test_trigger_plugin_route_rejects_invalid_uuid() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/triggers/plugin/not-a-uuid")
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "Invalid endpoint ID"}
+
+
+async def test_trigger_plugin_route_uses_trigger_service() -> None:
+    endpoint_id = str(uuid4())
+
+    class _ResponseStub:
+        status_code = 200
+        mimetype = "application/json"
+        headers = {}
+
+        @staticmethod
+        def get_data():
+            return b'{"ok":true}'
+
+    trigger_service = type("TriggerServiceStub", (), {"process_endpoint": object()})()
+    builder_service = type("BuilderServiceStub", (), {"process_builder_validation_endpoint": object()})()
+
+    with patch(
+        "api_server.routes.trigger._build_flask_request",
+        new=AsyncMock(return_value=object()),
+    ), patch(
+        "api_server.routes.trigger._get_trigger_services",
+        return_value=(trigger_service, builder_service),
+    ), patch(
+        "api_server.routes.trigger.asyncio.to_thread",
+        new=AsyncMock(return_value=_ResponseStub()),
+    ) as trigger_mock:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(f"/triggers/plugin/{endpoint_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    trigger_mock.assert_awaited()
+
+
+async def test_trigger_webhook_route_returns_json_payload() -> None:
+    webhook_trigger = type(
+        "WebhookTriggerStub",
+        (),
+        {"tenant_id": "tenant-1", "app_id": "app-1", "node_id": "node-1", "webhook_id": "webhook-1"},
+    )()
+    webhook_service = type(
+        "WebhookServiceStub",
+        (),
+        {
+            "trigger_workflow_execution": object(),
+            "generate_webhook_response": object(),
+        },
+    )()
+
+    with (
+        patch("api_server.routes.trigger._build_flask_request", new=AsyncMock(return_value=object())),
+        patch("api_server.routes.trigger._get_webhook_service", return_value=webhook_service),
+        patch(
+            "api_server.routes.trigger.asyncio.to_thread",
+            new=AsyncMock(
+                side_effect=[
+                    (webhook_trigger, object(), {"data": {}}, {"method": "POST"}, None),
+                    None,
+                    ({"result": "success"}, 200),
+                ]
+            ),
+        ) as to_thread_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(f"/triggers/webhook/{uuid4()}", json={"hello": "world"})
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    assert to_thread_mock.await_count == 3
+
+
+async def test_trigger_webhook_debug_route_returns_conflict_without_listener() -> None:
+    webhook_trigger = type(
+        "WebhookTriggerStub",
+        (),
+        {
+            "tenant_id": "tenant-1",
+            "app_id": "app-1",
+            "node_id": "node-1",
+            "webhook_id": "webhook-1",
+            "webhook_url": "https://example.com/webhook",
+        },
+    )()
+    webhook_service = type("WebhookServiceStub", (), {"build_workflow_inputs": object()})()
+    debug_helpers = (
+        type("BusStub", (), {"dispatch": staticmethod(lambda **kwargs: 0)}),
+        type("WebhookDebugEventStub", (), {"__init__": lambda self, **kwargs: None}),
+        lambda *, tenant_id, app_id, node_id: "pool-key",
+    )
+
+    with (
+        patch("api_server.routes.trigger._build_flask_request", new=AsyncMock(return_value=object())),
+        patch("api_server.routes.trigger._get_webhook_service", return_value=webhook_service),
+        patch("api_server.routes.trigger._get_trigger_debug_helpers", return_value=debug_helpers),
+        patch(
+            "api_server.routes.trigger.asyncio.to_thread",
+            new=AsyncMock(
+                side_effect=[
+                    (webhook_trigger, object(), {"data": {}}, {"method": "POST"}, None),
+                    {"ok": True},
+                ]
+            ),
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(f"/triggers/webhook-debug/{uuid4()}", json={"hello": "world"})
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "No active debug listener"
+
+
 async def test_finished_workflow_events_return_sse_payload() -> None:
     context = WebappContext(
         app=type("AppStub", (), {"mode": AppMode.WORKFLOW, "id": "app-1"})(),

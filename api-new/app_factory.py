@@ -20,6 +20,7 @@ from api_server.routes.human_input_form import router as human_input_form_router
 from api_server.routes.mcp import router as mcp_router
 from api_server.routes.service_api import router as service_api_router
 from api_server.routes.task_control import router as task_control_router
+from api_server.routes.trigger import router as trigger_router
 from api_server.routes.webapp import router as webapp_router
 from api_server.routes.workflow_events import router as workflow_events_router
 from configs import dify_config
@@ -73,6 +74,7 @@ def create_app() -> DifyApp:
     app.include_router(human_input_form_router)
     app.include_router(mcp_router)
     app.include_router(service_api_router)
+    app.include_router(trigger_router)
     app.include_router(webapp_router)
     app.include_router(workflow_events_router)
 

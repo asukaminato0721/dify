@@ -19,3 +19,4 @@ api_server/routes/files.py | done: FastAPI now covers signed tool-file downloads
 api_server/routes/service_api.py + dataset/rag helpers | done: FastAPI now covers the remaining `/v1` dataset document-status, segment, hit-testing, and RAG pipeline endpoints through async wrappers around the legacy service layer
 api_server/services/generation.py + shared chat/completion generators | done: FastAPI completion, chat, and more-like-this now route through the shared generator/runtime path, unlocking file inputs and shared dataset/external-tool behavior on the active FastAPI surface
 api_server/routes/mcp.py | done: FastAPI now serves the MCP JSON-RPC endpoint for app MCP servers without relying on the legacy Flask MCP controller
+api_server/routes/trigger.py | done: FastAPI now serves the plugin trigger and webhook trigger entrypoints through a Flask-request adapter instead of relying on the legacy Flask trigger controllers
