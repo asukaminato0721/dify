@@ -149,6 +149,85 @@ async def test_file_upload_requires_passport() -> None:
     assert response.json()["code"] == "missing_passport"
 
 
+async def test_tool_file_route_rejects_invalid_signature() -> None:
+    file_id = str(uuid4())
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get(
+            f"/files/tools/{file_id}.png",
+            params={"timestamp": "1", "nonce": "nonce", "sign": "bad"},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "invalid_request"
+
+
+async def test_tool_file_route_streams_signed_file() -> None:
+    file_id = str(uuid4())
+    graph_file = type("GraphFileStub", (), {"filename": "tool.png", "mime_type": "image/png", "size": 3})()
+
+    with (
+        patch("api_server.routes.files.verify_tool_file_signature", return_value=True),
+        patch(
+            "api_server.routes.files.ToolFileManager.get_file_generator_by_tool_file_id",
+            return_value=(iter([b"abc"]), graph_file),
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/files/tools/{file_id}.png",
+                params={"timestamp": "1", "nonce": "nonce", "sign": "good"},
+            )
+
+    assert response.status_code == 200
+    assert response.content == b"abc"
+    assert response.headers["content-length"] == "3"
+
+
+async def test_plugin_upload_route_creates_tool_file() -> None:
+    user = type("UserStub", (), {"id": "end-user-1"})()
+    tool_file = type(
+        "ToolFileStub",
+        (),
+        {
+            "id": "tool-file-1",
+            "name": "plugin.png",
+            "size": 4,
+            "mimetype": "image/png",
+            "original_url": None,
+            "user_id": "end-user-1",
+            "tenant_id": "tenant-1",
+            "conversation_id": None,
+            "file_key": "tools/tenant-1/plugin.png",
+        },
+    )()
+
+    with (
+        patch("api_server.routes.files._get_or_create_plugin_user", new=AsyncMock(return_value=user)),
+        patch("api_server.routes.files.verify_plugin_file_signature", return_value=True),
+        patch("api_server.routes.files.ToolFileManager.create_file_by_raw", return_value=tool_file),
+        patch("api_server.routes.files.ToolFileManager.sign_file", return_value="/files/tools/tool-file-1.png"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/files/upload/for-plugin",
+                params={
+                    "timestamp": "1",
+                    "nonce": "nonce",
+                    "sign": "good",
+                    "tenant_id": "tenant-1",
+                    "user_id": "end-user-1",
+                },
+                files={"file": ("plugin.png", b"data", "image/png")},
+            )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["id"] == "tool-file-1"
+    assert payload["preview_url"] == "/files/tools/tool-file-1.png"
+    assert payload["mime_type"] == "image/png"
+
+
 async def test_conversation_list_requires_passport() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         response = await client.get("/api/conversations")
