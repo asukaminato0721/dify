@@ -22,3 +22,4 @@ api_server/routes/mcp.py | done: FastAPI now serves the MCP JSON-RPC endpoint fo
 api_server/routes/trigger.py | done: FastAPI now serves the plugin trigger and webhook trigger entrypoints through a Flask-request adapter instead of relying on the legacy Flask trigger controllers
 api_server/routes/inner_api.py | done: FastAPI now serves the smaller inner admin API subset (enterprise/billing mail, enterprise workspace creation, DSL import/export) without relying on the legacy Flask inner controllers
 api_server/routes/inner_api_plugin.py | done: FastAPI now serves the plugin-facing inner API endpoints (JSON and length-prefixed streaming) without relying on the legacy Flask inner plugin controllers
+api_server/routes/console_misc.py | done: FastAPI now serves the first authenticated console endpoints (`/console/api/features` and `/console/api/spec/schema-definitions`) with a lightweight console auth/setup dependency

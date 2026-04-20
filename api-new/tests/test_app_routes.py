@@ -591,6 +591,38 @@ async def test_inner_plugin_llm_route_returns_streaming_response() -> None:
     assert response.headers["content-type"].startswith("text/event-stream")
 
 
+async def test_console_features_route_uses_fastapi_auth_helper() -> None:
+    payload = {"billing": {"enabled": False}}
+    account = type("AccountStub", (), {"current_tenant_id": "tenant-1"})()
+
+    with (
+        patch("api_server.routes.console_misc._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_misc._resolve_console_account", new=AsyncMock(return_value=account)),
+        patch("api_server.routes.console_misc.asyncio.to_thread", new=AsyncMock(return_value=payload)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get("/console/api/features")
+
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
+async def test_console_schema_definitions_route_uses_fastapi_auth_helper() -> None:
+    payload = [{"name": "schema-1", "schema": {"type": "object"}}]
+    account = type("AccountStub", (), {"current_tenant_id": "tenant-1"})()
+
+    with (
+        patch("api_server.routes.console_misc._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_misc._resolve_console_account", new=AsyncMock(return_value=account)),
+        patch("api_server.routes.console_misc.asyncio.to_thread", new=AsyncMock(return_value=payload)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get("/console/api/spec/schema-definitions")
+
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
 async def test_finished_workflow_events_return_sse_payload() -> None:
     context = WebappContext(
         app=type("AppStub", (), {"mode": AppMode.WORKFLOW, "id": "app-1"})(),

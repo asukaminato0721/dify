@@ -13,6 +13,7 @@ from api_server.middleware import RequestContextMiddleware
 from api_server.routes.audio import router as audio_router
 from api_server.routes.bootstrap import router as bootstrap_router
 from api_server.routes.conversation import router as conversation_router
+from api_server.routes.console_misc import router as console_misc_router
 from api_server.routes.files import router as files_router
 from api_server.routes.generation import router as generation_router
 from api_server.routes.health import router as health_router
@@ -68,6 +69,7 @@ def create_app() -> DifyApp:
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health_router)
     app.include_router(bootstrap_router)
+    app.include_router(console_misc_router)
     app.include_router(audio_router)
     app.include_router(conversation_router)
     app.include_router(files_router)
