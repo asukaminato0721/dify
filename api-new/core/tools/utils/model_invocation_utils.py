@@ -8,9 +8,9 @@ import json
 from decimal import Decimal
 from typing import cast
 
+from core.db.session_factory import session_factory
 from core.model_manager import ModelManager
 from core.tools.entities.tool_entities import ToolProviderType
-from extensions.ext_database import db
 from graphon.model_runtime.entities.llm_entities import LLMResult
 from graphon.model_runtime.entities.message_entities import PromptMessage
 from graphon.model_runtime.entities.model_entities import ModelPropertyKey, ModelType
@@ -133,8 +133,10 @@ class ModelInvocationUtils:
             currency="USD",
         )
 
-        db.session.add(tool_model_invoke)
-        db.session.commit()
+        with session_factory.create_session() as session, session.begin():
+            session.add(tool_model_invoke)
+            session.flush()
+            tool_model_invoke_id = tool_model_invoke.id
 
         try:
             response: LLMResult = model_instance.invoke_llm(
@@ -159,15 +161,18 @@ class ModelInvocationUtils:
             raise InvokeModelError(f"Invoke error: {e}")
 
         # update tool model invoke
-        tool_model_invoke.model_response = str(response.message.content)
-        if response.usage:
-            tool_model_invoke.answer_tokens = response.usage.completion_tokens
-            tool_model_invoke.answer_unit_price = response.usage.completion_unit_price
-            tool_model_invoke.answer_price_unit = response.usage.completion_price_unit
-            tool_model_invoke.provider_response_latency = response.usage.latency
-            tool_model_invoke.total_price = response.usage.total_price
-            tool_model_invoke.currency = response.usage.currency
+        with session_factory.create_session() as session, session.begin():
+            persisted_tool_model_invoke = session.get(ToolModelInvoke, tool_model_invoke_id)
+            if persisted_tool_model_invoke is None:
+                raise InvokeModelError("Tool model invoke record not found")
 
-        db.session.commit()
+            persisted_tool_model_invoke.model_response = str(response.message.content)
+            if response.usage:
+                persisted_tool_model_invoke.answer_tokens = response.usage.completion_tokens
+                persisted_tool_model_invoke.answer_unit_price = response.usage.completion_unit_price
+                persisted_tool_model_invoke.answer_price_unit = response.usage.completion_price_unit
+                persisted_tool_model_invoke.provider_response_latency = response.usage.latency
+                persisted_tool_model_invoke.total_price = response.usage.total_price
+                persisted_tool_model_invoke.currency = response.usage.currency
 
         return response

@@ -2,16 +2,17 @@ from typing import Any, cast
 
 from flask_restx import fields, marshal, marshal_with
 from sqlalchemy import select
-from werkzeug.exceptions import Forbidden
 
 from configs import dify_config
 from controllers.web import web_ns
 from controllers.web.wraps import WebApiResource
 from extensions.ext_database import db
+from flask import current_app
 from libs.helper import AppIconUrlField
 from models.account import TenantStatus
 from models.model import App, Site
 from services.feature_service import FeatureService
+from werkzeug.exceptions import Forbidden
 
 
 @web_ns.route("/site")
@@ -72,18 +73,22 @@ class AppSiteApi(WebApiResource):
     @marshal_with(app_fields)
     def get(self, app_model, end_user):
         """Retrieve app site info."""
-        # get site
-        site = db.session.scalar(select(Site).where(Site.app_id == app_model.id).limit(1))
+        return current_app.ensure_sync(_load_app_site_info)(app_model, end_user.id)
 
-        if not site:
-            raise Forbidden()
 
-        if app_model.tenant.status == TenantStatus.ARCHIVE:
-            raise Forbidden()
+async def _load_app_site_info(app_model: App, end_user_id: str) -> "AppSiteInfo":
+    async with db.session_context() as session:
+        site = await session.scalar(select(Site).where(Site.app_id == app_model.id).limit(1))
 
-        can_replace_logo = FeatureService.get_features(app_model.tenant_id).can_replace_logo
+    if not site:
+        raise Forbidden()
 
-        return AppSiteInfo(app_model.tenant, app_model, site, end_user.id, can_replace_logo)
+    tenant = app_model.tenant
+    if tenant is None or tenant.status == TenantStatus.ARCHIVE:
+        raise Forbidden()
+
+    can_replace_logo = FeatureService.get_features(app_model.tenant_id).can_replace_logo
+    return AppSiteInfo(tenant, app_model, site, end_user_id, can_replace_logo)
 
 
 class AppSiteInfo:

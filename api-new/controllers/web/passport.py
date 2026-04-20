@@ -2,21 +2,21 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from flask import make_response, request
 from flask_restx import Resource
 from sqlalchemy import func, select
-from werkzeug.exceptions import NotFound, Unauthorized
 
 from configs import dify_config
 from constants import HEADER_NAME_APP_CODE
 from controllers.web import web_ns
 from controllers.web.error import WebAppAuthRequiredError
 from extensions.ext_database import db
+from flask import current_app, make_response, request
 from libs.passport import PassportService
 from libs.token import extract_webapp_access_token
 from models.model import App, EndUser, Site
 from services.feature_service import FeatureService
 from services.webapp_auth_service import WebAppAuthService, WebAppAuthType
+from werkzeug.exceptions import NotFound, Unauthorized
 
 
 @web_ns.route("/passport")
@@ -45,63 +45,11 @@ class PassportResource(Resource):
             if app_auth_type != WebAppAuthType.PUBLIC:
                 if not enterprise_user_decoded:
                     raise WebAppAuthRequiredError()
-                return exchange_token_for_existing_web_user(
+                return current_app.ensure_sync(exchange_token_for_existing_web_user)(
                     app_code=app_code, enterprise_user_decoded=enterprise_user_decoded, auth_type=app_auth_type
                 )
 
-        # get site from db and check if it is normal
-        site = db.session.scalar(select(Site).where(Site.code == app_code, Site.status == "normal"))
-        if not site:
-            raise NotFound()
-        # get app from db and check if it is normal and enable_site
-        app_model = db.session.scalar(select(App).where(App.id == site.app_id))
-        if not app_model or app_model.status != "normal" or not app_model.enable_site:
-            raise NotFound()
-
-        if user_id:
-            end_user = db.session.scalar(
-                select(EndUser).where(EndUser.app_id == app_model.id, EndUser.session_id == user_id)
-            )
-
-            if end_user:
-                pass
-            else:
-                end_user = EndUser(
-                    tenant_id=app_model.tenant_id,
-                    app_id=app_model.id,
-                    type="browser",
-                    is_anonymous=True,
-                    session_id=user_id,
-                )
-                db.session.add(end_user)
-                db.session.commit()
-        else:
-            end_user = EndUser(
-                tenant_id=app_model.tenant_id,
-                app_id=app_model.id,
-                type="browser",
-                is_anonymous=True,
-                session_id=generate_session_id(),
-            )
-            db.session.add(end_user)
-            db.session.commit()
-
-        payload = {
-            "iss": site.app_id,
-            "sub": "Web API Passport",
-            "app_id": site.app_id,
-            "app_code": app_code,
-            "end_user_id": end_user.id,
-        }
-
-        tk = PassportService().issue(payload)
-
-        response = make_response(
-            {
-                "access_token": tk,
-            }
-        )
-        return response
+        return current_app.ensure_sync(_issue_public_passport)(app_code=app_code, user_id=user_id)
 
 
 def decode_enterprise_webapp_user_id(jwt_token: str | None) -> dict[str, Any] | None:
@@ -118,7 +66,7 @@ def decode_enterprise_webapp_user_id(jwt_token: str | None) -> dict[str, Any] | 
     return decoded
 
 
-def exchange_token_for_existing_web_user(
+async def exchange_token_for_existing_web_user(
     app_code: str, enterprise_user_decoded: dict[str, Any], auth_type: WebAppAuthType
 ):
     """
@@ -133,17 +81,11 @@ def exchange_token_for_existing_web_user(
     if not user_auth_type:
         raise Unauthorized("Missing auth_type in the token.")
 
-    site = db.session.scalar(select(Site).where(Site.code == app_code, Site.status == "normal"))
-    if not site:
-        raise NotFound()
-
-    app_model = db.session.scalar(select(App).where(App.id == site.app_id))
-    if not app_model or app_model.status != "normal" or not app_model.enable_site:
-        raise NotFound()
+    site, app_model = await _get_site_and_app(app_code)
 
     match auth_type:
         case WebAppAuthType.PUBLIC:
-            return _exchange_for_public_app_token(app_model, site, enterprise_user_decoded)
+            return await _exchange_for_public_app_token(app_model, site, enterprise_user_decoded)
         case WebAppAuthType.EXTERNAL:
             if user_auth_type != "external":
                 raise WebAppAuthRequiredError("Please login as external user.")
@@ -151,29 +93,11 @@ def exchange_token_for_existing_web_user(
             if user_auth_type != "internal":
                 raise WebAppAuthRequiredError("Please login as internal user.")
 
-    end_user = None
-    if end_user_id:
-        end_user = db.session.scalar(select(EndUser).where(EndUser.id == end_user_id))
-    if session_id:
-        end_user = db.session.scalar(
-            select(EndUser).where(
-                EndUser.session_id == session_id,
-                EndUser.tenant_id == app_model.tenant_id,
-                EndUser.app_id == app_model.id,
-            )
-        )
-    if not end_user:
-        if not session_id:
-            raise NotFound("Missing session_id for existing web user.")
-        end_user = EndUser(
-            tenant_id=app_model.tenant_id,
-            app_id=app_model.id,
-            type="browser",
-            is_anonymous=True,
-            session_id=session_id,
-        )
-        db.session.add(end_user)
-        db.session.commit()
+    end_user = await _resolve_existing_end_user(
+        app_model=app_model,
+        end_user_id=end_user_id if isinstance(end_user_id, str) else None,
+        session_id=session_id if isinstance(session_id, str) else None,
+    )
 
     exp = int((datetime.now(UTC) + timedelta(minutes=dify_config.ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp())
     if exchanged_token_expires_unix:
@@ -200,25 +124,12 @@ def exchange_token_for_existing_web_user(
     return resp
 
 
-def _exchange_for_public_app_token(app_model, site, token_decoded):
+async def _exchange_for_public_app_token(app_model: App, site: Site, token_decoded: dict[str, Any]):
     user_id = token_decoded.get("user_id")
-    end_user = None
-    if user_id:
-        end_user = db.session.scalar(
-            select(EndUser).where(EndUser.app_id == app_model.id, EndUser.session_id == user_id)
-        )
-
-    if not end_user:
-        end_user = EndUser(
-            tenant_id=app_model.tenant_id,
-            app_id=app_model.id,
-            type="browser",
-            is_anonymous=True,
-            session_id=generate_session_id(),
-        )
-
-        db.session.add(end_user)
-        db.session.commit()
+    end_user = await _get_or_create_end_user(
+        app_model=app_model,
+        session_id=user_id if isinstance(user_id, str) else None,
+    )
 
     payload = {
         "iss": site.app_id,
@@ -238,14 +149,94 @@ def _exchange_for_public_app_token(app_model, site, token_decoded):
     return resp
 
 
-def generate_session_id():
+async def _issue_public_passport(app_code: str, user_id: str | None) -> Any:
+    site, app_model = await _get_site_and_app(app_code)
+    end_user = await _get_or_create_end_user(app_model=app_model, session_id=user_id)
+    payload = {
+        "iss": site.app_id,
+        "sub": "Web API Passport",
+        "app_id": site.app_id,
+        "app_code": app_code,
+        "end_user_id": end_user.id,
+    }
+    token: str = PassportService().issue(payload)
+    return make_response({"access_token": token})
+
+
+async def _get_site_and_app(app_code: str) -> tuple[Site, App]:
+    async with db.session_context() as session:
+        site = await session.scalar(select(Site).where(Site.code == app_code, Site.status == "normal"))
+        if not site:
+            raise NotFound()
+
+        app_model = await session.scalar(select(App).where(App.id == site.app_id))
+        if not app_model or app_model.status != "normal" or not app_model.enable_site:
+            raise NotFound()
+
+    return site, app_model
+
+
+async def _get_or_create_end_user(app_model: App, session_id: str | None) -> EndUser:
+    async with db.session_context() as session:
+        end_user: EndUser | None = None
+        if session_id:
+            end_user = await session.scalar(
+                select(EndUser).where(EndUser.app_id == app_model.id, EndUser.session_id == session_id)
+            )
+
+        if end_user is None:
+            resolved_session_id = session_id or await generate_session_id()
+            end_user = EndUser(
+                tenant_id=app_model.tenant_id,
+                app_id=app_model.id,
+                type="browser",
+                is_anonymous=True,
+                session_id=resolved_session_id,
+            )
+            session.add(end_user)
+            await session.commit()
+
+    return end_user
+
+
+async def _resolve_existing_end_user(app_model: App, end_user_id: str | None, session_id: str | None) -> EndUser:
+    async with db.session_context() as session:
+        end_user: EndUser | None = None
+        if end_user_id:
+            end_user = await session.scalar(select(EndUser).where(EndUser.id == end_user_id))
+        if end_user is None and session_id:
+            end_user = await session.scalar(
+                select(EndUser).where(
+                    EndUser.session_id == session_id,
+                    EndUser.tenant_id == app_model.tenant_id,
+                    EndUser.app_id == app_model.id,
+                )
+            )
+        if end_user is None:
+            if not session_id:
+                raise NotFound("Missing session_id for existing web user.")
+            end_user = EndUser(
+                tenant_id=app_model.tenant_id,
+                app_id=app_model.id,
+                type="browser",
+                is_anonymous=True,
+                session_id=session_id,
+            )
+            session.add(end_user)
+            await session.commit()
+
+    return end_user
+
+
+async def generate_session_id() -> str:
     """
     Generate a unique session ID.
     """
     while True:
         session_id = str(uuid.uuid4())
-        existing_count = db.session.scalar(
-            select(func.count()).select_from(EndUser).where(EndUser.session_id == session_id)
-        )
+        async with db.session_context() as session:
+            existing_count = await session.scalar(
+                select(func.count()).select_from(EndUser).where(EndUser.session_id == session_id)
+            )
         if existing_count == 0:
             return session_id

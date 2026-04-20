@@ -20,8 +20,8 @@ from core.tools.entities.tool_entities import (
     WorkflowToolParameterConfiguration,
 )
 
+from ._session import async_scalar, legacy_scalar
 from .base import TypeBase
-from .engine import db
 from .model import Account, App, Tenant
 from .types import EnumText, LongText, StringUUID
 
@@ -194,11 +194,21 @@ class ApiToolProvider(TypeBase):
     def user(self) -> Account | None:
         if not self.user_id:
             return None
-        return db.session.scalar(select(Account).where(Account.id == self.user_id))
+        account = legacy_scalar(select(Account).where(Account.id == self.user_id))
+        return account if isinstance(account, Account) else None
 
     @property
     def tenant(self) -> Tenant | None:
-        return db.session.scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        tenant = legacy_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        return tenant if isinstance(tenant, Tenant) else None
+
+    async def aload_user(self) -> Account | None:
+        account = await async_scalar(select(Account).where(Account.id == self.user_id))
+        return account if isinstance(account, Account) else None
+
+    async def aload_tenant(self) -> Tenant | None:
+        tenant = await async_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        return tenant if isinstance(tenant, Tenant) else None
 
 
 class ToolLabelBinding(TypeBase):
@@ -272,11 +282,13 @@ class WorkflowToolProvider(TypeBase):
 
     @property
     def user(self) -> Account | None:
-        return db.session.scalar(select(Account).where(Account.id == self.user_id))
+        account = legacy_scalar(select(Account).where(Account.id == self.user_id))
+        return account if isinstance(account, Account) else None
 
     @property
     def tenant(self) -> Tenant | None:
-        return db.session.scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        tenant = legacy_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        return tenant if isinstance(tenant, Tenant) else None
 
     @property
     def parameter_configurations(self) -> list[WorkflowToolParameterConfiguration]:
@@ -287,7 +299,20 @@ class WorkflowToolProvider(TypeBase):
 
     @property
     def app(self) -> App | None:
-        return db.session.scalar(select(App).where(App.id == self.app_id))
+        app = legacy_scalar(select(App).where(App.id == self.app_id))
+        return app if isinstance(app, App) else None
+
+    async def aload_user(self) -> Account | None:
+        account = await async_scalar(select(Account).where(Account.id == self.user_id))
+        return account if isinstance(account, Account) else None
+
+    async def aload_tenant(self) -> Tenant | None:
+        tenant = await async_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        return tenant if isinstance(tenant, Tenant) else None
+
+    async def aload_app(self) -> App | None:
+        app = await async_scalar(select(App).where(App.id == self.app_id))
+        return app if isinstance(app, App) else None
 
 
 class MCPToolProvider(TypeBase):
@@ -344,7 +369,12 @@ class MCPToolProvider(TypeBase):
     encrypted_headers: Mapped[str | None] = mapped_column(LongText, nullable=True, default=None)
 
     def load_user(self) -> Account | None:
-        return db.session.scalar(select(Account).where(Account.id == self.user_id))
+        account = legacy_scalar(select(Account).where(Account.id == self.user_id))
+        return account if isinstance(account, Account) else None
+
+    async def aload_user(self) -> Account | None:
+        account = await async_scalar(select(Account).where(Account.id == self.user_id))
+        return account if isinstance(account, Account) else None
 
     @property
     def credentials(self) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from core.app.app_config.entities import DatasetRetrieveConfigEntity, ModelConfig
+from core.db.session_factory import session_factory
 from core.rag.datasource.retrieval_service import DefaultRetrievalModelDict, RetrievalService
 from core.rag.entities import DocumentContext, RetrievalSourceMetadata
 from core.rag.index_processor.constant.index_type import IndexTechniqueType
@@ -11,7 +12,6 @@ from core.rag.models.document import Document as RetrievalDocument
 from core.rag.retrieval.dataset_retrieval import DatasetRetrieval
 from core.rag.retrieval.retrieval_methods import RetrievalMethod
 from core.tools.utils.dataset_retriever.dataset_retriever_base_tool import DatasetRetrieverBaseTool
-from extensions.ext_database import db
 from models.dataset import Dataset
 from models.dataset import Document as DatasetDocument
 from services.external_knowledge_service import ExternalDatasetService
@@ -58,7 +58,8 @@ class DatasetRetrieverTool(DatasetRetrieverBaseTool):
 
     def _run(self, query: str) -> str:
         dataset_stmt = select(Dataset).where(Dataset.tenant_id == self.tenant_id, Dataset.id == self.dataset_id)
-        dataset = db.session.scalar(dataset_stmt)
+        with session_factory.create_session() as session:
+            dataset = session.scalar(dataset_stmt)
 
         if not dataset:
             return ""
@@ -189,41 +190,42 @@ class DatasetRetrieverTool(DatasetRetrieverBaseTool):
                         )
 
                     if self.return_resource:
-                        for record in records:
-                            segment = record.segment
-                            dataset = db.session.get(Dataset, segment.dataset_id)
-                            dataset_document_stmt = select(DatasetDocument).where(
-                                DatasetDocument.id == segment.document_id,
-                                DatasetDocument.enabled == True,
-                                DatasetDocument.archived == False,
-                            )
-                            document = db.session.scalar(dataset_document_stmt)
-                            if dataset and document:
-                                source = RetrievalSourceMetadata(
-                                    dataset_id=dataset.id,
-                                    dataset_name=dataset.name,
-                                    document_id=document.id,
-                                    document_name=document.name,
-                                    data_source_type=document.data_source_type,
-                                    segment_id=segment.id,
-                                    retriever_from=self.retriever_from,
-                                    score=record.score or 0.0,
-                                    doc_metadata=document.doc_metadata,
+                        with session_factory.create_session() as session:
+                            for record in records:
+                                segment = record.segment
+                                dataset = session.get(Dataset, segment.dataset_id)
+                                dataset_document_stmt = select(DatasetDocument).where(
+                                    DatasetDocument.id == segment.document_id,
+                                    DatasetDocument.enabled == True,
+                                    DatasetDocument.archived == False,
                                 )
+                                document = session.scalar(dataset_document_stmt)
+                                if dataset and document:
+                                    source = RetrievalSourceMetadata(
+                                        dataset_id=dataset.id,
+                                        dataset_name=dataset.name,
+                                        document_id=document.id,
+                                        document_name=document.name,
+                                        data_source_type=document.data_source_type,
+                                        segment_id=segment.id,
+                                        retriever_from=self.retriever_from,
+                                        score=record.score or 0.0,
+                                        doc_metadata=document.doc_metadata,
+                                    )
 
-                                if self.retriever_from == "dev":
-                                    source.hit_count = segment.hit_count
-                                    source.word_count = segment.word_count
-                                    source.segment_position = segment.position
-                                    source.index_node_hash = segment.index_node_hash
-                                if segment.answer:
-                                    source.content = f"question:{segment.content} \nanswer:{segment.answer}"
-                                else:
-                                    source.content = segment.content
-                                # Add summary if this segment was retrieved via summary
-                                if hasattr(record, "summary") and record.summary:
-                                    source.summary = record.summary
-                                retrieval_resource_list.append(source)
+                                    if self.retriever_from == "dev":
+                                        source.hit_count = segment.hit_count
+                                        source.word_count = segment.word_count
+                                        source.segment_position = segment.position
+                                        source.index_node_hash = segment.index_node_hash
+                                    if segment.answer:
+                                        source.content = f"question:{segment.content} \nanswer:{segment.answer}"
+                                    else:
+                                        source.content = segment.content
+                                    # Add summary if this segment was retrieved via summary
+                                    if hasattr(record, "summary") and record.summary:
+                                        source.summary = record.summary
+                                    retrieval_resource_list.append(source)
 
             if self.return_resource and retrieval_resource_list:
                 retrieval_resource_list = sorted(

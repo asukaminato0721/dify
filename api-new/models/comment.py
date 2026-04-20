@@ -3,12 +3,13 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Index, func
+import sqlalchemy as sa
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ._session import async_get, legacy_get
 from .account import Account
 from .base import Base
-from .engine import db
 from .types import StringUUID
 
 
@@ -36,24 +37,24 @@ class WorkflowComment(Base):
 
     __tablename__ = "workflow_comments"
     __table_args__ = (
-        db.PrimaryKeyConstraint("id", name="workflow_comments_pkey"),
+        sa.PrimaryKeyConstraint("id", name="workflow_comments_pkey"),
         Index("workflow_comments_app_idx", "tenant_id", "app_id"),
         Index("workflow_comments_created_at_idx", "created_at"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, server_default=db.text("uuidv7()"))
+    id: Mapped[str] = mapped_column(StringUUID, server_default=sa.text("uuidv7()"))
     tenant_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
     app_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
-    position_x: Mapped[float] = mapped_column(db.Float)
-    position_y: Mapped[float] = mapped_column(db.Float)
-    content: Mapped[str] = mapped_column(db.Text, nullable=False)
+    position_x: Mapped[float] = mapped_column(Float)
+    position_y: Mapped[float] = mapped_column(Float)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str] = mapped_column(StringUUID, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime, nullable=False, server_default=func.current_timestamp())
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(
-        db.DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+        DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
     )
-    resolved: Mapped[bool] = mapped_column(db.Boolean, nullable=False, server_default=db.text("false"))
-    resolved_at: Mapped[datetime | None] = mapped_column(db.DateTime)
+    resolved: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
     resolved_by: Mapped[str | None] = mapped_column(StringUUID)
 
     # Relationships
@@ -65,41 +66,49 @@ class WorkflowComment(Base):
     )
 
     @property
-    def created_by_account(self):
+    def created_by_account(self) -> Account | None:
         """Get creator account."""
         if hasattr(self, "_created_by_account_cache"):
             return self._created_by_account_cache
-        return db.session.get(Account, self.created_by)
+        return legacy_get(Account, self.created_by)
+
+    async def aload_created_by_account(self) -> Account | None:
+        return await async_get(Account, self.created_by)
 
     def cache_created_by_account(self, account: Account | None) -> None:
         """Cache creator account to avoid extra queries."""
         self._created_by_account_cache = account
 
     @property
-    def resolved_by_account(self):
+    def resolved_by_account(self) -> Account | None:
         """Get resolver account."""
         if hasattr(self, "_resolved_by_account_cache"):
             return self._resolved_by_account_cache
         if self.resolved_by:
-            return db.session.get(Account, self.resolved_by)
+            return legacy_get(Account, self.resolved_by)
         return None
+
+    async def aload_resolved_by_account(self) -> Account | None:
+        if self.resolved_by is None:
+            return None
+        return await async_get(Account, self.resolved_by)
 
     def cache_resolved_by_account(self, account: Account | None) -> None:
         """Cache resolver account to avoid extra queries."""
         self._resolved_by_account_cache = account
 
     @property
-    def reply_count(self):
+    def reply_count(self) -> int:
         """Get reply count."""
         return len(self.replies)
 
     @property
-    def mention_count(self):
+    def mention_count(self) -> int:
         """Get mention count."""
         return len(self.mentions)
 
     @property
-    def participants(self):
+    def participants(self) -> list[Account]:
         """Get all participants (creator + repliers + mentioned users)."""
         participant_ids: set[str] = set()
         participants: list[Account] = []
@@ -143,30 +152,33 @@ class WorkflowCommentReply(Base):
 
     __tablename__ = "workflow_comment_replies"
     __table_args__ = (
-        db.PrimaryKeyConstraint("id", name="workflow_comment_replies_pkey"),
+        sa.PrimaryKeyConstraint("id", name="workflow_comment_replies_pkey"),
         Index("comment_replies_comment_idx", "comment_id"),
         Index("comment_replies_created_at_idx", "created_at"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, server_default=db.text("uuidv7()"))
+    id: Mapped[str] = mapped_column(StringUUID, server_default=sa.text("uuidv7()"))
     comment_id: Mapped[str] = mapped_column(
-        StringUUID, db.ForeignKey("workflow_comments.id", ondelete="CASCADE"), nullable=False
+        StringUUID, ForeignKey("workflow_comments.id", ondelete="CASCADE"), nullable=False
     )
-    content: Mapped[str] = mapped_column(db.Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str] = mapped_column(StringUUID, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime, nullable=False, server_default=func.current_timestamp())
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(
-        db.DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+        DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
     )
     # Relationships
     comment: Mapped["WorkflowComment"] = relationship("WorkflowComment", back_populates="replies")
 
     @property
-    def created_by_account(self):
+    def created_by_account(self) -> Account | None:
         """Get creator account."""
         if hasattr(self, "_created_by_account_cache"):
             return self._created_by_account_cache
-        return db.session.get(Account, self.created_by)
+        return legacy_get(Account, self.created_by)
+
+    async def aload_created_by_account(self) -> Account | None:
+        return await async_get(Account, self.created_by)
 
     def cache_created_by_account(self, account: Account | None) -> None:
         """Cache creator account to avoid extra queries."""
@@ -187,18 +199,18 @@ class WorkflowCommentMention(Base):
 
     __tablename__ = "workflow_comment_mentions"
     __table_args__ = (
-        db.PrimaryKeyConstraint("id", name="workflow_comment_mentions_pkey"),
+        sa.PrimaryKeyConstraint("id", name="workflow_comment_mentions_pkey"),
         Index("comment_mentions_comment_idx", "comment_id"),
         Index("comment_mentions_reply_idx", "reply_id"),
         Index("comment_mentions_user_idx", "mentioned_user_id"),
     )
 
-    id: Mapped[str] = mapped_column(StringUUID, server_default=db.text("uuidv7()"))
+    id: Mapped[str] = mapped_column(StringUUID, server_default=sa.text("uuidv7()"))
     comment_id: Mapped[str] = mapped_column(
-        StringUUID, db.ForeignKey("workflow_comments.id", ondelete="CASCADE"), nullable=False
+        StringUUID, ForeignKey("workflow_comments.id", ondelete="CASCADE"), nullable=False
     )
     reply_id: Mapped[str | None] = mapped_column(
-        StringUUID, db.ForeignKey("workflow_comment_replies.id", ondelete="CASCADE"), nullable=True
+        StringUUID, ForeignKey("workflow_comment_replies.id", ondelete="CASCADE"), nullable=True
     )
     mentioned_user_id: Mapped[str] = mapped_column(StringUUID, nullable=False)
 
@@ -207,11 +219,14 @@ class WorkflowCommentMention(Base):
     reply: Mapped[Optional["WorkflowCommentReply"]] = relationship("WorkflowCommentReply")
 
     @property
-    def mentioned_user_account(self):
+    def mentioned_user_account(self) -> Account | None:
         """Get mentioned account."""
         if hasattr(self, "_mentioned_user_account_cache"):
             return self._mentioned_user_account_cache
-        return db.session.get(Account, self.mentioned_user_id)
+        return legacy_get(Account, self.mentioned_user_id)
+
+    async def aload_mentioned_user_account(self) -> Account | None:
+        return await async_get(Account, self.mentioned_user_id)
 
     def cache_mentioned_user_account(self, account: Account | None) -> None:
         """Cache mentioned account to avoid extra queries."""

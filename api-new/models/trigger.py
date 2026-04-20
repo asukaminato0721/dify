@@ -17,8 +17,8 @@ from core.trigger.utils.endpoint import generate_plugin_trigger_endpoint_url, ge
 from libs.datetime_utils import naive_utc_now
 from libs.uuid_utils import uuidv7
 
+from ._session import async_get, legacy_get
 from .base import TypeBase
-from .engine import db
 from .enums import AppTriggerStatus, AppTriggerType, CreatorUserRole, WorkflowTriggerStatus
 from .model import Account
 from .types import EnumText, LongText, StringUUID
@@ -286,16 +286,30 @@ class WorkflowTriggerLog(TypeBase):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     @property
-    def created_by_account(self):
+    def created_by_account(self) -> Account | None:
         created_by_role = CreatorUserRole(self.created_by_role)
-        return db.session.get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
+        return legacy_get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
 
     @property
     def created_by_end_user(self):
         from .model import EndUser
 
         created_by_role = CreatorUserRole(self.created_by_role)
-        return db.session.get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
+        return legacy_get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
+
+    async def aload_created_by_account(self) -> Account | None:
+        created_by_role = CreatorUserRole(self.created_by_role)
+        if created_by_role != CreatorUserRole.ACCOUNT:
+            return None
+        return await async_get(Account, self.created_by)
+
+    async def aload_created_by_end_user(self):
+        from .model import EndUser
+
+        created_by_role = CreatorUserRole(self.created_by_role)
+        if created_by_role != CreatorUserRole.END_USER:
+            return None
+        return await async_get(EndUser, self.created_by)
 
     def to_dict(self) -> WorkflowTriggerLogDict:
         """Convert to dictionary for API responses"""

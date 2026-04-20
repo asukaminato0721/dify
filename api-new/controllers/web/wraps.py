@@ -3,15 +3,13 @@ from datetime import UTC, datetime
 from functools import wraps
 from typing import Concatenate
 
-from flask import request
 from flask_restx import Resource
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
-from werkzeug.exceptions import BadRequest, NotFound, Unauthorized
 
 from constants import HEADER_NAME_APP_CODE
 from controllers.web.error import WebAppAuthAccessDeniedError, WebAppAuthRequiredError
 from extensions.ext_database import db
+from flask import current_app, request
 from libs.passport import PassportService
 from libs.token import extract_webapp_passport
 from models.model import App, EndUser, Site
@@ -19,6 +17,7 @@ from services.app_service import AppService
 from services.enterprise.enterprise_service import EnterpriseService, WebAppSettings
 from services.feature_service import FeatureService
 from services.webapp_auth_service import WebAppAuthService
+from werkzeug.exceptions import BadRequest, NotFound, Unauthorized
 
 
 def validate_jwt_token[**P, R](
@@ -27,8 +26,8 @@ def validate_jwt_token[**P, R](
     def decorator(view: Callable[Concatenate[App, EndUser, P], R]) -> Callable[P, R]:
         @wraps(view)
         def decorated(*args: P.args, **kwargs: P.kwargs) -> R:
-            app_model, end_user = decode_jwt_token()
-            return view(app_model, end_user, *args, **kwargs)
+            app_model, end_user = current_app.ensure_sync(decode_jwt_token)()
+            return current_app.ensure_sync(view)(app_model, end_user, *args, **kwargs)
 
         return decorated
 
@@ -37,7 +36,7 @@ def validate_jwt_token[**P, R](
     return decorator
 
 
-def decode_jwt_token(app_code: str | None = None, user_id: str | None = None) -> tuple[App, EndUser]:
+async def decode_jwt_token(app_code: str | None = None, user_id: str | None = None) -> tuple[App, EndUser]:
     system_features = FeatureService.get_system_features()
     if not app_code:
         app_code = str(request.headers.get(HEADER_NAME_APP_CODE))
@@ -48,17 +47,18 @@ def decode_jwt_token(app_code: str | None = None, user_id: str | None = None) ->
         decoded = PassportService().verify(tk)
         app_code = decoded.get("app_code")
         app_id = decoded.get("app_id")
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
-            app_model = session.scalar(select(App).where(App.id == app_id))
-            site = session.scalar(select(Site).where(Site.code == app_code))
+        async with db.session_context() as session:
+            app_model = await session.scalar(select(App).where(App.id == app_id))
+            site = await session.scalar(select(Site).where(Site.code == app_code))
             if not app_model:
                 raise NotFound()
+            await session.refresh(app_model, attribute_names=["tenant"])
             if not app_code or not site:
                 raise BadRequest("Site URL is no longer valid.")
             if app_model.enable_site is False:
                 raise BadRequest("Site is disabled.")
             end_user_id = decoded.get("end_user_id")
-            end_user = session.scalar(select(EndUser).where(EndUser.id == end_user_id))
+            end_user = await session.scalar(select(EndUser).where(EndUser.id == end_user_id))
             if not end_user:
                 raise NotFound()
 

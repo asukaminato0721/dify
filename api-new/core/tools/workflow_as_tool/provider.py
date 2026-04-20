@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from pydantic import Field
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from core.app.apps.workflow.app_config_manager import WorkflowAppConfigManager
 from core.db.session_factory import session_factory
@@ -23,7 +21,6 @@ from core.tools.entities.tool_entities import (
 )
 from core.tools.utils.workflow_configuration_sync import WorkflowToolConfigurationUtils
 from core.tools.workflow_as_tool.tool import WorkflowTool
-from extensions.ext_database import db
 from graphon.variables.input_entities import VariableEntity, VariableEntityType
 from models.account import Account
 from models.model import App, AppMode
@@ -44,11 +41,12 @@ VARIABLE_TO_PARAMETER_TYPE_MAPPING = {
 
 class WorkflowToolProviderController(ToolProviderController):
     provider_id: str
-    tools: list[WorkflowTool] = Field(default_factory=list)
+    tools: list[WorkflowTool]
 
     def __init__(self, entity: ToolProviderEntity, provider_id: str):
         super().__init__(entity=entity)
         self.provider_id = provider_id
+        self.tools = []
 
     @classmethod
     def from_db(cls, db_provider: WorkflowToolProvider) -> WorkflowToolProviderController:
@@ -88,7 +86,7 @@ class WorkflowToolProviderController(ToolProviderController):
         db_provider: WorkflowToolProvider,
         app: App,
         *,
-        session: Session,
+        session,
         user: Account | None = None,
     ) -> WorkflowTool:
         """
@@ -214,10 +212,10 @@ class WorkflowToolProviderController(ToolProviderController):
         :param tenant_id: the tenant id
         :return: the tools
         """
-        if self.tools is not None:
+        if self.tools:
             return self.tools
 
-        with Session(db.engine, expire_on_commit=False) as session, session.begin():
+        with session_factory.create_session() as session, session.begin():
             db_provider: WorkflowToolProvider | None = session.scalar(
                 select(WorkflowToolProvider)
                 .where(

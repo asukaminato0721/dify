@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import enum
 import json
 from dataclasses import field
@@ -6,13 +8,20 @@ from typing import Optional, TypedDict
 from uuid import uuid4
 
 import sqlalchemy as sa
-from flask_login import UserMixin
 from sqlalchemy import DateTime, String, func, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 from typing_extensions import deprecated
 
+from flask_login import UserMixin
+
+from ._session import (
+    async_scalar,
+    async_scalars_all,
+    legacy_scalar,
+    with_async_session,
+    with_legacy_sync_session,
+)
 from .base import TypeBase
-from .engine import db
 from .types import EnumText, LongText, StringUUID
 
 
@@ -119,16 +128,16 @@ class Account(UserMixin, TypeBase):
     _current_tenant: "Tenant | None" = field(default=None, init=False)
 
     @property
-    def is_password_set(self):
+    def is_password_set(self) -> bool:
         return self.password is not None
 
     @property
-    def current_tenant(self):
+    def current_tenant(self) -> Tenant | None:
         return self._current_tenant
 
     @current_tenant.setter
-    def current_tenant(self, tenant: "Tenant"):
-        with Session(db.engine, expire_on_commit=False) as session:
+    def current_tenant(self, tenant: "Tenant") -> None:
+        def load_tenant_context(session) -> tuple[TenantAccountJoin | None, Tenant]:
             tenant_join_query = select(TenantAccountJoin).where(
                 TenantAccountJoin.tenant_id == tenant.id, TenantAccountJoin.account_id == self.id
             )
@@ -142,6 +151,9 @@ class Account(UserMixin, TypeBase):
             # `expire_on_commit=False` flag, meaning its lifetime is tied to the web
             # request's lifecycle.)
             tenant_reloaded = session.scalars(tenant_query).one()
+            return tenant_join, tenant_reloaded
+
+        tenant_join, tenant_reloaded = with_legacy_sync_session(load_tenant_context)
 
         if tenant_join:
             self.role = TenantAccountRole(tenant_join.role)
@@ -149,53 +161,112 @@ class Account(UserMixin, TypeBase):
             return
         self._current_tenant = None
 
+    async def aload_current_tenant(self, tenant: "Tenant") -> Tenant | None:
+        """Resolve and cache tenant membership without using the sync fallback."""
+
+        tenant_join = await async_scalar(
+            select(TenantAccountJoin).where(
+                TenantAccountJoin.tenant_id == tenant.id,
+                TenantAccountJoin.account_id == self.id,
+            )
+        )
+        tenant_reloaded = await async_scalar(select(Tenant).where(Tenant.id == tenant.id))
+        if isinstance(tenant_join, TenantAccountJoin) and isinstance(tenant_reloaded, Tenant):
+            self.role = TenantAccountRole(tenant_join.role)
+            self._current_tenant = tenant_reloaded
+            return tenant_reloaded
+
+        self._current_tenant = None
+        self.role = None
+        return None
+
     @property
     def current_tenant_id(self) -> str | None:
         return self._current_tenant.id if self._current_tenant else None
 
-    def set_tenant_id(self, tenant_id: str):
+    def set_tenant_id(self, tenant_id: str) -> None:
         query = (
             select(Tenant, TenantAccountJoin)
             .where(Tenant.id == tenant_id)
             .where(TenantAccountJoin.tenant_id == Tenant.id)
             .where(TenantAccountJoin.account_id == self.id)
         )
-        with Session(db.engine, expire_on_commit=False) as session:
+
+        def load_tenant(session):
             tenant_account_join = session.execute(query).first()
             if not tenant_account_join:
-                return
+                return None
             tenant, join = tenant_account_join
-            self.role = TenantAccountRole(join.role)
-            self._current_tenant = tenant
+            return tenant, join
+
+        tenant_account_join = with_legacy_sync_session(load_tenant)
+        if tenant_account_join is None:
+            return
+        tenant, join = tenant_account_join
+        self.role = TenantAccountRole(join.role)
+        self._current_tenant = tenant
+
+    async def aset_tenant_id(self, tenant_id: str) -> None:
+        async def load_tenant(session):
+            result = await session.execute(
+                select(Tenant, TenantAccountJoin)
+                .where(Tenant.id == tenant_id)
+                .where(TenantAccountJoin.tenant_id == Tenant.id)
+                .where(TenantAccountJoin.account_id == self.id)
+            )
+            return result.first()
+
+        tenant_and_join = await with_async_session(load_tenant)
+        if not tenant_and_join:
+            return
+        tenant, join = tenant_and_join
+        self.role = TenantAccountRole(join.role)
+        self._current_tenant = tenant
 
     @property
-    def current_role(self):
+    def current_role(self) -> TenantAccountRole | None:
         return self.role
 
     def get_status(self) -> AccountStatus:
         return self.status
 
     @classmethod
-    def get_by_openid(cls, provider: str, open_id: str):
-        account_integrate = db.session.execute(
-            select(AccountIntegrate).where(AccountIntegrate.provider == provider, AccountIntegrate.open_id == open_id)
-        ).scalar_one_or_none()
+    def get_by_openid(cls, provider: str, open_id: str) -> Account | None:
+        account_integrate = with_legacy_sync_session(
+            lambda session: session.execute(
+                select(AccountIntegrate).where(
+                    AccountIntegrate.provider == provider,
+                    AccountIntegrate.open_id == open_id,
+                )
+            ).scalar_one_or_none()
+        )
         if account_integrate:
-            return db.session.scalar(select(Account).where(Account.id == account_integrate.account_id))
+            account = legacy_scalar(select(Account).where(Account.id == account_integrate.account_id))
+            return account if isinstance(account, Account) else None
+        return None
+
+    @classmethod
+    async def aget_by_openid(cls, provider: str, open_id: str) -> Account | None:
+        account_integrate = await async_scalar(
+            select(AccountIntegrate).where(AccountIntegrate.provider == provider, AccountIntegrate.open_id == open_id)
+        )
+        if isinstance(account_integrate, AccountIntegrate):
+            account = await async_scalar(select(Account).where(Account.id == account_integrate.account_id))
+            return account if isinstance(account, Account) else None
         return None
 
     # check current_user.current_tenant.current_role in ['admin', 'owner']
     @property
-    def is_admin_or_owner(self):
+    def is_admin_or_owner(self) -> bool:
         return TenantAccountRole.is_privileged_role(self.role)
 
     @property
-    def is_admin(self):
+    def is_admin(self) -> bool:
         return TenantAccountRole.is_admin_role(self.role)
 
     @property
     @deprecated("Use has_edit_permission instead.")
-    def is_editor(self):
+    def is_editor(self) -> bool:
         """Determines if the account has edit permissions in their current tenant (workspace).
 
         This property checks if the current role has editing privileges, which includes:
@@ -208,7 +279,7 @@ class Account(UserMixin, TypeBase):
         return self.has_edit_permission
 
     @property
-    def has_edit_permission(self):
+    def has_edit_permission(self) -> bool:
         """Determines if the account has editing permissions in their current tenant (workspace).
 
         This property checks if the current role has editing privileges, which includes:
@@ -219,11 +290,11 @@ class Account(UserMixin, TypeBase):
         return TenantAccountRole.is_editing_role(self.role)
 
     @property
-    def is_dataset_editor(self):
+    def is_dataset_editor(self) -> bool:
         return TenantAccountRole.is_dataset_edit_role(self.role)
 
     @property
-    def is_dataset_operator(self):
+    def is_dataset_operator(self) -> bool:
         return self.role == TenantAccountRole.DATASET_OPERATOR
 
 
@@ -259,13 +330,22 @@ class Tenant(TypeBase):
     )
 
     def get_accounts(self) -> list[Account]:
-        return list(
-            db.session.scalars(
-                select(Account).where(
-                    Account.id == TenantAccountJoin.account_id, TenantAccountJoin.tenant_id == self.id
-                )
-            ).all()
+        accounts = with_legacy_sync_session(
+            lambda session: list(
+                session.scalars(
+                    select(Account).where(
+                        Account.id == TenantAccountJoin.account_id, TenantAccountJoin.tenant_id == self.id
+                    )
+                ).all()
+            )
         )
+        return accounts
+
+    async def aget_accounts(self) -> list[Account]:
+        accounts = await async_scalars_all(
+            select(Account).where(Account.id == TenantAccountJoin.account_id, TenantAccountJoin.tenant_id == self.id)
+        )
+        return [account for account in accounts if isinstance(account, Account)]
 
     @property
     def custom_config_dict(self) -> TenantCustomConfigDict:

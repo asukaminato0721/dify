@@ -11,13 +11,12 @@ from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.orm import Session
-from werkzeug.exceptions import Unauthorized
 
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from extensions.ext_redis import redis_client, redis_fallback
 from libs.datetime_utils import naive_utc_now
 from models.model import ApiToken
+from werkzeug.exceptions import Unauthorized
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +283,7 @@ def query_token_from_db(auth_token: str, scope: str | None) -> ApiToken:
 
     Raises Unauthorized if token is invalid.
     """
-    with Session(db.engine, expire_on_commit=False) as session:
+    with session_factory.create_session() as session:
         stmt = select(ApiToken).where(ApiToken.token == auth_token, ApiToken.type == scope)
         api_token = session.scalar(stmt)
 

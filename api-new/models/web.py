@@ -5,8 +5,8 @@ import sqlalchemy as sa
 from sqlalchemy import DateTime, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ._session import async_scalar, legacy_scalar
 from .base import TypeBase
-from .engine import db
 from .enums import CreatorUserRole
 from .model import Message
 from .types import EnumText, StringUUID
@@ -37,8 +37,13 @@ class SavedMessage(TypeBase):
     )
 
     @property
-    def message(self):
-        return db.session.scalar(select(Message).where(Message.id == self.message_id))
+    def message(self) -> Message | None:
+        message = legacy_scalar(select(Message).where(Message.id == self.message_id))
+        return message if isinstance(message, Message) else None
+
+    async def aload_message(self) -> Message | None:
+        message = await async_scalar(select(Message).where(Message.id == self.message_id))
+        return message if isinstance(message, Message) else None
 
 
 class PinnedConversation(TypeBase):

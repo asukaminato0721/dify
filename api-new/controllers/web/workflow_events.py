@@ -4,10 +4,9 @@ Web App Workflow Resume APIs.
 
 import json
 from collections.abc import Generator
+from typing import cast
 
-from flask import Response, request
-from sqlalchemy.orm import sessionmaker
-
+from api_server.models.workflow import WorkflowRun as FastAPIWorkflowRun
 from controllers.web import api
 from controllers.web.error import InvalidArgumentError, NotFoundError
 from controllers.web.wraps import WebApiResource
@@ -16,7 +15,8 @@ from core.app.apps.base_app_generator import BaseAppGenerator
 from core.app.apps.common.workflow_response_converter import WorkflowResponseConverter
 from core.app.apps.message_generator import MessageGenerator
 from core.app.apps.workflow.app_generator import WorkflowAppGenerator
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
+from flask import Response, request
 from models.enums import CreatorUserRole
 from models.model import App, AppMode, EndUser
 from repositories.factory import DifyAPIRepositoryFactory
@@ -35,7 +35,7 @@ class WorkflowEventsApi(WebApiResource):
         Returns Server-Sent Events stream.
         """
         workflow_run_id = task_id
-        session_maker = sessionmaker(db.engine)
+        session_maker = session_factory.get_session_maker()
         repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
         workflow_run = repo.get_workflow_run_by_id_and_tenant_id(
             tenant_id=app_model.tenant_id,
@@ -57,7 +57,7 @@ class WorkflowEventsApi(WebApiResource):
         if workflow_run.finished_at is not None:
             response = WorkflowResponseConverter.workflow_run_result_to_finish_response(
                 task_id=workflow_run.id,
-                workflow_run=workflow_run,
+                workflow_run=cast(FastAPIWorkflowRun, workflow_run),
                 creator_user=end_user,
             )
 

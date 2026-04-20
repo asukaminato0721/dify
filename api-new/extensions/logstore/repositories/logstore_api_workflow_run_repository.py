@@ -20,8 +20,10 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, cast
 
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from core.db.session_factory import session_factory
 from extensions.logstore.aliyun_logstore import AliyunLogStore
 from extensions.logstore.repositories import safe_float, safe_int
 from extensions.logstore.sql_escape import escape_identifier, escape_logstore_query_value, escape_sql_string
@@ -352,13 +354,8 @@ class LogstoreAPIWorkflowRunRepository(APIWorkflowRunRepository):
     def _fallback_get_workflow_run_by_id_with_tenant(
         self, run_id: str, tenant_id: str, app_id: str
     ) -> WorkflowRun | None:
-        """Fallback to PostgreSQL query for records not in LogStore (with tenant isolation)."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import sessionmaker
-
-        from extensions.ext_database import db
-
-        with sessionmaker(db.engine).begin() as session:
+        """Fallback to PostgreSQL via the configured sync compatibility session."""
+        with session_factory.create_session() as session:
             stmt = select(WorkflowRun).where(
                 WorkflowRun.id == run_id, WorkflowRun.tenant_id == tenant_id, WorkflowRun.app_id == app_id
             )
@@ -437,13 +434,8 @@ class LogstoreAPIWorkflowRunRepository(APIWorkflowRunRepository):
             raise
 
     def _fallback_get_workflow_run_by_id(self, run_id: str) -> WorkflowRun | None:
-        """Fallback to PostgreSQL query for records not in LogStore."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import sessionmaker
-
-        from extensions.ext_database import db
-
-        with sessionmaker(db.engine).begin() as session:
+        """Fallback to PostgreSQL via the configured sync compatibility session."""
+        with session_factory.create_session() as session:
             stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
             return session.scalar(stmt)
 

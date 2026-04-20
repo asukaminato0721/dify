@@ -1,10 +1,10 @@
 import threading
 
-from flask import Flask, current_app
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from core.callback_handler.index_tool_callback_handler import DatasetIndexToolCallbackHandler
+from core.db.session_factory import session_factory
 from core.model_manager import ModelManager
 from core.rag.datasource.retrieval_service import DefaultRetrievalModelDict, RetrievalService
 from core.rag.entities import RetrievalSourceMetadata
@@ -13,7 +13,6 @@ from core.rag.models.document import Document as RagDocument
 from core.rag.rerank.rerank_model import RerankModelRunner
 from core.rag.retrieval.retrieval_methods import RetrievalMethod
 from core.tools.utils.dataset_retriever.dataset_retriever_base_tool import DatasetRetrieverBaseTool
-from extensions.ext_database import db
 from graphon.model_runtime.entities.model_entities import ModelType
 from models.dataset import Dataset, Document, DocumentSegment
 
@@ -53,7 +52,6 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
             retrieval_thread = threading.Thread(
                 target=self._retriever,
                 kwargs={
-                    "flask_app": current_app._get_current_object(),  # type: ignore
                     "dataset_id": dataset_id,
                     "query": query,
                     "all_documents": all_documents,
@@ -93,7 +91,8 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
             DocumentSegment.enabled == True,
             DocumentSegment.index_node_id.in_(index_node_ids),
         )
-        segments = db.session.scalars(document_segment_stmt).all()
+        with session_factory.create_session() as session:
+            segments = list(session.scalars(document_segment_stmt).all())
 
         if segments:
             index_node_id_to_position = {id: position for position, id in enumerate(index_node_ids)}
@@ -108,39 +107,40 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
             if self.return_resource:
                 context_list: list[RetrievalSourceMetadata] = []
                 resource_number = 1
-                for segment in sorted_segments:
-                    dataset = db.session.get(Dataset, segment.dataset_id)
-                    document_stmt = select(Document).where(
-                        Document.id == segment.document_id,
-                        Document.enabled == True,
-                        Document.archived == False,
-                    )
-                    document = db.session.scalar(document_stmt)
-                    if dataset and document:
-                        source = RetrievalSourceMetadata(
-                            position=resource_number,
-                            dataset_id=dataset.id,
-                            dataset_name=dataset.name,
-                            document_id=document.id,
-                            document_name=document.name,
-                            data_source_type=document.data_source_type,
-                            segment_id=segment.id,
-                            retriever_from=self.retriever_from,
-                            score=document_score_list.get(segment.index_node_id),
-                            doc_metadata=document.doc_metadata,
+                with session_factory.create_session() as session:
+                    for segment in sorted_segments:
+                        dataset = session.get(Dataset, segment.dataset_id)
+                        document_stmt = select(Document).where(
+                            Document.id == segment.document_id,
+                            Document.enabled == True,
+                            Document.archived == False,
                         )
+                        document = session.scalar(document_stmt)
+                        if dataset and document:
+                            source = RetrievalSourceMetadata(
+                                position=resource_number,
+                                dataset_id=dataset.id,
+                                dataset_name=dataset.name,
+                                document_id=document.id,
+                                document_name=document.name,
+                                data_source_type=document.data_source_type,
+                                segment_id=segment.id,
+                                retriever_from=self.retriever_from,
+                                score=document_score_list.get(segment.index_node_id),
+                                doc_metadata=document.doc_metadata,
+                            )
 
-                        if self.retriever_from == "dev":
-                            source.hit_count = segment.hit_count
-                            source.word_count = segment.word_count
-                            source.segment_position = segment.position
-                            source.index_node_hash = segment.index_node_hash
-                        if segment.answer:
-                            source.content = f"question:{segment.content} \nanswer:{segment.answer}"
-                        else:
-                            source.content = segment.content
-                        context_list.append(source)
-                    resource_number += 1
+                            if self.retriever_from == "dev":
+                                source.hit_count = segment.hit_count
+                                source.word_count = segment.word_count
+                                source.segment_position = segment.position
+                                source.index_node_hash = segment.index_node_hash
+                            if segment.answer:
+                                source.content = f"question:{segment.content} \nanswer:{segment.answer}"
+                            else:
+                                source.content = segment.content
+                            context_list.append(source)
+                        resource_number += 1
 
                 for hit_callback in self.hit_callbacks:
                     hit_callback.return_retriever_resource_info(context_list)
@@ -150,15 +150,14 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
 
     def _retriever(
         self,
-        flask_app: Flask,
         dataset_id: str,
         query: str,
         all_documents: list,
         hit_callbacks: list[DatasetIndexToolCallbackHandler],
     ):
-        with flask_app.app_context():
+        with session_factory.create_session() as session:
             stmt = select(Dataset).where(Dataset.tenant_id == self.tenant_id, Dataset.id == dataset_id)
-            dataset = db.session.scalar(stmt)
+            dataset = session.scalar(stmt)
 
             if not dataset:
                 return []

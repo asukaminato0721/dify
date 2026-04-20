@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 from core.plugin.impl.tool import PluginToolManager
 from core.tools.__base.tool_runtime import ToolRuntime
@@ -9,7 +9,6 @@ from core.tools.plugin_tool.tool import PluginTool
 
 
 class PluginToolProviderController(BuiltinToolProviderController):
-    entity: ToolProviderEntityWithPlugin
     tenant_id: str
     plugin_id: str
     plugin_unique_identifier: str
@@ -49,7 +48,7 @@ class PluginToolProviderController(BuiltinToolProviderController):
         return tool with given name
         """
         tool_entity = next(
-            (tool_entity for tool_entity in self.entity.tools if tool_entity.identity.name == tool_name), None
+            (tool_entity for tool_entity in self._plugin_entity.tools if tool_entity.identity.name == tool_name), None
         )
 
         if not tool_entity:
@@ -59,7 +58,7 @@ class PluginToolProviderController(BuiltinToolProviderController):
             entity=tool_entity,
             runtime=ToolRuntime(tenant_id=self.tenant_id),
             tenant_id=self.tenant_id,
-            icon=self.entity.identity.icon,
+            icon=self._plugin_entity.identity.icon,
             plugin_unique_identifier=self.plugin_unique_identifier,
         )
 
@@ -72,8 +71,12 @@ class PluginToolProviderController(BuiltinToolProviderController):
                 entity=tool_entity,
                 runtime=ToolRuntime(tenant_id=self.tenant_id),
                 tenant_id=self.tenant_id,
-                icon=self.entity.identity.icon,
+                icon=self._plugin_entity.identity.icon,
                 plugin_unique_identifier=self.plugin_unique_identifier,
             )
-            for tool_entity in self.entity.tools
+            for tool_entity in self._plugin_entity.tools
         ]
+
+    @property
+    def _plugin_entity(self) -> ToolProviderEntityWithPlugin:
+        return cast(ToolProviderEntityWithPlugin, self.entity)

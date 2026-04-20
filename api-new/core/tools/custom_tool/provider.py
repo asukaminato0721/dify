@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pydantic import Field
 from sqlalchemy import select
 
+from core.db.session_factory import session_factory
 from core.entities.provider_entities import ProviderConfig
 from core.tools.__base.tool_provider import ToolProviderController
 from core.tools.__base.tool_runtime import ToolRuntime
@@ -18,14 +18,13 @@ from core.tools.entities.tool_entities import (
     ToolProviderIdentity,
     ToolProviderType,
 )
-from extensions.ext_database import db
 from models.tools import ApiToolProvider
 
 
 class ApiToolProviderController(ToolProviderController):
     provider_id: str
     tenant_id: str
-    tools: list[ApiTool] = Field(default_factory=list)
+    tools: list[ApiTool]
 
     def __init__(self, entity: ToolProviderEntity, provider_id: str, tenant_id: str):
         super().__init__(entity)
@@ -179,11 +178,15 @@ class ApiToolProviderController(ToolProviderController):
         tools: list[ApiTool] = []
 
         # get tenant api providers
-        db_providers = db.session.scalars(
-            select(ApiToolProvider).where(
-                ApiToolProvider.tenant_id == tenant_id, ApiToolProvider.name == self.entity.identity.name
+        with session_factory.create_session() as session:
+            db_providers = list(
+                session.scalars(
+                    select(ApiToolProvider).where(
+                        ApiToolProvider.tenant_id == tenant_id,
+                        ApiToolProvider.name == self.entity.identity.name,
+                    )
+                ).all()
             )
-        ).all()
 
         if db_providers and len(db_providers) != 0:
             for db_provider in db_providers:

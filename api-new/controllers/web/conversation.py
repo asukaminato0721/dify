@@ -1,9 +1,6 @@
 from typing import Literal
 
-from flask import request
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
-from sqlalchemy.orm import sessionmaker
-from werkzeug.exceptions import NotFound
 
 from controllers.common.controller_schemas import ConversationRenamePayload
 from controllers.common.schema import register_schema_models
@@ -11,17 +8,19 @@ from controllers.web import web_ns
 from controllers.web.error import NotChatAppError
 from controllers.web.wraps import WebApiResource
 from core.app.entities.app_invoke_entities import InvokeFrom
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from fields.conversation_fields import (
     ConversationInfiniteScrollPagination,
     ResultResponse,
     SimpleConversation,
 )
+from flask import request
 from libs.helper import uuid_value
 from models.model import AppMode
 from services.conversation_service import ConversationService
 from services.errors.conversation import ConversationNotExistsError, LastConversationNotExistsError
 from services.web_conversation_service import WebConversationService
+from werkzeug.exceptions import NotFound
 
 
 class ConversationListQuery(BaseModel):
@@ -88,7 +87,7 @@ class ConversationListApi(WebApiResource):
         query = ConversationListQuery.model_validate(raw_args)
 
         try:
-            with sessionmaker(db.engine).begin() as session:
+            with session_factory.get_session_maker().begin() as session:
                 pagination = WebConversationService.pagination_by_last_id(
                     session=session,
                     app_model=app_model,

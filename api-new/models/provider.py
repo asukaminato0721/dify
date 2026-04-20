@@ -12,8 +12,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from graphon.model_runtime.entities.model_entities import ModelType
 from libs.uuid_utils import uuidv7
 
+from ._session import async_scalar, legacy_scalar
 from .base import TypeBase
-from .engine import db
 from .enums import CredentialSourceType, PaymentStatus, ProviderQuotaType
 from .types import EnumText, LongText, StringUUID
 
@@ -73,36 +73,44 @@ class Provider(TypeBase):
         DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), init=False
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<Provider(id={self.id}, tenant_id={self.tenant_id}, provider_name='{self.provider_name}',"
             f" provider_type='{self.provider_type}')>"
         )
 
     @cached_property
-    def credential(self):
+    def credential(self) -> ProviderCredential | None:
         if self.credential_id:
-            return db.session.scalar(select(ProviderCredential).where(ProviderCredential.id == self.credential_id))
+            credential = legacy_scalar(select(ProviderCredential).where(ProviderCredential.id == self.credential_id))
+            return credential if isinstance(credential, ProviderCredential) else None
+        return None
+
+    async def aload_credential(self) -> ProviderCredential | None:
+        if self.credential_id is None:
+            return None
+        credential = await async_scalar(select(ProviderCredential).where(ProviderCredential.id == self.credential_id))
+        return credential if isinstance(credential, ProviderCredential) else None
 
     @property
-    def credential_name(self):
+    def credential_name(self) -> str | None:
         credential = self.credential
         return credential.credential_name if credential else None
 
     @property
-    def encrypted_config(self):
+    def encrypted_config(self) -> str | None:
         credential = self.credential
         return credential.encrypted_config if credential else None
 
     @property
-    def token_is_set(self):
+    def token_is_set(self) -> bool:
         """
         Returns True if the encrypted_config is not None, indicating that the token is set.
         """
         return self.encrypted_config is not None
 
     @property
-    def is_enabled(self):
+    def is_enabled(self) -> bool:
         """
         Returns True if the provider is enabled.
         """
@@ -143,19 +151,29 @@ class ProviderModel(TypeBase):
     )
 
     @cached_property
-    def credential(self):
+    def credential(self) -> ProviderModelCredential | None:
         if self.credential_id:
-            return db.session.scalar(
+            credential = legacy_scalar(
                 select(ProviderModelCredential).where(ProviderModelCredential.id == self.credential_id)
             )
+            return credential if isinstance(credential, ProviderModelCredential) else None
+        return None
+
+    async def aload_credential(self) -> ProviderModelCredential | None:
+        if self.credential_id is None:
+            return None
+        credential = await async_scalar(
+            select(ProviderModelCredential).where(ProviderModelCredential.id == self.credential_id)
+        )
+        return credential if isinstance(credential, ProviderModelCredential) else None
 
     @property
-    def credential_name(self):
+    def credential_name(self) -> str | None:
         credential = self.credential
         return credential.credential_name if credential else None
 
     @property
-    def encrypted_config(self):
+    def encrypted_config(self) -> str | None:
         credential = self.credential
         return credential.encrypted_config if credential else None
 

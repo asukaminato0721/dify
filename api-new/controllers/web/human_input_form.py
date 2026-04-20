@@ -7,21 +7,22 @@ import logging
 from datetime import datetime
 from typing import Any, NotRequired, TypedDict
 
-from flask import Response, request
 from flask_restx import Resource
 from pydantic import BaseModel
 from sqlalchemy import select
-from werkzeug.exceptions import Forbidden
 
 from configs import dify_config
 from controllers.web import web_ns
 from controllers.web.error import NotFoundError, WebFormRateLimitExceededError
 from controllers.web.site import serialize_app_site_payload
+from core.db.session_factory import session_factory
 from extensions.ext_database import db
+from flask import Response, current_app, request
 from libs.helper import RateLimiter, extract_remote_ip
 from models.account import TenantStatus
 from models.model import App, Site
 from services.human_input_service import Form, FormNotFoundError, HumanInputService
+from werkzeug.exceptions import Forbidden
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class FormDefinitionPayload(TypedDict):
     site: NotRequired[dict]
 
 
-def _jsonify_form_definition(form: Form, site_payload: dict | None = None) -> Response:
+def _jsonify_form_definition(form: Form, site_payload: dict | None = None) -> Any:
     """Return the form payload (optionally with site) as a JSON response."""
     definition_payload = form.get_definition().model_dump()
     payload: FormDefinitionPayload = {
@@ -101,7 +102,7 @@ class HumanInputFormApi(Resource):
             raise WebFormRateLimitExceededError()
         _FORM_ACCESS_RATE_LIMITER.increment_rate_limit(ip_address)
 
-        service = HumanInputService(db.engine)
+        service = HumanInputService(session_factory.get_session_maker())
         # TODO(QuantumGhost): forbid submission for form tokens
         # that are only for console.
         form = service.get_form_by_token(form_token)
@@ -110,7 +111,7 @@ class HumanInputFormApi(Resource):
             raise NotFoundError("Form not found")
 
         service.ensure_form_active(form)
-        app_model, site = _get_app_site_from_form(form)
+        app_model, site = current_app.ensure_sync(_get_app_site_from_form)(form)
 
         return _jsonify_form_definition(form, site_payload=serialize_app_site_payload(app_model, site, None))
 
@@ -136,13 +137,13 @@ class HumanInputFormApi(Resource):
             raise WebFormRateLimitExceededError()
         _FORM_SUBMIT_RATE_LIMITER.increment_rate_limit(ip_address)
 
-        service = HumanInputService(db.engine)
+        service = HumanInputService(session_factory.get_session_maker())
         form = service.get_form_by_token(form_token)
         if form is None:
             raise NotFoundError("Form not found")
 
         if (recipient_type := form.recipient_type) is None:
-            logger.warning("Recipient type is None for form, form_id=%", form.id)
+            logger.warning("Recipient type is None for form, form_id=%s", form.id)
             raise AssertionError("Recipient type is None")
 
         try:
@@ -160,15 +161,17 @@ class HumanInputFormApi(Resource):
         return {}, 200
 
 
-def _get_app_site_from_form(form: Form) -> tuple[App, Site]:
+async def _get_app_site_from_form(form: Form) -> tuple[App, Site]:
     """Resolve App/Site for the form's app and validate tenant status."""
-    app_model = db.session.get(App, form.app_id)
-    if app_model is None or app_model.tenant_id != form.tenant_id:
-        raise NotFoundError("Form not found")
+    async with db.session_context() as session:
+        app_model = await session.scalar(select(App).where(App.id == form.app_id))
+        if app_model is None or app_model.tenant_id != form.tenant_id:
+            raise NotFoundError("Form not found")
+        await session.refresh(app_model, attribute_names=["tenant"])
 
-    site = db.session.scalar(select(Site).where(Site.app_id == app_model.id).limit(1))
-    if site is None:
-        raise Forbidden()
+        site = await session.scalar(select(Site).where(Site.app_id == app_model.id).limit(1))
+        if site is None:
+            raise Forbidden()
 
     if app_model.tenant and app_model.tenant.status == TenantStatus.ARCHIVE:
         raise Forbidden()

@@ -2,10 +2,9 @@ import logging
 from collections.abc import Mapping
 
 from sqlalchemy import case, select
-from sqlalchemy.orm import sessionmaker
 
 from core.app.entities.app_invoke_entities import InvokeFrom
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from models.model import App, DefaultEndUserSessionID, EndUser
 
 logger = logging.getLogger(__name__)
@@ -24,7 +23,7 @@ class EndUserService:
         when an end-user ID is known.
         """
 
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        with session_factory.get_session_maker().begin() as session:
             return session.scalar(
                 select(EndUser)
                 .where(
@@ -54,7 +53,7 @@ class EndUserService:
         if not user_id:
             user_id = DefaultEndUserSessionID.DEFAULT_SESSION_ID
 
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        with session_factory.get_session_maker().begin() as session:
             # Query with ORDER BY to prioritize exact type matches while maintaining backward compatibility
             # This single query approach is more efficient than separate queries
             end_user = session.scalar(
@@ -133,7 +132,7 @@ class EndUserService:
         if not unique_app_ids:
             return result
 
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        with session_factory.get_session_maker().begin() as session:
             # Fetch existing end users for all target apps in a single query
             existing_end_users: list[EndUser] = list(
                 session.scalars(

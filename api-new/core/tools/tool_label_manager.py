@@ -1,12 +1,12 @@
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
+from core.db.session_factory import session_factory
 from core.tools.__base.tool_provider import ToolProviderController
 from core.tools.builtin_tool.provider import BuiltinToolProviderController
 from core.tools.custom_tool.provider import ApiToolProviderController
 from core.tools.entities.values import default_tool_label_name_list
 from core.tools.workflow_as_tool.provider import WorkflowToolProviderController
-from extensions.ext_database import db
 from models.tools import ToolLabelBinding
 
 
@@ -42,7 +42,7 @@ class ToolLabelManager:
         if session is not None:
             cls._update_tool_labels_logics(session, provider_id, controller, labels)
         else:
-            with sessionmaker(db.engine).begin() as _session:
+            with session_factory.get_session_maker().begin() as _session:
                 cls._update_tool_labels_logics(_session, provider_id, controller, labels)
 
     @classmethod
@@ -90,7 +90,7 @@ class ToolLabelManager:
             ToolLabelBinding.tool_type == controller.provider_type,
         )
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with session_factory.get_session_maker().begin() as _session:
             labels: list[str] = list(_session.scalars(stmt).all())
 
         return labels
@@ -120,7 +120,7 @@ class ToolLabelManager:
 
         labels: list[ToolLabelBinding] = []
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with session_factory.get_session_maker().begin() as _session:
             stmt = select(ToolLabelBinding).where(
                 ToolLabelBinding.tool_id.in_(provider_ids), ToolLabelBinding.tool_type.in_(list(provider_types))
             )

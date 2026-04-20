@@ -1,5 +1,3 @@
-from flask import request
-
 import services
 from controllers.common.errors import (
     FilenameNotExistsError,
@@ -11,8 +9,9 @@ from controllers.common.errors import (
 from controllers.common.schema import register_schema_models
 from controllers.web import web_ns
 from controllers.web.wraps import WebApiResource
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from fields.file_fields import FileResponse
+from flask import request
 from services.file_service import FileService
 
 register_schema_models(web_ns, FileResponse)
@@ -71,7 +70,7 @@ class FileApi(WebApiResource):
             source = None
 
         try:
-            upload_file = FileService(db.engine).upload_file(
+            upload_file = FileService(session_factory.get_session_maker()).upload_file(
                 filename=file.filename,
                 content=file.read(),
                 mimetype=file.mimetype,

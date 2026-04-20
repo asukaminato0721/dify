@@ -1,7 +1,6 @@
 import base64
 import secrets
 
-from flask import request
 from flask_restx import Resource
 
 from controllers.common.schema import register_schema_models
@@ -17,6 +16,7 @@ from controllers.console.error import EmailSendIpLimitError
 from controllers.console.wraps import email_password_login_enabled, only_edition_enterprise, setup_required
 from controllers.web import web_ns
 from extensions.ext_database import db
+from flask import current_app, request
 from libs.helper import extract_remote_ip
 from libs.password import hash_password
 from models.account import Account
@@ -161,9 +161,7 @@ class ForgotPasswordResetApi(Resource):
         account = AccountService.get_account_by_email_with_case_fallback(email)
 
         if account:
-            account = db.session.merge(account)
-            self._update_existing_account(account, password_hashed, salt)
-            db.session.commit()
+            current_app.ensure_sync(_reset_account_password)(account, password_hashed, salt)
         else:
             raise AuthenticationFailedError()
 
@@ -173,3 +171,11 @@ class ForgotPasswordResetApi(Resource):
         # Update existing account credentials
         account.password = base64.b64encode(password_hashed).decode()
         account.password_salt = base64.b64encode(salt).decode()
+
+
+async def _reset_account_password(account: Account, password_hashed: bytes, salt: bytes) -> None:
+    async with db.session_context() as session:
+        merged_account = await session.merge(account)
+        merged_account.password = base64.b64encode(password_hashed).decode()
+        merged_account.password_salt = base64.b64encode(salt).decode()
+        await session.commit()

@@ -1,4 +1,4 @@
-from typing import Any, Self
+from typing import Any, Self, cast
 
 from core.entities.mcp_provider import MCPProviderEntity
 from core.mcp.types import Tool as RemoteMCPTool
@@ -30,7 +30,6 @@ class MCPToolProviderController(ToolProviderController):
         sse_read_timeout: float | None = None,
     ):
         super().__init__(entity)
-        self.entity: ToolProviderEntityWithPlugin = entity
         self.tenant_id = tenant_id
         self.provider_id = provider_id
         self.server_url = server_url
@@ -118,7 +117,7 @@ class MCPToolProviderController(ToolProviderController):
         return tool with given name
         """
         tool_entity = next(
-            (tool_entity for tool_entity in self.entity.tools if tool_entity.identity.name == tool_name), None
+            (tool_entity for tool_entity in self._plugin_entity.tools if tool_entity.identity.name == tool_name), None
         )
 
         if not tool_entity:
@@ -128,7 +127,7 @@ class MCPToolProviderController(ToolProviderController):
             entity=tool_entity,
             runtime=ToolRuntime(tenant_id=self.tenant_id),
             tenant_id=self.tenant_id,
-            icon=self.entity.identity.icon,
+            icon=self._plugin_entity.identity.icon,
             server_url=self.server_url,
             provider_id=self.provider_id,
             headers=self.headers,
@@ -145,12 +144,16 @@ class MCPToolProviderController(ToolProviderController):
                 entity=tool_entity,
                 runtime=ToolRuntime(tenant_id=self.tenant_id),
                 tenant_id=self.tenant_id,
-                icon=self.entity.identity.icon,
+                icon=self._plugin_entity.identity.icon,
                 server_url=self.server_url,
                 provider_id=self.provider_id,
                 headers=self.headers,
                 timeout=self.timeout,
                 sse_read_timeout=self.sse_read_timeout,
             )
-            for tool_entity in self.entity.tools
+            for tool_entity in self._plugin_entity.tools
         ]
+
+    @property
+    def _plugin_entity(self) -> ToolProviderEntityWithPlugin:
+        return cast(ToolProviderEntityWithPlugin, self.entity)
