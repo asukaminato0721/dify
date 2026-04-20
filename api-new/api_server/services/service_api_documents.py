@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from sqlalchemy import desc, func, select
 
 from api_server.errors import bad_request, not_found
+from api_server.services.service_api_legacy import load_legacy_owner_account
 from api_server.models.app import Account, UploadFile
 from api_server.models.dataset import Dataset, DatasetMetadata, DatasetMetadataBinding, Document, DocumentSegment
 from core.rag.index_processor.constant.built_in_field import BuiltInField, MetadataDataSource
 from extensions.ext_database import db
 from graphon.file import helpers as file_helpers
+from services.dataset_service import DatasetService, DocumentService
+import services
 
 
 class ServiceApiDocumentListResponseDict(TypedDict):
@@ -50,6 +54,14 @@ class ServiceApiDocumentDownloadResponseDict(TypedDict):
 class ServiceApiDocumentBatchDownloadZipResultDict(TypedDict):
     path: str
     filename: str
+
+
+class ServiceApiDocumentStatusActionPayloadDict(TypedDict):
+    document_ids: list[str]
+
+
+class ServiceApiResultDict(TypedDict):
+    result: str
 
 
 class ServiceApiDocumentService:
@@ -443,6 +455,34 @@ class ServiceApiDocumentService:
                 raise not_found("upload_file_not_found", "Uploaded file not found.")
 
         return {"url": file_helpers.get_signed_file_url(upload_file_id=upload_file.id, as_attachment=True)}
+
+    @classmethod
+    async def batch_update_document_status(
+        cls,
+        *,
+        tenant_id: str,
+        dataset_id: str,
+        action: Literal["enable", "disable", "archive", "un_archive"],
+        document_ids: list[str],
+    ) -> ServiceApiResultDict:
+        await cls._get_dataset(tenant_id=tenant_id, dataset_id=dataset_id)
+
+        def _update() -> ServiceApiResultDict:
+            owner_account = load_legacy_owner_account(tenant_id)
+            dataset = DatasetService.get_dataset(dataset_id)
+            if dataset is None:
+                raise not_found("dataset_not_found", "Dataset not found.")
+            DatasetService.check_dataset_permission(dataset, owner_account)
+            DatasetService.check_dataset_model_setting(dataset)
+            try:
+                DocumentService.batch_update_document_status(dataset, document_ids, action, owner_account)
+            except services.errors.document.DocumentIndexingError as exc:
+                raise bad_request("invalid_action", str(exc)) from exc
+            except ValueError as exc:
+                raise bad_request("invalid_action", str(exc)) from exc
+            return {"result": "success"}
+
+        return await asyncio.to_thread(_update)
 
     @classmethod
     async def prepare_document_batch_download_zip(

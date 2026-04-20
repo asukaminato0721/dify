@@ -57,8 +57,20 @@ from api_server.services.service_api_datasets import ServiceApiDatasetListRespon
 from api_server.services.service_api_documents import (
     ServiceApiDocumentDownloadResponseDict,
     ServiceApiDocumentListResponseDict,
+    ServiceApiDocumentStatusActionPayloadDict,
     ServiceApiDocumentService,
     ServiceApiDocumentStatusResponseDict,
+    ServiceApiResultDict,
+)
+from api_server.services.service_api_hit_testing import ServiceApiHitTestingResponseDict, ServiceApiHitTestingService
+from api_server.services.service_api_rag_pipeline import (
+    ServiceApiPipelineUploadFileDict,
+    ServiceApiRagPipelineService,
+)
+from api_server.services.service_api_segments import (
+    ServiceApiSegmentDetailResponseDict,
+    ServiceApiSegmentService,
+    ServiceApiSegmentsResponseDict,
 )
 from api_server.services.service_api_feedbacks import ServiceApiFeedbackListResponseDict, ServiceApiFeedbackService
 from api_server.services.service_api_files import ServiceApiFileService
@@ -75,6 +87,8 @@ from core.app.app_config.common.parameters_mapping import AppParametersDict
 from graphon.file import helpers as file_helpers
 from services.file_service import FileService
 from services.model_provider_service import ModelProviderService
+from services.entities.knowledge_entities.knowledge_entities import SegmentUpdateArgs
+from services.rag_pipeline.entity.pipeline_service_api_entities import DatasourceNodeRunApiEntity, PipelineRunApiEntity
 
 router = APIRouter(tags=["service-api"])
 
@@ -147,6 +161,37 @@ class ServiceApiDocumentListQuery(BaseModel):
 
 class ServiceApiDocumentBatchDownloadZipPayload(BaseModel):
     document_ids: list[UUID]
+
+
+class ServiceApiDocumentStatusActionPayload(BaseModel):
+    document_ids: list[str] = Field(default_factory=list)
+
+
+class ServiceApiSegmentCreatePayload(BaseModel):
+    segments: list[dict[str, object]] | None = Field(default=None)
+
+
+class ServiceApiSegmentListQuery(BaseModel):
+    status: list[str] = Field(default_factory=list)
+    keyword: str | None = Field(default=None)
+
+
+class ServiceApiSegmentUpdatePayload(BaseModel):
+    segment: SegmentUpdateArgs
+
+
+class ServiceApiHitTestingPayload(BaseModel):
+    query: str = Field(max_length=250)
+    retrieval_model: dict[str, object] | None = Field(default=None)
+    external_retrieval_model: dict[str, object] | None = Field(default=None)
+    attachment_ids: list[str] | None = Field(default=None)
+
+
+class ServiceApiDatasourceNodeRunPayload(BaseModel):
+    inputs: dict[str, object]
+    datasource_type: str
+    credential_id: str | None = None
+    is_published: bool
 
 
 class ServiceApiMessageFeedbackPayload(BaseModel):
@@ -429,6 +474,22 @@ async def get_service_api_document_indexing_status(
     )
 
 
+@router.patch("/v1/datasets/{dataset_id}/documents/status/{action}")
+async def update_service_api_document_status(
+    request: Request,
+    dataset_id: UUID,
+    action: Literal["enable", "disable", "archive", "un_archive"],
+    payload: ServiceApiDocumentStatusActionPayload,
+) -> ServiceApiResultDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiDocumentService.batch_update_document_status(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        action=action,
+        document_ids=payload.document_ids,
+    )
+
+
 @router.get("/v1/datasets/{dataset_id}/documents/{document_id}")
 async def get_service_api_document_detail(
     request: Request,
@@ -456,6 +517,109 @@ async def get_service_api_document_download_url(
         tenant_id=context.tenant.id,
         dataset_id=str(dataset_id),
         document_id=str(document_id),
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/documents/{document_id}/segments")
+async def list_service_api_segments(
+    request: Request,
+    dataset_id: UUID,
+    document_id: UUID,
+    page: int = Query(default=1),
+    limit: int = Query(default=20),
+    status: Annotated[list[str] | None, Query()] = None,
+    keyword: str | None = Query(default=None),
+) -> ServiceApiSegmentsResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiSegmentService.list_segments(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_id=str(document_id),
+        page=page,
+        limit=limit,
+        status=status or [],
+        keyword=keyword,
+    )
+
+
+@router.post("/v1/datasets/{dataset_id}/documents/{document_id}/segments")
+async def create_service_api_segments(
+    request: Request,
+    dataset_id: UUID,
+    document_id: UUID,
+    payload: ServiceApiSegmentCreatePayload,
+) -> dict[str, object]:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiSegmentService.create_segments(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_id=str(document_id),
+        segments_payload=payload.segments or [],
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/documents/{document_id}/segments/{segment_id}")
+async def get_service_api_segment(
+    request: Request,
+    dataset_id: UUID,
+    document_id: UUID,
+    segment_id: UUID,
+) -> ServiceApiSegmentDetailResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiSegmentService.get_segment(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_id=str(document_id),
+        segment_id=str(segment_id),
+    )
+
+
+@router.post("/v1/datasets/{dataset_id}/documents/{document_id}/segments/{segment_id}")
+async def update_service_api_segment(
+    request: Request,
+    dataset_id: UUID,
+    document_id: UUID,
+    segment_id: UUID,
+    payload: ServiceApiSegmentUpdatePayload,
+) -> ServiceApiSegmentDetailResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiSegmentService.update_segment(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_id=str(document_id),
+        segment_id=str(segment_id),
+        payload=payload.segment,
+    )
+
+
+@router.delete("/v1/datasets/{dataset_id}/documents/{document_id}/segments/{segment_id}", status_code=204, response_model=None)
+async def delete_service_api_segment(
+    request: Request,
+    dataset_id: UUID,
+    document_id: UUID,
+    segment_id: UUID,
+) -> None:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    await ServiceApiSegmentService.delete_segment(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        document_id=str(document_id),
+        segment_id=str(segment_id),
+    )
+
+
+@router.post("/v1/datasets/{dataset_id}/hit-testing")
+@router.post("/v1/datasets/{dataset_id}/retrieve")
+async def service_api_hit_testing(
+    request: Request,
+    dataset_id: UUID,
+    payload: ServiceApiHitTestingPayload,
+) -> ServiceApiHitTestingResponseDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiHitTestingService.hit_test(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        payload=payload.model_dump(exclude_none=True),
     )
 
 
@@ -660,6 +824,74 @@ async def get_service_api_dataset_detail(
     return await ServiceApiDatasetService.get_dataset_detail(
         tenant_id=context.tenant.id,
         dataset_id=str(dataset_id),
+    )
+
+
+@router.get("/v1/datasets/{dataset_id}/pipeline/datasource-plugins")
+async def list_service_api_rag_pipeline_datasource_plugins(
+    request: Request,
+    dataset_id: UUID,
+    is_published: bool = Query(default=True),
+) -> list[dict[str, Any]]:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    return await ServiceApiRagPipelineService.list_datasource_plugins(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        is_published=is_published,
+    )
+
+
+@router.post("/v1/datasets/{dataset_id}/pipeline/datasource/nodes/{node_id}/run", response_model=None)
+async def run_service_api_rag_pipeline_datasource_node(
+    request: Request,
+    dataset_id: UUID,
+    node_id: str,
+    payload: ServiceApiDatasourceNodeRunPayload,
+) -> JSONResponse | StreamingResponse:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    response = await ServiceApiRagPipelineService.run_datasource_node(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        node_id=node_id,
+        payload=DatasourceNodeRunApiEntity.model_validate(
+            {
+                "pipeline_id": "",
+                "node_id": node_id,
+                **payload.model_dump(exclude_none=True),
+            }
+        ),
+    )
+    return PublicGenerationBridge.to_fastapi_response(response)
+
+
+@router.post("/v1/datasets/{dataset_id}/pipeline/run", response_model=None)
+async def run_service_api_rag_pipeline(
+    request: Request,
+    dataset_id: UUID,
+    payload: PipelineRunApiEntity,
+) -> JSONResponse | StreamingResponse:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    response = await ServiceApiRagPipelineService.run_pipeline(
+        tenant_id=context.tenant.id,
+        dataset_id=str(dataset_id),
+        payload=payload,
+    )
+    return PublicGenerationBridge.to_fastapi_response(response)
+
+
+@router.post("/v1/datasets/pipeline/file-upload", status_code=201)
+async def upload_service_api_rag_pipeline_file(
+    request: Request,
+    file: Annotated[FastAPIUploadFile, FastAPIFile(...)],
+) -> ServiceApiPipelineUploadFileDict:
+    context = await ServiceApiAuthService.resolve_dataset_context(request)
+    content = await file.read()
+    mime_type = file.content_type or "application/octet-stream"
+    return await ServiceApiRagPipelineService.upload_pipeline_file(
+        tenant_id=context.tenant.id,
+        filename=file.filename or "",
+        content=content,
+        mime_type=mime_type,
     )
 
 

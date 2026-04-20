@@ -276,6 +276,206 @@ async def test_service_api_document_download_route_uses_dataset_context() -> Non
     )
 
 
+async def test_service_api_document_status_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ) as auth_mock,
+        patch(
+            "api_server.routes.service_api.ServiceApiDocumentService.batch_update_document_status",
+            new=AsyncMock(return_value={"result": "success"}),
+        ) as document_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.patch(
+                f"/v1/datasets/{dataset_id}/documents/status/enable",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"document_ids": ["doc-1"]},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    auth_mock.assert_awaited_once()
+    document_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        action="enable",
+        document_ids=["doc-1"],
+    )
+
+
+async def test_service_api_segments_list_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    document_id = str(uuid4())
+    payload = {"data": [], "doc_form": "text_model", "total": 0, "has_more": False, "limit": 20, "page": 1}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ),
+        patch(
+            "api_server.routes.service_api.ServiceApiSegmentService.list_segments",
+            new=AsyncMock(return_value=payload),
+        ) as segment_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/documents/{document_id}/segments",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    segment_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        document_id=document_id,
+        page=1,
+        limit=20,
+        status=[],
+        keyword=None,
+    )
+
+
+async def test_service_api_hit_testing_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    payload = {"query": {"content": "hello"}, "records": []}
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ),
+        patch(
+            "api_server.routes.service_api.ServiceApiHitTestingService.hit_test",
+            new=AsyncMock(return_value=payload),
+        ) as hit_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                f"/v1/datasets/{dataset_id}/hit-testing",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={"query": "hello"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    hit_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        payload={"query": "hello"},
+    )
+
+
+async def test_service_api_rag_pipeline_plugins_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+    payload = [{"node_id": "node-1"}]
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ),
+        patch(
+            "api_server.routes.service_api.ServiceApiRagPipelineService.list_datasource_plugins",
+            new=AsyncMock(return_value=payload),
+        ) as pipeline_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                f"/v1/datasets/{dataset_id}/pipeline/datasource-plugins",
+                headers={"Authorization": "Bearer dataset-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    pipeline_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        dataset_id=dataset_id,
+        is_published=True,
+    )
+
+
+async def test_service_api_rag_pipeline_file_upload_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    payload = {
+        "id": "upload-1",
+        "name": "doc.txt",
+        "size": 3,
+        "extension": "txt",
+        "mime_type": "text/plain",
+        "created_by": "owner-1",
+        "created_at": "2026-04-20T12:00:00",
+    }
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ),
+        patch(
+            "api_server.routes.service_api.ServiceApiRagPipelineService.upload_pipeline_file",
+            new=AsyncMock(return_value=payload),
+        ) as upload_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/v1/datasets/pipeline/file-upload",
+                headers={"Authorization": "Bearer dataset-token"},
+                files={"file": ("doc.txt", b"abc", "text/plain")},
+            )
+
+    assert response.status_code == 201
+    assert response.json() == payload
+    upload_mock.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        filename="doc.txt",
+        content=b"abc",
+        mime_type="text/plain",
+    )
+
+
+async def test_service_api_rag_pipeline_run_route_uses_dataset_context() -> None:
+    context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
+    dataset_id = str(uuid4())
+
+    with (
+        patch(
+            "api_server.routes.service_api.ServiceApiAuthService.resolve_dataset_context",
+            new=AsyncMock(return_value=context),
+        ),
+        patch(
+            "api_server.routes.service_api.ServiceApiRagPipelineService.run_pipeline",
+            new=AsyncMock(return_value={"result": "success"}),
+        ) as pipeline_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                f"/v1/datasets/{dataset_id}/pipeline/run",
+                headers={"Authorization": "Bearer dataset-token"},
+                json={
+                    "inputs": {},
+                    "datasource_type": "online_document",
+                    "datasource_info_list": [],
+                    "start_node_id": "node-1",
+                    "is_published": True,
+                    "response_mode": "blocking",
+                },
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    pipeline_mock.assert_awaited_once()
+
+
 async def test_service_api_document_batch_zip_route_uses_dataset_context(tmp_path: Path) -> None:
     context = type("DatasetContextStub", (), {"tenant": type("TenantStub", (), {"id": "tenant-1"})()})()
     dataset_id = str(uuid4())
