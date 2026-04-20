@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import urllib.parse
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 from fastapi import APIRouter, File as FastAPIFile, Form, Query, Request, UploadFile as FastAPIUploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session, sessionmaker
 
 import services
 from api_server.errors import ApiError, forbidden
@@ -14,8 +15,8 @@ from api_server.routes.console_misc import _ensure_console_setup, _resolve_conso
 from configs import dify_config
 from constants import DOCUMENT_EXTENSIONS
 from controllers.common.helpers import guess_file_info_from_response
+from core.db.session_factory import get_sync_session_maker
 from core.helper import ssrf_proxy
-from extensions.ext_database import db
 from graphon.file import helpers as file_helpers
 from services.billing_service import BillingService
 from services.feature_service import FeatureService
@@ -24,6 +25,10 @@ from services.file_service import FileService
 router = APIRouter(tags=["console"])
 
 _FALLBACK_LANG = "en-US"
+
+
+def _sync_session_maker() -> sessionmaker[Session]:
+    return cast(sessionmaker[Session], get_sync_session_maker())
 
 
 class DismissNotificationPayload(BaseModel):
@@ -116,7 +121,7 @@ async def upload_console_remote_file(request: Request, payload: RemoteFileUpload
     content = resp.content if resp.request.method == "GET" else (await asyncio.to_thread(ssrf_proxy.get, payload.url)).content
     try:
         upload_file = await asyncio.to_thread(
-            FileService(db.engine).upload_file,
+            FileService(_sync_session_maker()).upload_file,
             filename=file_info.filename,
             content=content,
             mimetype=file_info.mimetype,
@@ -169,7 +174,10 @@ async def upload_console_file(
     if source == "datasets" and not account.is_dataset_editor:
         raise forbidden("forbidden", "Forbidden.")
     if source == "datasets":
-        features = FeatureService.get_features(account.current_tenant_id)
+        tenant_id = account.current_tenant_id
+        if tenant_id is None:
+            raise forbidden("forbidden", "Forbidden.")
+        features = FeatureService.get_features(tenant_id)
         quota = features.documents_upload_quota
         if features.billing.enabled and 0 < quota.limit <= quota.size:
             raise forbidden("forbidden", "The number of documents has reached the limit of your subscription.")
@@ -179,7 +187,7 @@ async def upload_console_file(
 
     try:
         upload_file = await asyncio.to_thread(
-            FileService(db.engine).upload_file,
+            FileService(_sync_session_maker()).upload_file,
             filename=file.filename,
             content=await file.read(),
             mimetype=file.content_type or "application/octet-stream",
@@ -208,7 +216,7 @@ async def upload_console_file(
 async def preview_console_file(request: Request, file_id: str) -> dict[str, Any]:
     await _ensure_console_setup()
     await _resolve_console_account(request)
-    text = await asyncio.to_thread(FileService(db.engine).get_file_preview, file_id)
+    text = await asyncio.to_thread(FileService(_sync_session_maker()).get_file_preview, file_id)
     return {"content": text}
 
 

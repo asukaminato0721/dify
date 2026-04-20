@@ -656,7 +656,15 @@ async def test_console_files_upload_config_route_uses_fastapi_auth_helper() -> N
 
 async def test_console_remote_file_info_route_uses_fastapi_auth_helper() -> None:
     account = type("AccountStub", (), {"current_tenant_id": "tenant-1"})()
-    head_response = type("RespStub", (), {"status_code": 200, "headers": {"Content-Type": "text/plain", "Content-Length": "12"}})()
+    head_response = type(
+        "RespStub",
+        (),
+        {
+            "status_code": 200,
+            "headers": {"Content-Type": "text/plain", "Content-Length": "12"},
+            "raise_for_status": lambda self: None,
+        },
+    )()
 
     with (
         patch("api_server.routes.console_assets._ensure_console_setup", new=AsyncMock()),
@@ -668,6 +676,217 @@ async def test_console_remote_file_info_route_uses_fastapi_auth_helper() -> None
 
     assert response.status_code == 200
     assert response.json() == {"file_type": "text/plain", "file_length": 12}
+
+
+async def test_console_login_route_sets_auth_cookies() -> None:
+    account = type("AccountStub", (), {"id": "acc-1", "name": "User"})()
+    tenant = type("TenantStub", (), {"id": "tenant-1"})()
+    token_pair = type(
+        "TokenPairStub",
+        (),
+        {"access_token": "access-token", "refresh_token": "refresh-token", "csrf_token": "csrf-token"},
+    )()
+
+    with (
+        patch("api_server.routes.console_auth._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_auth._require_email_password_login", new=AsyncMock()),
+        patch("api_server.routes.console_auth._decrypt_password", return_value="plain-password"),
+        patch("api_server.routes.console_auth.BillingService.is_email_in_freeze", return_value=False),
+        patch("api_server.routes.console_auth.AccountService.is_login_error_rate_limit", return_value=False),
+        patch("api_server.routes.console_auth._authenticate_account_with_case_fallback", return_value=account),
+        patch("api_server.routes.console_auth.TenantService.get_join_tenants", return_value=[tenant]),
+        patch("api_server.routes.console_auth.AccountService.login", return_value=token_pair),
+        patch("api_server.routes.console_auth.AccountService.reset_login_error_rate_limit"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/console/api/login",
+                json={"email": "user@example.com", "password": "encrypted"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    set_cookie = "\n".join(response.headers.get_list("set-cookie"))
+    assert "access-token" in set_cookie
+    assert "refresh-token" in set_cookie
+    assert "csrf-token" in set_cookie
+
+
+async def test_console_logout_route_clears_auth_cookies() -> None:
+    account = type("AccountStub", (), {"id": "acc-1"})()
+
+    with (
+        patch("api_server.routes.console_auth._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_auth._resolve_console_account", new=AsyncMock(return_value=account)),
+        patch("api_server.routes.console_auth.AccountService.logout"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/console/api/logout",
+                cookies={"access_token": "access-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    set_cookie = "\n".join(response.headers.get_list("set-cookie"))
+    assert "access_token=" in set_cookie
+    assert "expires=" in set_cookie.lower()
+
+
+async def test_console_refresh_token_route_sets_new_auth_cookies() -> None:
+    token_pair = type(
+        "TokenPairStub",
+        (),
+        {"access_token": "next-access", "refresh_token": "next-refresh", "csrf_token": "next-csrf"},
+    )()
+
+    with patch("api_server.routes.console_auth.AccountService.refresh_token", return_value=token_pair):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/console/api/refresh-token",
+                cookies={"refresh_token": "refresh-token"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+    assert "next-access" in "\n".join(response.headers.get_list("set-cookie"))
+
+
+async def test_console_forgot_password_validity_route_returns_new_token() -> None:
+    with (
+        patch("api_server.routes.console_auth._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_auth._require_email_password_login", new=AsyncMock()),
+        patch("api_server.routes.console_auth.AccountService.is_forgot_password_error_rate_limit", return_value=False),
+        patch(
+            "api_server.routes.console_auth.AccountService.get_reset_password_data",
+            return_value={"email": "user@example.com", "code": "123456"},
+        ),
+        patch("api_server.routes.console_auth.AccountService.revoke_reset_password_token"),
+        patch(
+            "api_server.routes.console_auth.AccountService.generate_reset_password_token",
+            return_value=("123456", "reset-token-2"),
+        ),
+        patch("api_server.routes.console_auth.AccountService.reset_forgot_password_error_rate_limit"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/console/api/forgot-password/validity",
+                json={"email": "user@example.com", "code": "123456", "token": "reset-token-1"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"is_valid": True, "email": "user@example.com", "token": "reset-token-2"}
+
+
+async def test_console_oauth_login_route_redirects_to_provider() -> None:
+    provider = type("ProviderStub", (), {"get_authorization_url": lambda self, invite_token=None: "https://oauth.example.com/auth"})()
+
+    with patch("api_server.routes.console_auth._get_oauth_providers", return_value={"github": provider}):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver", follow_redirects=False) as client:
+            response = await client.get("/console/api/oauth/login/github")
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://oauth.example.com/auth"
+
+
+async def test_console_oauth_authorize_route_sets_cookies_and_redirects() -> None:
+    provider = type(
+        "ProviderStub",
+        (),
+        {
+            "get_access_token": lambda self, code: "provider-token",
+            "get_user_info": lambda self, token: type("UserInfoStub", (), {"email": "user@example.com", "id": "oauth-id", "name": "OAuth User"})(),
+        },
+    )()
+    account = type("AccountStub", (), {"id": "acc-1", "status": "active"})()
+    token_pair = type(
+        "TokenPairStub",
+        (),
+        {"access_token": "oauth-access", "refresh_token": "oauth-refresh", "csrf_token": "oauth-csrf"},
+    )()
+
+    with (
+        patch("api_server.routes.console_auth._get_oauth_providers", return_value={"github": provider}),
+        patch("api_server.routes.console_auth.RegisterService.is_valid_invite_token", return_value=False),
+        patch("api_server.routes.console_auth._generate_oauth_account", return_value=(account, True)),
+        patch("api_server.routes.console_auth.TenantService.create_owner_tenant_if_not_exist"),
+        patch("api_server.routes.console_auth.AccountService.login", return_value=token_pair),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver", follow_redirects=False) as client:
+            response = await client.get("/console/api/oauth/authorize/github", params={"code": "oauth-code"})
+
+    assert response.status_code == 302
+    assert "oauth_new_user=true" in response.headers["location"]
+    assert "oauth-access" in "\n".join(response.headers.get_list("set-cookie"))
+
+
+async def test_console_oauth_provider_authorize_route_uses_fastapi_auth_helper() -> None:
+    account = type("AccountStub", (), {"id": "acc-1"})()
+    oauth_app = type("OAuthAppStub", (), {"client_id": "client-1"})()
+
+    with (
+        patch("api_server.routes.console_auth._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_auth._require_console_account", new=AsyncMock(return_value=account)),
+        patch("api_server.routes.console_auth.OAuthServerService.get_oauth_provider_app", return_value=oauth_app),
+        patch("api_server.routes.console_auth.OAuthServerService.sign_oauth_authorization_code", return_value="auth-code"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post("/console/api/oauth/provider/authorize", json={"client_id": "client-1"})
+
+    assert response.status_code == 200
+    assert response.json() == {"code": "auth-code"}
+
+
+async def test_console_oauth_provider_account_route_requires_bearer_header() -> None:
+    oauth_app = type("OAuthAppStub", (), {"client_id": "client-1"})()
+
+    with (
+        patch("api_server.routes.console_auth._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_auth.OAuthServerService.get_oauth_provider_app", return_value=oauth_app),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post("/console/api/oauth/provider/account", json={"client_id": "client-1"})
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "Authorization header is required"}
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+async def test_console_datasource_binding_route_persists_authenticated_binding() -> None:
+    account = type("AccountStub", (), {"current_tenant_id": "tenant-1"})()
+
+    with (
+        patch("api_server.routes.console_auth._require_console_account", new=AsyncMock(return_value=account)),
+        patch(
+            "api_server.routes.console_auth._exchange_notion_access_token",
+            return_value=("notion-token", "Workspace", None, "workspace-1"),
+        ),
+        patch("api_server.routes.console_auth._upsert_notion_binding", new=AsyncMock()),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get("/console/api/oauth/data-source/binding/notion", params={"code": "oauth-code"})
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
+
+
+async def test_console_api_key_binding_route_uses_fastapi_auth_helper() -> None:
+    account = type("AccountStub", (), {"current_tenant_id": "tenant-1"})()
+
+    with (
+        patch("api_server.routes.console_auth._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_auth._require_console_account", new=AsyncMock(return_value=account)),
+        patch("api_server.routes.console_auth.ApiKeyAuthService.validate_api_key_auth_args"),
+        patch("api_server.routes.console_auth.ApiKeyAuthService.create_provider_auth"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/console/api/api-key-auth/data-source/binding",
+                json={"category": "datasource", "provider": "notion", "credentials": {"auth_type": "api_key"}},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "success"}
 
 
 async def test_finished_workflow_events_return_sse_payload() -> None:

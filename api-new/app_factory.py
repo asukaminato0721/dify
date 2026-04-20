@@ -14,6 +14,7 @@ from api_server.routes.audio import router as audio_router
 from api_server.routes.bootstrap import router as bootstrap_router
 from api_server.routes.conversation import router as conversation_router
 from api_server.routes.console_misc import router as console_misc_router
+from api_server.routes.console_auth import router as console_auth_router
 from api_server.routes.console_assets import router as console_assets_router
 from api_server.routes.files import router as files_router
 from api_server.routes.generation import router as generation_router
@@ -71,6 +72,7 @@ def create_app() -> DifyApp:
     app.include_router(health_router)
     app.include_router(bootstrap_router)
     app.include_router(console_misc_router)
+    app.include_router(console_auth_router)
     app.include_router(console_assets_router)
     app.include_router(audio_router)
     app.include_router(conversation_router)
