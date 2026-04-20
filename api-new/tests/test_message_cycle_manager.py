@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import core.app.task_pipeline.message_cycle_manager as message_cycle_manager_module
-from core.app.entities.queue_entities import QueueMessageFileEvent
+from core.app.entities.queue_entities import QueueAnnotationReplyEvent, QueueMessageFileEvent
 from core.app.entities.task_entities import EasyUITaskState, StreamEvent
 from core.app.task_pipeline.message_cycle_manager import MessageCycleManager
 from graphon.model_runtime.entities.llm_entities import LLMResult, LLMUsage
@@ -173,3 +173,27 @@ def test_generate_conversation_name_worker_uses_app_config_directly() -> None:
     generate_mock.assert_called_once_with("tenant-1", "hello", "conversation-1", "app-1")
     setex_mock.assert_called_once()
     assert len(session_maker.executed) == 1
+
+
+def test_handle_annotation_reply_uses_event_payload_without_sync_lookup() -> None:
+    manager = _build_manager()
+
+    with patch(
+        "core.app.task_pipeline.message_cycle_manager.AppAnnotationService.get_annotation_by_id",
+        side_effect=AssertionError("sync annotation lookup should not be used"),
+    ):
+        annotation = manager.handle_annotation_reply(
+            QueueAnnotationReplyEvent(
+                message_annotation_id="annotation-1",
+                content="Annotated answer",
+                account_id="account-1",
+                account_name="Ada",
+            )
+        )
+
+    assert annotation is not None
+    assert annotation.content == "Annotated answer"
+    assert manager._task_state.metadata.annotation_reply is not None
+    assert manager._task_state.metadata.annotation_reply.id == "annotation-1"
+    assert manager._task_state.metadata.annotation_reply.account.id == "account-1"
+    assert manager._task_state.metadata.annotation_reply.account.name == "Ada"

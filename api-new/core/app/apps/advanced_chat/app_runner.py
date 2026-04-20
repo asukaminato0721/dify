@@ -465,7 +465,15 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         )
 
         if annotation_reply:
-            self._publish_event(QueueAnnotationReplyEvent(message_annotation_id=annotation_reply.id))
+            annotation_account = getattr(annotation_reply, "account", None)
+            self._publish_event(
+                QueueAnnotationReplyEvent(
+                    message_annotation_id=annotation_reply.id,
+                    content=annotation_reply.content,
+                    account_id=annotation_reply.account_id,
+                    account_name=getattr(annotation_account, "name", None),
+                )
+            )
 
             self._complete_with_stream_output(
                 text=annotation_reply.content, stopped_by=QueueStopEvent.StopBy.ANNOTATION_REPLY

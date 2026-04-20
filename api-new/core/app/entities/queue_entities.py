@@ -242,6 +242,9 @@ class QueueAnnotationReplyEvent(AppQueueEvent):
 
     event: QueueEvent = QueueEvent.ANNOTATION_REPLY
     message_annotation_id: str
+    content: str | None = None
+    account_id: str | None = None
+    account_name: str | None = None
 
 
 class QueueMessageEndEvent(AppQueueEvent):

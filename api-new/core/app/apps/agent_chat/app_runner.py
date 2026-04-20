@@ -136,8 +136,14 @@ class AgentChatAppRunner(AppRunner):
             )
 
             if annotation_reply:
+                annotation_account = getattr(annotation_reply, "account", None)
                 queue_manager.publish(
-                    QueueAnnotationReplyEvent(message_annotation_id=annotation_reply.id),
+                    QueueAnnotationReplyEvent(
+                        message_annotation_id=annotation_reply.id,
+                        content=annotation_reply.content,
+                        account_id=annotation_reply.account_id,
+                        account_name=getattr(annotation_account, "name", None),
+                    ),
                     PublishFrom.APPLICATION_MANAGER,
                 )
 

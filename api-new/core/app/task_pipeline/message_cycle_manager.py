@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from types import SimpleNamespace
 from threading import Thread, Timer
 from typing import Any, cast, Union
 
@@ -171,14 +172,23 @@ class MessageCycleManager:
                 .values(name=name)
             )
 
-    def handle_annotation_reply(
-        self, event: QueueAnnotationReplyEvent
-    ) -> FastAPIMessageAnnotation | MessageAnnotation | None:
+    def handle_annotation_reply(self, event: QueueAnnotationReplyEvent) -> SimpleNamespace | MessageAnnotation | None:
         """
         Handle annotation reply.
         :param event: event
         :return:
         """
+        if event.content is not None and event.account_id is not None:
+            account_name = event.account_name if event.account_name else "Dify user"
+            self._task_state.metadata.annotation_reply = AnnotationReply(
+                id=event.message_annotation_id,
+                account=AnnotationReplyAccount(
+                    id=event.account_id,
+                    name=account_name,
+                ),
+            )
+            return SimpleNamespace(content=event.content)
+
         annotation = AppAnnotationService.get_annotation_by_id(event.message_annotation_id)
         if annotation:
             account = annotation.account
