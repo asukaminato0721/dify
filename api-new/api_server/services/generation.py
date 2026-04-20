@@ -11,7 +11,7 @@ import asyncio
 import json
 import threading
 import uuid
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Generator, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -69,8 +69,10 @@ from core.app.apps.agent_chat.app_runner import AgentChatAppRunner
 from core.app.apps.agent_chat.generate_response_converter import AgentChatAppGenerateResponseConverter
 from core.app.apps.base_app_generator import BaseAppGenerator
 from core.app.apps.base_app_queue_manager import PublishFrom
+from core.app.apps.chat.app_generator import ChatAppGenerator
 from core.app.apps.chat.app_config_manager import ChatAppConfig
 from core.app.apps.completion.app_config_manager import CompletionAppConfig
+from core.app.apps.completion.app_generator import CompletionAppGenerator
 from core.app.apps.exc import GenerateTaskStoppedError
 from core.app.apps.message_based_app_queue_manager import MessageBasedAppQueueManager
 from core.app.apps.workflow.app_config_manager import WorkflowAppConfigManager
@@ -332,20 +334,7 @@ def _build_chat_config(context: WebappContext) -> ChatAppConfig:
 def _ensure_supported_features(
     *, files: list[dict[str, Any]] | None, dataset_enabled: bool, external_tools_enabled: bool
 ) -> None:
-    if files:
-        raise service_unavailable(
-            "files_not_supported", "File generation inputs are not ported to the FastAPI runtime yet."
-        )
-    if dataset_enabled:
-        raise service_unavailable(
-            "dataset_retrieval_unavailable",
-            "Dataset-backed generation is not ported to the FastAPI runtime yet.",
-        )
-    if external_tools_enabled:
-        raise service_unavailable(
-            "external_data_tools_unavailable",
-            "External data tool generation is not ported to the FastAPI runtime yet.",
-        )
+    _ = (files, dataset_enabled, external_tools_enabled)
 
 
 def _prepare_workflow_generation_entity(
@@ -1742,6 +1731,45 @@ def _encode_sse(payload: dict[str, Any]) -> str:
     return f"data: {orjson_dumps(payload)}\n\n"
 
 
+def _generate_completion_with_shared_generator(
+    *,
+    app: FastAPIApp,
+    end_user: FastAPIEndUser,
+    args: dict[str, Any],
+    streaming: bool,
+) -> Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None]:
+    return cast(
+        Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None],
+        CompletionAppGenerator().generate(app, end_user, args, InvokeFrom.WEB_APP, streaming),
+    )
+
+
+def _generate_more_like_this_with_shared_generator(
+    *,
+    app: FastAPIApp,
+    end_user: FastAPIEndUser,
+    message_id: str,
+    streaming: bool,
+) -> Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None]:
+    return cast(
+        Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None],
+        CompletionAppGenerator().generate_more_like_this(app, message_id, end_user, InvokeFrom.WEB_APP, streaming),
+    )
+
+
+def _generate_chat_with_shared_generator(
+    *,
+    app: FastAPIApp,
+    end_user: FastAPIEndUser,
+    args: dict[str, Any],
+    streaming: bool,
+) -> Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None]:
+    return cast(
+        Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None],
+        ChatAppGenerator().generate(app, end_user, args, InvokeFrom.WEB_APP, streaming),
+    )
+
+
 async def _next_chunk(iterator: Iterator[LLMResultChunk]) -> LLMResultChunk | None:
     def _next() -> LLMResultChunk | None:
         try:
@@ -1768,53 +1796,19 @@ class AsyncWebGenerationService:
         query: str,
         files: list[dict[str, Any]] | None,
         streaming: bool,
-    ) -> ChatbotAppBlockingResponse | CompletionAppBlockingResponse | AsyncIterator[str]:
-        app_config = _build_completion_config(context)
-        _ensure_supported_features(
-            files=files,
-            dataset_enabled=bool(app_config.dataset and app_config.dataset.dataset_ids),
-            external_tools_enabled=bool(app_config.external_data_variables),
-        )
-        model_conf = await asyncio.to_thread(ModelConfigConverter.convert, app_config)
-        prompt_messages, stop = _build_completion_prompt_messages(
-            app_config=app_config,
-            model_conf=model_conf,
-            inputs=inputs,
-            query=query,
-        )
-        message = await _create_completion_message(context=context, query=query, inputs=inputs)
-        task_id = str(uuid.uuid4())
-
-        if not streaming:
-            llm_result = await asyncio.to_thread(
-                cls._invoke_blocking,
-                model_conf,
-                prompt_messages,
-                stop,
-            )
-            await _save_message_result(
-                message_id=message.id,
-                answer=llm_result.message.get_text_content(),
-                usage=llm_result.usage,
-            )
-            return CompletionAppBlockingResponse(
-                task_id=task_id,
-                data=CompletionAppBlockingResponse.Data(
-                    id=message.id,
-                    mode="completion",
-                    message_id=message.id,
-                    answer=llm_result.message.get_text_content(),
-                    metadata={"usage": llm_result.usage.model_dump(mode="json")},
-                    created_at=_timestamp(message.created_at),
-                ),
-            )
-
-        return cls._stream_completion(
-            task_id=task_id,
-            message=message,
-            model_conf=model_conf,
-            prompt_messages=prompt_messages,
-            stop=stop,
+    ) -> Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None]:
+        args = {
+            "inputs": inputs,
+            "query": query,
+            "files": files or [],
+            "auto_generate_name": False,
+        }
+        return await asyncio.to_thread(
+            _generate_completion_with_shared_generator,
+            app=context.app,
+            end_user=context.end_user,
+            args=args,
+            streaming=streaming,
         )
 
     @classmethod
@@ -1824,86 +1818,13 @@ class AsyncWebGenerationService:
         context: WebappContext,
         message_id: str,
         streaming: bool,
-    ) -> CompletionAppBlockingResponse | AsyncIterator[str]:
-        if context.app_model_config is None:
-            raise bad_request("app_unavailable", "App unavailable, please check your app configurations.")
-
-        feature_dict = context.app_model_config.to_feature_dict()
-        more_like_this_dict = feature_dict.get("more_like_this", {"enabled": False})
-        if not more_like_this_dict.get("enabled", False):
-            raise forbidden(
-                "app_more_like_this_disabled",
-                "The 'More like this' feature is disabled. Please refresh your page.",
-            )
-
-        source_message = await _load_owned_message(
-            app_id=context.app.id,
-            end_user_id=context.end_user.id,
+    ) -> Mapping[str, Any] | Generator[Mapping[str, Any] | str, None, None]:
+        return await asyncio.to_thread(
+            _generate_more_like_this_with_shared_generator,
+            app=context.app,
+            end_user=context.end_user,
             message_id=message_id,
-        )
-
-        config_dict = _config_dict(context.app_model_config)
-        if source_message.override_model_configs:
-            try:
-                config_dict = cast(AppModelConfigDict, json.loads(source_message.override_model_configs))
-            except json.JSONDecodeError:
-                config_dict = _config_dict(context.app_model_config)
-        model_dict = dict(cast(dict[str, Any], config_dict.get("model", {})))
-        completion_params = dict(cast(dict[str, Any], model_dict.get("completion_params", {})))
-        completion_params["temperature"] = 0.9
-        model_dict["completion_params"] = completion_params
-        config_dict["model"] = cast(Any, model_dict)
-
-        app_config = _build_completion_config(context, config_dict_override=config_dict)
-        _ensure_supported_features(
-            files=None,
-            dataset_enabled=bool(app_config.dataset and app_config.dataset.dataset_ids),
-            external_tools_enabled=bool(app_config.external_data_variables),
-        )
-        model_conf = await asyncio.to_thread(ModelConfigConverter.convert, app_config)
-        prompt_messages, stop = _build_completion_prompt_messages(
-            app_config=app_config,
-            model_conf=model_conf,
-            inputs=source_message.inputs,
-            query=source_message.query,
-        )
-        message = await _create_completion_message(
-            context=context,
-            query=source_message.query,
-            inputs=source_message.inputs,
-        )
-        task_id = str(uuid.uuid4())
-
-        if not streaming:
-            llm_result = await asyncio.to_thread(
-                cls._invoke_blocking,
-                model_conf,
-                prompt_messages,
-                stop,
-            )
-            await _save_message_result(
-                message_id=message.id,
-                answer=llm_result.message.get_text_content(),
-                usage=llm_result.usage,
-            )
-            return CompletionAppBlockingResponse(
-                task_id=task_id,
-                data=CompletionAppBlockingResponse.Data(
-                    id=message.id,
-                    mode="completion",
-                    message_id=message.id,
-                    answer=llm_result.message.get_text_content(),
-                    metadata={"usage": llm_result.usage.model_dump(mode="json")},
-                    created_at=_timestamp(message.created_at),
-                ),
-            )
-
-        return cls._stream_completion(
-            task_id=task_id,
-            message=message,
-            model_conf=model_conf,
-            prompt_messages=prompt_messages,
-            stop=stop,
+            streaming=streaming,
         )
 
     @classmethod
@@ -1918,73 +1839,25 @@ class AsyncWebGenerationService:
         parent_message_id: str | None,
         streaming: bool,
     ) -> (
-        ChatbotAppBlockingResponse
-        | CompletionAppBlockingResponse
-        | AsyncIterator[str]
-        | Mapping[str, Any]
+        Mapping[str, Any]
+        | Generator[Mapping[str, Any] | str, None, None]
         | Iterator[str]
     ):
         if context.app.mode == context.app.mode.CHAT:
-            app_config = _build_chat_config(context)
-            _ensure_supported_features(
-                files=files,
-                dataset_enabled=bool(app_config.dataset and app_config.dataset.dataset_ids),
-                external_tools_enabled=bool(app_config.external_data_variables),
-            )
-            model_conf = await asyncio.to_thread(ModelConfigConverter.convert, app_config)
-            conversation, message = await _create_chat_records(
-                context=context,
-                app_model_config_id=app_config.app_model_config_id,
-                query=query,
-                inputs=inputs,
-                conversation_id=conversation_id,
-                parent_message_id=parent_message_id,
-                introduction=app_config.additional_features.opening_statement
-                if app_config.additional_features
-                else None,
-            )
-            history_messages = await _load_chat_history(conversation_id=conversation.id)
-            prompt_messages, stop = _build_chat_prompt_messages(
-                app_config=app_config,
-                model_conf=model_conf,
-                inputs=inputs,
-                query=query,
-                history_messages=history_messages,
-            )
-            task_id = str(uuid.uuid4())
-
-            if not streaming:
-                llm_result = await asyncio.to_thread(
-                    cls._invoke_blocking,
-                    model_conf,
-                    prompt_messages,
-                    stop,
-                )
-                await _save_message_result(
-                    message_id=message.id,
-                    answer=llm_result.message.get_text_content(),
-                    usage=llm_result.usage,
-                )
-                return ChatbotAppBlockingResponse(
-                    task_id=task_id,
-                    data=ChatbotAppBlockingResponse.Data(
-                        id=message.id,
-                        mode="chat",
-                        conversation_id=conversation.id,
-                        message_id=message.id,
-                        answer=llm_result.message.get_text_content(),
-                        metadata={"usage": llm_result.usage.model_dump(mode="json")},
-                        created_at=_timestamp(message.created_at),
-                    ),
-                )
-
-            return cls._stream_chat(
-                task_id=task_id,
-                conversation=conversation,
-                message=message,
-                model_conf=model_conf,
-                prompt_messages=prompt_messages,
-                stop=stop,
+            args = {
+                "inputs": inputs,
+                "query": query,
+                "files": files or [],
+                "conversation_id": conversation_id,
+                "parent_message_id": parent_message_id,
+                "auto_generate_name": False,
+            }
+            return await asyncio.to_thread(
+                _generate_chat_with_shared_generator,
+                app=context.app,
+                end_user=context.end_user,
+                args=args,
+                streaming=streaming,
             )
 
         if context.app.mode == context.app.mode.ADVANCED_CHAT:

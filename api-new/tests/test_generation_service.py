@@ -102,6 +102,26 @@ async def test_run_chat_uses_native_runner_for_advanced_chat() -> None:
     native_mock.assert_awaited_once()
 
 
+async def test_run_chat_uses_shared_chat_generator_for_chat_mode() -> None:
+    context = _ContextStub(AppMode.CHAT)
+    with patch(
+        "api_server.services.generation.ChatAppGenerator.generate",
+        return_value={"answer": "hi"},
+    ) as generator_mock:
+        response = await AsyncWebGenerationService.run_chat(
+            context=cast(Any, context),
+            inputs={"name": "Ada"},
+            query="hello",
+            files=[{"type": "image"}],
+            conversation_id="conversation-1",
+            parent_message_id="message-1",
+            streaming=False,
+        )
+
+    assert response == {"answer": "hi"}
+    generator_mock.assert_called_once()
+
+
 async def test_run_chat_uses_native_runner_for_agent_chat() -> None:
     context = _ContextStub(AppMode.AGENT_CHAT)
     with patch(
@@ -120,6 +140,40 @@ async def test_run_chat_uses_native_runner_for_agent_chat() -> None:
 
     assert response == {"answer": "hi"}
     native_mock.assert_awaited_once()
+
+
+async def test_run_completion_uses_shared_completion_generator() -> None:
+    context = _ContextStub(AppMode.COMPLETION)
+    with patch(
+        "api_server.services.generation.CompletionAppGenerator.generate",
+        return_value={"answer": "hi"},
+    ) as generator_mock:
+        response = await AsyncWebGenerationService.run_completion(
+            context=cast(Any, context),
+            inputs={"name": "Ada"},
+            query="hello",
+            files=[{"type": "image"}],
+            streaming=False,
+        )
+
+    assert response == {"answer": "hi"}
+    generator_mock.assert_called_once()
+
+
+async def test_run_more_like_this_uses_shared_completion_generator() -> None:
+    context = _ContextStub(AppMode.COMPLETION)
+    with patch(
+        "api_server.services.generation.CompletionAppGenerator.generate_more_like_this",
+        return_value={"answer": "hi"},
+    ) as generator_mock:
+        response = await AsyncWebGenerationService.run_more_like_this(
+            context=cast(Any, context),
+            message_id="message-1",
+            streaming=False,
+        )
+
+    assert response == {"answer": "hi"}
+    generator_mock.assert_called_once()
 
 
 async def test_run_chat_requires_streaming_for_agent_chat() -> None:
