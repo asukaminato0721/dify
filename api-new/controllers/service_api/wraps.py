@@ -60,21 +60,7 @@ def validate_app_token[**P, R](
         def decorated_view(*args: P.args, **kwargs: P.kwargs) -> R:
             api_token = validate_and_get_api_token("app")
 
-            app_model = db.session.get(App, api_token.app_id)
-            if not app_model:
-                raise Forbidden("The app no longer exists.")
-
-            if app_model.status != "normal":
-                raise Forbidden("The app's status is abnormal.")
-
-            if not app_model.enable_api:
-                raise Forbidden("The app's API service has been disabled.")
-
-            tenant = db.session.get(Tenant, app_model.tenant_id)
-            if tenant is None:
-                raise ValueError("Tenant does not exist.")
-            if tenant.status == TenantStatus.ARCHIVE:
-                raise Forbidden("The workspace's status is archived.")
+            app_model = current_app.ensure_sync(_load_service_api_app)(api_token)
 
             kwargs["app_model"] = app_model
 
@@ -104,16 +90,7 @@ def validate_app_token[**P, R](
             else:
                 # For service API without end-user context, ensure an Account is logged in
                 # so services relying on current_account_with_tenant() work correctly.
-                tenant_owner_info = db.session.execute(
-                    select(Tenant, Account)
-                    .join(TenantAccountJoin, Tenant.id == TenantAccountJoin.tenant_id)
-                    .join(Account, TenantAccountJoin.account_id == Account.id)
-                    .where(
-                        Tenant.id == app_model.tenant_id,
-                        TenantAccountJoin.role == "owner",
-                        Tenant.status == TenantStatus.NORMAL,
-                    )
-                ).one_or_none()
+                tenant_owner_info = current_app.ensure_sync(_load_tenant_owner_account)(app_model.tenant_id)
 
                 if tenant_owner_info:
                     tenant_model, account = tenant_owner_info
@@ -214,13 +191,11 @@ def cloud_edition_billing_rate_limit_check[**P, R](
 
                     if request_count > knowledge_rate_limit.limit:
                         # add ratelimit record
-                        rate_limit_log = RateLimitLog(
+                        current_app.ensure_sync(_persist_rate_limit_log)(
                             tenant_id=api_token.tenant_id,
                             subscription_plan=knowledge_rate_limit.subscription_plan,
                             operation="knowledge",
                         )
-                        db.session.add(rate_limit_log)
-                        db.session.commit()
                         raise Forbidden(
                             "Sorry, you have reached the knowledge base request rate limit of your subscription."
                         )
@@ -257,29 +232,16 @@ def validate_dataset_token[R](view: Callable[..., R]) -> Callable[..., R]:
 
         if dataset_id:
             dataset_id = str(dataset_id)
-            dataset = db.session.scalar(
-                select(Dataset)
-                .where(
-                    Dataset.id == dataset_id,
-                    Dataset.tenant_id == api_token.tenant_id,
-                )
-                .limit(1)
-            )
+            dataset = current_app.ensure_sync(_load_dataset_for_tenant)(dataset_id, api_token.tenant_id)
             if not dataset:
                 raise NotFound("Dataset not found.")
             if not dataset.enable_api:
                 raise Forbidden("Dataset api access is not enabled.")
 
-        tenant_account_join = db.session.execute(
-            select(Tenant, TenantAccountJoin)
-            .where(Tenant.id == api_token.tenant_id)
-            .where(TenantAccountJoin.tenant_id == Tenant.id)
-            .where(TenantAccountJoin.role.in_(["owner"]))
-            .where(Tenant.status == TenantStatus.NORMAL)
-        ).one_or_none()  # TODO: only owner information is required, so only one is returned.
+        tenant_account_join = current_app.ensure_sync(_load_tenant_owner_join)(api_token.tenant_id)
         if tenant_account_join:
             tenant, ta = tenant_account_join
-            account = db.session.get(Account, ta.account_id)
+            account = current_app.ensure_sync(_load_account)(ta.account_id)
             # Login admin
             if account:
                 account.current_tenant = tenant
@@ -339,11 +301,84 @@ class DatasetApiResource(Resource):
     method_decorators = [validate_dataset_token]
 
     def get_dataset(self, dataset_id: str, tenant_id: str) -> Dataset:
-        dataset = db.session.scalar(
-            select(Dataset).where(Dataset.id == dataset_id, Dataset.tenant_id == tenant_id).limit(1)
-        )
+        dataset = current_app.ensure_sync(_load_dataset_for_tenant)(dataset_id, tenant_id)
 
         if not dataset:
             raise NotFound("Dataset not found.")
 
         return dataset
+
+
+async def _load_service_api_app(api_token: ApiToken) -> App:
+    async with db.session_context() as session:
+        app_model = await session.get(App, api_token.app_id)
+        if not app_model:
+            raise Forbidden("The app no longer exists.")
+
+        if app_model.status != "normal":
+            raise Forbidden("The app's status is abnormal.")
+
+        if not app_model.enable_api:
+            raise Forbidden("The app's API service has been disabled.")
+
+        tenant = await session.get(Tenant, app_model.tenant_id)
+        if tenant is None:
+            raise ValueError("Tenant does not exist.")
+        if tenant.status == TenantStatus.ARCHIVE:
+            raise Forbidden("The workspace's status is archived.")
+
+        await session.refresh(app_model, attribute_names=["tenant"])
+        return app_model
+
+
+async def _load_tenant_owner_account(tenant_id: str) -> tuple[Tenant, Account] | None:
+    async with db.session_context() as session:
+        return (
+            await session.execute(
+                select(Tenant, Account)
+                .join(TenantAccountJoin, Tenant.id == TenantAccountJoin.tenant_id)
+                .join(Account, TenantAccountJoin.account_id == Account.id)
+                .where(
+                    Tenant.id == tenant_id,
+                    TenantAccountJoin.role == "owner",
+                    Tenant.status == TenantStatus.NORMAL,
+                )
+            )
+        ).one_or_none()
+
+
+async def _persist_rate_limit_log(tenant_id: str, subscription_plan: str, operation: str) -> None:
+    async with db.session_context() as session:
+        session.add(
+            RateLimitLog(
+                tenant_id=tenant_id,
+                subscription_plan=subscription_plan,
+                operation=operation,
+            )
+        )
+        await session.commit()
+
+
+async def _load_dataset_for_tenant(dataset_id: str, tenant_id: str) -> Dataset | None:
+    async with db.session_context() as session:
+        return await session.scalar(
+            select(Dataset).where(Dataset.id == dataset_id, Dataset.tenant_id == tenant_id).limit(1)
+        )
+
+
+async def _load_tenant_owner_join(tenant_id: str) -> tuple[Tenant, TenantAccountJoin] | None:
+    async with db.session_context() as session:
+        return (
+            await session.execute(
+                select(Tenant, TenantAccountJoin)
+                .where(Tenant.id == tenant_id)
+                .where(TenantAccountJoin.tenant_id == Tenant.id)
+                .where(TenantAccountJoin.role.in_(["owner"]))
+                .where(Tenant.status == TenantStatus.NORMAL)
+            )
+        ).one_or_none()
+
+
+async def _load_account(account_id: str) -> Account | None:
+    async with db.session_context() as session:
+        return await session.get(Account, account_id)

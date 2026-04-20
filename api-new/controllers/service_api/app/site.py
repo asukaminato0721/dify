@@ -1,3 +1,4 @@
+from flask import current_app
 from flask_restx import Resource
 from sqlalchemy import select
 from werkzeug.exceptions import Forbidden
@@ -29,7 +30,7 @@ class AppSiteApi(Resource):
 
         Returns the site configuration for the application including theme, icons, and text.
         """
-        site = db.session.scalar(select(Site).where(Site.app_id == app_model.id).limit(1))
+        site = current_app.ensure_sync(_load_app_site)(app_model.id)
 
         if not site:
             raise Forbidden()
@@ -39,3 +40,8 @@ class AppSiteApi(Resource):
             raise Forbidden()
 
         return SiteResponse.model_validate(site).model_dump(mode="json")
+
+
+async def _load_app_site(app_id: str) -> Site | None:
+    async with db.session_context() as session:
+        return await session.scalar(select(Site).where(Site.app_id == app_id).limit(1))

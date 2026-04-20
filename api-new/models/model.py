@@ -1,3 +1,13 @@
+"""Core app, conversation, and message models.
+
+These models still expose many synchronous convenience properties because much
+of the legacy service layer expects attribute-style access. The FastAPI port
+uses `AsyncSession` for request handling, so synchronous helpers in this module
+must not touch `db.session` directly. Keep sync properties on the
+`models._session` compatibility layer, and add explicit async loader methods
+when a caller can `await` safely.
+"""
+
 from __future__ import annotations
 
 import json
@@ -15,7 +25,7 @@ import sqlalchemy as sa
 from flask import request
 from flask_login import UserMixin  # type: ignore[import-untyped]
 from sqlalchemy import BigInteger, Float, Index, PrimaryKeyConstraint, String, exists, func, select, text
-from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.orm import Mapped, mapped_column
 
 from configs import dify_config
 from constants import DEFAULT_FILE_NUMBER_LIMITS
@@ -28,6 +38,14 @@ from libs.helper import generate_string  # type: ignore[import-not-found]
 from libs.uuid_utils import uuidv7
 from models.utils.file_input_compat import build_file_from_input_mapping
 
+from ._session import (
+    async_scalar_as,
+    legacy_scalar,
+    legacy_scalar_as,
+    legacy_scalars_as,
+    legacy_session_maker,
+    with_legacy_sync_session,
+)
 from .account import Account, Tenant
 from .base import Base, TypeBase, gen_uuidv4_string
 from .engine import db
@@ -68,10 +86,10 @@ def _get_file_access_controller():
 
 
 def _resolve_app_tenant_id(app_id: str) -> str:
-    resolved_tenant_id = db.session.scalar(select(App.tenant_id).where(App.id == app_id))
+    resolved_tenant_id = legacy_scalar(select(App.tenant_id).where(App.id == app_id))
     if not resolved_tenant_id:
         raise ValueError(f"Unable to resolve tenant_id for app {app_id}")
-    return resolved_tenant_id
+    return str(resolved_tenant_id)
 
 
 def _build_app_tenant_resolver(app_id: str, owner_tenant_id: str | None = None) -> Callable[[], str]:
@@ -426,12 +444,15 @@ class App(Base):
 
     @property
     def site(self) -> Site | None:
-        return db.session.scalar(select(Site).where(Site.app_id == self.id))
+        return legacy_scalar_as(select(Site).where(Site.app_id == self.id), Site)
 
     @property
     def app_model_config(self) -> AppModelConfig | None:
         if self.app_model_config_id:
-            return db.session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
+            return legacy_scalar_as(
+                select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id),
+                AppModelConfig,
+            )
 
         return None
 
@@ -440,9 +461,27 @@ class App(Base):
         if self.workflow_id:
             from .workflow import Workflow
 
-            return db.session.scalar(select(Workflow).where(Workflow.id == self.workflow_id))
+            return legacy_scalar_as(select(Workflow).where(Workflow.id == self.workflow_id), Workflow)
 
         return None
+
+    async def aload_site(self) -> Site | None:
+        return await async_scalar_as(select(Site).where(Site.app_id == self.id), Site)
+
+    async def aload_app_model_config(self) -> AppModelConfig | None:
+        if self.app_model_config_id is None:
+            return None
+        return await async_scalar_as(
+            select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id),
+            AppModelConfig,
+        )
+
+    async def aload_workflow(self) -> Workflow | None:
+        if self.workflow_id is None:
+            return None
+        from .workflow import Workflow
+
+        return await async_scalar_as(select(Workflow).where(Workflow.id == self.workflow_id), Workflow)
 
     @property
     def api_base_url(self) -> str:
@@ -450,7 +489,10 @@ class App(Base):
 
     @property
     def tenant(self) -> Tenant | None:
-        return db.session.scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        return legacy_scalar_as(select(Tenant).where(Tenant.id == self.tenant_id), Tenant)
+
+    async def aload_tenant(self) -> Tenant | None:
+        return await async_scalar_as(select(Tenant).where(Tenant.id == self.tenant_id), Tenant)
 
     @property
     def is_agent(self) -> bool:
@@ -464,7 +506,11 @@ class App(Base):
             "strategy", ""
         ) in {"function_call", "react"}:
             self.mode = AppMode.AGENT_CHAT
-            db.session.commit()
+            def persist_mode(session) -> None:
+                session.merge(self)
+                session.commit()
+
+            with_legacy_sync_session(persist_mode)
             return True
         return False
 
@@ -524,7 +570,7 @@ class App(Base):
         if not api_provider_ids and not builtin_provider_ids:
             return []
 
-        with sessionmaker(db.engine).begin() as session:
+        with legacy_session_maker().begin() as session:
             if api_provider_ids:
                 existing_api_providers = [
                     str(api_provider.id)
@@ -591,7 +637,7 @@ class App(Base):
 
     @property
     def tags(self) -> Sequence[Tag]:
-        tags = db.session.scalars(
+        tags = legacy_scalars_as(
             select(Tag)
             .join(TagBinding, Tag.id == TagBinding.tag_id)
             .where(
@@ -599,15 +645,16 @@ class App(Base):
                 TagBinding.tenant_id == self.tenant_id,
                 Tag.tenant_id == self.tenant_id,
                 Tag.type == "app",
-            )
-        ).all()
+            ),
+            Tag,
+        )
 
         return tags or []
 
     @property
     def author_name(self) -> str | None:
         if self.created_by:
-            account = db.session.scalar(select(Account).where(Account.id == self.created_by))
+            account = legacy_scalar_as(select(Account).where(Account.id == self.created_by), Account)
             if account:
                 return account.name
 

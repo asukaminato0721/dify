@@ -47,6 +47,15 @@ def legacy_scalars_all(statement: Executable) -> list[object]:
     return with_legacy_sync_session(lambda session: list(session.scalars(statement).all()))
 
 
+def legacy_scalar_as[ResultT](statement: Executable, expected_type: type[ResultT]) -> ResultT | None:
+    result = legacy_scalar(statement)
+    return result if isinstance(result, expected_type) else None
+
+
+def legacy_scalars_as[ResultT](statement: Executable, expected_type: type[ResultT]) -> list[ResultT]:
+    return [result for result in legacy_scalars_all(statement) if isinstance(result, expected_type)]
+
+
 def legacy_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None:
     return with_legacy_sync_session(lambda session: session.get(model_type, ident))
 
@@ -69,6 +78,15 @@ async def async_scalars_all(statement: Executable) -> list[object]:
         return list((await session.scalars(statement)).all())
 
     return await with_async_session(load_all)
+
+
+async def async_scalar_as[ResultT](statement: Executable, expected_type: type[ResultT]) -> ResultT | None:
+    result = await async_scalar(statement)
+    return result if isinstance(result, expected_type) else None
+
+
+async def async_scalars_as[ResultT](statement: Executable, expected_type: type[ResultT]) -> list[ResultT]:
+    return [result for result in await async_scalars_all(statement) if isinstance(result, expected_type)]
 
 
 async def async_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None:

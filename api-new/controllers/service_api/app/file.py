@@ -13,7 +13,7 @@ from controllers.common.errors import (
 from controllers.common.schema import register_schema_models
 from controllers.service_api import service_api_ns
 from controllers.service_api.wraps import FetchUserArg, WhereisUserArg, validate_app_token
-from extensions.ext_database import db
+from core.db.session_factory import session_factory
 from fields.file_fields import FileResponse
 from models import App, EndUser
 from services.file_service import FileService
@@ -56,7 +56,7 @@ class FileApi(Resource):
             raise FilenameNotExistsError
 
         try:
-            upload_file = FileService(db.engine).upload_file(
+            upload_file = FileService(session_factory.get_session_maker()).upload_file(
                 filename=file.filename,
                 content=file.read(),
                 mimetype=file.mimetype,
