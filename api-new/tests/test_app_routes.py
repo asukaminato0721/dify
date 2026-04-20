@@ -623,6 +623,53 @@ async def test_console_schema_definitions_route_uses_fastapi_auth_helper() -> No
     assert response.json() == payload
 
 
+async def test_console_notification_route_uses_fastapi_auth_helper() -> None:
+    payload = {"should_show": False, "notifications": []}
+    account = type("AccountStub", (), {"id": "acc-1", "current_tenant_id": "tenant-1", "interface_language": "en-US"})()
+
+    with (
+        patch("api_server.routes.console_assets._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_assets._ensure_cloud"),
+        patch("api_server.routes.console_assets._resolve_console_account", new=AsyncMock(return_value=account)),
+        patch("api_server.routes.console_assets.asyncio.to_thread", new=AsyncMock(return_value={"shouldShow": False})),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get("/console/api/notification")
+
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
+async def test_console_files_upload_config_route_uses_fastapi_auth_helper() -> None:
+    account = type("AccountStub", (), {"current_tenant_id": "tenant-1"})()
+
+    with (
+        patch("api_server.routes.console_assets._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_assets._resolve_console_account", new=AsyncMock(return_value=account)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get("/console/api/files/upload")
+
+    assert response.status_code == 200
+    assert "file_size_limit" in response.json()
+
+
+async def test_console_remote_file_info_route_uses_fastapi_auth_helper() -> None:
+    account = type("AccountStub", (), {"current_tenant_id": "tenant-1"})()
+    head_response = type("RespStub", (), {"status_code": 200, "headers": {"Content-Type": "text/plain", "Content-Length": "12"}})()
+
+    with (
+        patch("api_server.routes.console_assets._ensure_console_setup", new=AsyncMock()),
+        patch("api_server.routes.console_assets._resolve_console_account", new=AsyncMock(return_value=account)),
+        patch("api_server.routes.console_assets.asyncio.to_thread", new=AsyncMock(return_value=head_response)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get("/console/api/remote-files/https%3A%2F%2Fexample.com%2Fa.txt")
+
+    assert response.status_code == 200
+    assert response.json() == {"file_type": "text/plain", "file_length": 12}
+
+
 async def test_finished_workflow_events_return_sse_payload() -> None:
     context = WebappContext(
         app=type("AppStub", (), {"mode": AppMode.WORKFLOW, "id": "app-1"})(),
