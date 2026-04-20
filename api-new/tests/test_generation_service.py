@@ -10,6 +10,7 @@ import pytest
 from api_server.models.app import App as FastAPIApp
 from api_server.models.app import AppModelConfig
 from api_server.models.app import Conversation
+from api_server.models.app import EndUser as FastAPIEndUser
 from api_server.models.app import Message
 from api_server.models.app import MessageFile
 from api_server.models.app import UploadFile as FastAPIUploadFile
@@ -19,6 +20,7 @@ from api_server.services.generation import (
     AsyncWebGenerationService,
     _create_completion_message,
     _get_legacy_sync_session_maker,
+    _prepare_native_public_agent_chat,
     _prefetch_agent_chat_memory_async,
     _save_message_result,
 )
@@ -357,3 +359,122 @@ async def test_prefetch_agent_chat_memory_attaches_message_end_file_cache() -> N
     assert isinstance(cached_files, list)
     assert cached_files[0]["related_id"] == "message-file-1"
     assert cached_files[0]["upload_file_id"] == "upload-1"
+
+
+async def test_prepare_native_public_agent_chat_seeds_zero_agent_thought_count() -> None:
+    app = FastAPIApp(
+        id="app-1",
+        tenant_id="tenant-1",
+        name="Agent",
+        description="",
+        mode=AppMode.AGENT_CHAT,
+        icon_type=None,
+        icon=None,
+        icon_background=None,
+        created_by=None,
+        app_model_config_id="config-1",
+        workflow_id=None,
+        status="normal",
+        enable_site=True,
+        enable_api=True,
+        use_icon_as_answer_icon=False,
+    )
+    app_model_config = AppModelConfig(id="config-1", app_id="app-1")
+    end_user = FastAPIEndUser(
+        id="end-user-1",
+        tenant_id="tenant-1",
+        app_id="app-1",
+        type="session",
+        external_user_id=None,
+        name=None,
+        is_anonymous=True,
+        session_id="session-1",
+    )
+    conversation = Conversation(
+        id="conversation-1",
+        app_id="app-1",
+        app_model_config_id="config-1",
+        model_provider=None,
+        model_id=None,
+        override_model_configs=None,
+        mode=AppMode.AGENT_CHAT.value,
+        name="Test",
+        summary=None,
+        inputs={},
+        introduction=None,
+        system_instruction=None,
+        system_instruction_tokens=0,
+        status="normal",
+        invoke_from="web-app",
+        from_source="api",
+        from_end_user_id="end-user-1",
+        from_account_id=None,
+        read_at=None,
+        read_account_id=None,
+        dialogue_count=0,
+        is_deleted=False,
+    )
+    message = Message(
+        id="message-1",
+        app_id="app-1",
+        model_provider=None,
+        model_id=None,
+        override_model_configs=None,
+        conversation_id="conversation-1",
+        inputs={},
+        query="hello",
+        message={},
+        message_tokens=0,
+        message_unit_price=0,
+        message_price_unit=0,
+        answer="",
+        answer_tokens=0,
+        answer_unit_price=0,
+        answer_price_unit=0,
+        parent_message_id=None,
+        provider_response_latency=0.0,
+        total_price=0,
+        currency="USD",
+        status="normal",
+        error=None,
+        message_metadata=None,
+        invoke_from="web-app",
+        from_source="api",
+        from_end_user_id="end-user-1",
+        from_account_id=None,
+        agent_based=False,
+        workflow_run_id=None,
+        app_mode=AppMode.AGENT_CHAT.value,
+    )
+    session = SimpleNamespace(
+        get=AsyncMock(side_effect=[app, app_model_config, end_user]),
+    )
+    context = SimpleNamespace(app=app, end_user=end_user)
+
+    with (
+        patch("api_server.services.generation.db.session_context", return_value=_session_context(cast(Any, session))),
+        patch(
+            "api_server.services.generation._prepare_agent_chat_generation_entity",
+            return_value=SimpleNamespace(app_config=SimpleNamespace(), files=[]),
+        ),
+        patch(
+            "api_server.services.generation._init_agent_chat_records_async",
+            new=AsyncMock(return_value=(conversation, message)),
+        ),
+        patch(
+            "api_server.services.generation._prefetch_agent_chat_memory_async",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        prepared = await _prepare_native_public_agent_chat(
+            context=cast(Any, context),
+            inputs={},
+            query="hello",
+            files=None,
+            conversation_id=None,
+            parent_message_id=None,
+            auto_generate_name=True,
+        )
+
+    assert prepared.message is message
+    assert getattr(message, "_cached_agent_thought_count") == 0

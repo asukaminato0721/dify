@@ -1423,6 +1423,7 @@ async def _prepare_native_public_agent_chat(
         )
 
     setattr(message, "_cached_app_model_config", app_model_config)
+    setattr(message, "_cached_agent_thought_count", 0)
 
     return _PreparedAgentChatRun(
         app_model=app_model,
