@@ -520,6 +520,77 @@ async def test_inner_dsl_export_route_uses_wrapper() -> None:
     assert response.json() == payload
 
 
+async def test_inner_plugin_upload_file_request_uses_wrapper() -> None:
+    with (
+        patch("api_server.routes.inner_api_plugin._ensure_setup", new=AsyncMock()),
+        patch("api_server.routes.inner_api_plugin._check_plugin_inner_api_access"),
+        patch(
+            "api_server.routes.inner_api_plugin._prepare_plugin_request",
+            new=AsyncMock(
+                return_value=(
+                    type("UserStub", (), {"id": "user-1"})(),
+                    type("TenantStub", (), {"id": "tenant-1"})(),
+                    type("PayloadStub", (), {"filename": "a.txt", "mimetype": "text/plain"})(),
+                )
+            ),
+        ),
+        patch(
+            "api_server.routes.inner_api_plugin.get_signed_file_url_for_plugin",
+            return_value="https://example.com/upload",
+        ),
+        patch(
+            "api_server.routes.inner_api_plugin._get_backwards_base",
+            return_value=type("RespStub", (), {"__init__": lambda self, **kwargs: setattr(self, "_data", kwargs), "model_dump": lambda self: self._data}),
+        ),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"X-Inner-Api-Key": "plugin-key"},
+        ) as client:
+            response = await client.post(
+                "/inner/api/upload/file/request",
+                json={"tenant_id": "tenant-1", "user_id": "user-1", "filename": "a.txt", "mimetype": "text/plain"},
+            )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["url"] == "https://example.com/upload"
+
+
+async def test_inner_plugin_llm_route_returns_streaming_response() -> None:
+    with (
+        patch("api_server.routes.inner_api_plugin._ensure_setup", new=AsyncMock()),
+        patch("api_server.routes.inner_api_plugin._check_plugin_inner_api_access"),
+        patch(
+            "api_server.routes.inner_api_plugin._prepare_plugin_request",
+            new=AsyncMock(
+                return_value=(
+                    type("UserStub", (), {"id": "user-1"})(),
+                    type("TenantStub", (), {"id": "tenant-1"})(),
+                    object(),
+                )
+            ),
+        ),
+        patch(
+            "api_server.routes.inner_api_plugin.asyncio.to_thread",
+            new=AsyncMock(return_value=iter([b"payload"])),
+        ),
+        patch("api_server.routes.inner_api_plugin._get_backwards_model"),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"X-Inner-Api-Key": "plugin-key"},
+        ) as client:
+            response = await client.post(
+                "/inner/api/invoke/llm",
+                json={"tenant_id": "tenant-1", "user_id": "user-1", "provider": "openai", "model": "gpt", "mode": "chat", "completion_params": {}, "prompt_messages": []},
+            )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+
 async def test_finished_workflow_events_return_sse_payload() -> None:
     context = WebappContext(
         app=type("AppStub", (), {"mode": AppMode.WORKFLOW, "id": "app-1"})(),
