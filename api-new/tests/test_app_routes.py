@@ -15,6 +15,7 @@ from api_server.services.generation_bridge import ChatMessagePayload, Completion
 from api_server.services.webapp_context import WebappContext
 from api_server.services.workflow_events import WorkflowEventsService, WorkflowRunRecord
 from main import app
+from core.mcp import types as mcp_types
 
 
 async def test_health_endpoint() -> None:
@@ -290,6 +291,45 @@ async def test_workflow_events_requires_passport() -> None:
 
     assert response.status_code == 401
     assert response.json()["code"] == "missing_passport"
+
+
+async def test_mcp_notification_route_returns_202() -> None:
+    mcp_server = type("McpServerStub", (), {"tenant_id": "tenant-1", "id": "server-1"})()
+    app_stub = type("AppStub", (), {"tenant_id": "tenant-1", "id": "app-1", "mode": "chat", "app_model_config": None})()
+
+    with (
+        patch("api_server.routes.mcp._load_mcp_server_and_app", new=AsyncMock(return_value=(mcp_server, app_stub))),
+        patch("api_server.routes.mcp._get_user_input_form", new=AsyncMock(return_value=[])),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/mcp/server/demo/mcp",
+                json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+            )
+
+    assert response.status_code == 202
+
+
+async def test_mcp_request_route_returns_jsonrpc_payload() -> None:
+    mcp_server = type("McpServerStub", (), {"tenant_id": "tenant-1", "id": "server-1"})()
+    app_stub = type("AppStub", (), {"tenant_id": "tenant-1", "id": "app-1", "mode": "chat", "app_model_config": None})()
+    response_payload = mcp_types.JSONRPCResponse(jsonrpc="2.0", id=1, result={"ok": True})
+
+    with (
+        patch("api_server.routes.mcp._load_mcp_server_and_app", new=AsyncMock(return_value=(mcp_server, app_stub))),
+        patch("api_server.routes.mcp._get_user_input_form", new=AsyncMock(return_value=[])),
+        patch("api_server.routes.mcp._retrieve_end_user", new=AsyncMock(return_value=None)),
+        patch("api_server.routes.mcp.handle_mcp_request", return_value=response_payload) as handler_mock,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post(
+                "/mcp/server/demo/mcp",
+                json={"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}
+    handler_mock.assert_called_once()
 
 
 async def test_finished_workflow_events_return_sse_payload() -> None:
