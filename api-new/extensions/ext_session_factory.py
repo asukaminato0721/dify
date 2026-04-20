@@ -4,4 +4,4 @@ from extensions.ext_database import db
 
 def init_app(app):
     with app.app_context():
-        configure_session_factory(db.engine)
+        configure_session_factory(db.sync_engine)

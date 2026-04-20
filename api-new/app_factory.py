@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -24,43 +23,38 @@ from api_server.routes.webapp import router as webapp_router
 from api_server.routes.workflow_events import router as workflow_events_router
 from configs import dify_config
 from dify_app import DifyApp
-from extensions import ext_redis
+from extensions import ext_celery, ext_redis, ext_storage
 from extensions.ext_database import db
 
 logger = logging.getLogger(__name__)
 
 
-class _RedisExtensionAdapter:
-    """Expose the legacy `extensions` slot expected by the Redis bootstrap."""
-
-    extensions: dict[str, object]
-
-    def __init__(self, app: FastAPI) -> None:
-        state_extensions = getattr(app.state, "extensions", None)
-        if isinstance(state_extensions, dict):
-            self.extensions = state_extensions
-        else:
-            self.extensions = {}
-            app.state.extensions = self.extensions
+def _init_optional_extension(name: str, init: Callable[[], None]) -> None:
+    try:
+        init()
+    except ModuleNotFoundError:
+        logger.warning("Skipping optional extension initialization: %s", name, exc_info=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db.init_app(app)
-    ext_redis.init_app(cast(DifyApp, _RedisExtensionAdapter(app)))
     try:
         yield
     finally:
         await db.dispose()
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(
+def create_app() -> DifyApp:
+    app = DifyApp(
         title="Dify API",
         version=dify_config.project.version,
         lifespan=lifespan,
     )
     db.init_app(app)
+    ext_redis.init_app(app)
+    _init_optional_extension("storage", lambda: ext_storage.init_app(app))
+    ext_celery.init_app(app)
     app.add_middleware(
         SessionMiddleware,
         secret_key=dify_config.SECRET_KEY,

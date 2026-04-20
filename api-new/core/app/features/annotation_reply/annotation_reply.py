@@ -8,7 +8,7 @@ from core.app.entities.app_invoke_entities import InvokeFrom
 from core.db.session_factory import session_factory
 from core.rag.datasource.vdb.vector_factory import Vector
 from core.rag.index_processor.constant.index_type import IndexTechniqueType
-from models.dataset import Dataset
+from models.dataset import Dataset, DatasetCollectionBinding
 from models.enums import CollectionBindingType, ConversationFromSource
 from models.model import App, AppAnnotationSetting, Message, MessageAnnotation
 
@@ -43,13 +43,18 @@ class AnnotationReplyFeature:
         if not annotation_setting:
             return None
 
-        collection_binding_detail = annotation_setting.collection_binding_detail
-
-        if not collection_binding_detail:
-            return None
-
         try:
             score_threshold = annotation_setting.score_threshold or 1
+            with session_factory.create_session() as session:
+                collection_binding_detail = session.scalar(
+                    select(DatasetCollectionBinding).where(
+                        DatasetCollectionBinding.id == annotation_setting.collection_binding_id
+                    )
+                )
+
+            if collection_binding_detail is None:
+                return None
+
             embedding_provider_name = collection_binding_detail.provider_name
             embedding_model_name = collection_binding_detail.model_name
 

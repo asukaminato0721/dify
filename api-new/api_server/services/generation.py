@@ -25,14 +25,22 @@ import contexts
 from api_server.errors import bad_request, forbidden, not_found, service_unavailable
 from api_server.models.app import (
     App as FastAPIApp,
-    AppModelConfig,
+)
+from api_server.models.app import (
     AppMode,
+    AppModelConfig,
     Conversation,
-    EndUser as FastAPIEndUser,
     Message,
     MessageAgentThought,
     MessageFile,
+)
+from api_server.models.app import (
+    EndUser as FastAPIEndUser,
+)
+from api_server.models.app import (
     UploadFile as FastAPIUploadFile,
+)
+from api_server.models.app import (
     Workflow as FastAPIWorkflow,
 )
 from api_server.services.webapp_context import WebappContext
@@ -99,6 +107,7 @@ from core.repositories.factory import WorkflowExecutionRepository, WorkflowNodeE
 from core.workflow.file_reference import resolve_file_record_id
 from extensions.ext_database import db
 from factories import file_factory
+from graphon.file import FileTransferMethod
 from graphon.model_runtime.entities.llm_entities import LLMResult, LLMResultChunk, LLMUsage
 from graphon.model_runtime.entities.message_entities import (
     AssistantPromptMessage,
@@ -127,6 +136,12 @@ def _config_dict(app_model_config: AppModelConfig) -> AppModelConfigDict:
     prompt_type = "advanced" if config.get("chat_prompt_config") or config.get("completion_prompt_config") else "simple"
     config["prompt_type"] = prompt_type
     return cast(AppModelConfigDict, config)
+
+
+def _set_runtime_cache(target: object, name: str, value: object) -> None:
+    """Attach ad-hoc cache state to ORM rows that are later consumed by legacy sync runners."""
+
+    setattr(target, name, value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -555,100 +570,50 @@ async def _load_owned_fastapi_conversation(
     return conversation
 
 
-def _init_agent_chat_records(
+async def _seed_message_file_caches_async(
     *,
-    session: Session,
-    application_generate_entity: AgentChatAppGenerateEntity,
-    end_user: FastAPIEndUser,
-    conversation: Conversation | None,
-) -> tuple[Conversation, Message]:
-    """Persist conversation/message rows for public agent-chat generation."""
+    session: AsyncSession,
+    conversation: Conversation,
+    message: Message,
+    message_files: list[MessageFile],
+) -> None:
+    """Prime message file caches so legacy sync runners avoid reopening sessions on the active FastAPI path."""
 
-    app_config = application_generate_entity.app_config
-    created_new_conversation = conversation is None
-    query = application_generate_entity.query or "New conversation"
-    conversation_name = (query[:20] + "…") if len(query) > 20 else query
-
-    override_model_configs: dict[str, Any] | None = None
-    if app_config.app_model_config_from == app_config.app_model_config_from.ARGS:
-        override_model_configs = cast(dict[str, Any], app_config.app_model_config_dict)
-
-    if conversation is None:
-        conversation = Conversation(
-            app_id=app_config.app_id,
-            app_model_config_id=app_config.app_model_config_id,
-            model_provider=application_generate_entity.model_conf.provider,
-            model_id=application_generate_entity.model_conf.model,
-            override_model_configs=json.dumps(override_model_configs) if override_model_configs else None,
-            mode=app_config.app_mode.value,
-            name=conversation_name,
-            inputs=application_generate_entity.inputs,
-            introduction=_render_message_based_conversation_introduction(application_generate_entity),
-            system_instruction="",
-            system_instruction_tokens=0,
-            status="normal",
-            invoke_from=application_generate_entity.invoke_from.value,
-            from_source=ConversationFromSource.API.value,
-            from_end_user_id=end_user.id,
-            from_account_id=None,
+    user_files = [
+        message_file
+        for message_file in message_files
+        if message_file.belongs_to in {None, MessageFileBelongsTo.USER.value}
+    ]
+    assistant_files = [
+        message_file
+        for message_file in message_files
+        if message_file.belongs_to == MessageFileBelongsTo.ASSISTANT.value
+    ]
+    upload_file_ids = list(
+        dict.fromkeys(
+            message_file.upload_file_id
+            for message_file in message_files
+            if message_file.transfer_method == FileTransferMethod.LOCAL_FILE and message_file.upload_file_id
         )
-        session.add(conversation)
-        session.flush()
-        session.refresh(conversation)
-    else:
-        conversation.updated_at = naive_utc_now()
-
-    message = Message(
-        app_id=app_config.app_id,
-        model_provider=application_generate_entity.model_conf.provider,
-        model_id=application_generate_entity.model_conf.model,
-        override_model_configs=json.dumps(override_model_configs) if override_model_configs else None,
-        conversation_id=conversation.id,
-        inputs=application_generate_entity.inputs,
-        query=application_generate_entity.query,
-        message={},
-        message_tokens=0,
-        message_unit_price=0,
-        message_price_unit=0,
-        answer="",
-        answer_tokens=0,
-        answer_unit_price=0,
-        answer_price_unit=0,
-        parent_message_id=application_generate_entity.parent_message_id,
-        provider_response_latency=0,
-        total_price=0,
-        currency="USD",
-        invoke_from=application_generate_entity.invoke_from.value,
-        from_source=ConversationFromSource.API.value,
-        from_end_user_id=end_user.id,
-        from_account_id=None,
-        app_mode=app_config.app_mode.value,
     )
-    session.add(message)
-    session.flush()
-    session.refresh(message)
+    upload_files_map: dict[str, FastAPIUploadFile] = {}
+    if upload_file_ids:
+        upload_files = (
+            await session.scalars(select(FastAPIUploadFile).where(FastAPIUploadFile.id.in_(upload_file_ids)))
+        ).all()
+        upload_files_map = {upload_file.id: upload_file for upload_file in upload_files}
 
-    message_files: list[MessageFile] = []
-    for file in application_generate_entity.files:
-        message_files.append(
-            MessageFile(
-                message_id=message.id,
-                type=file.type,
-                transfer_method=file.transfer_method,
-                belongs_to=MessageFileBelongsTo.USER.value,
-                url=file.remote_url,
-                upload_file_id=resolve_file_record_id(file.reference),
-                created_by_role=CreatorUserRole.END_USER.value,
-                created_by=end_user.id,
-            )
-        )
-    if message_files:
-        session.add_all(message_files)
-
-    session.commit()
-    application_generate_entity.conversation_id = conversation.id
-    application_generate_entity.is_new_conversation = created_new_conversation
-    return conversation, message
+    prefetched_message_end_files = [
+        prepare_file_dict(message_file, cast(dict[str, Any], upload_files_map)) for message_file in message_files
+    ]
+    _set_runtime_cache(message, "_cached_conversation", conversation)
+    _set_runtime_cache(message, "_cached_user_message_files", user_files)
+    _set_runtime_cache(message, "_cached_assistant_message_files", assistant_files)
+    _set_runtime_cache(
+        message,
+        "_cached_message_end_files",
+        cast(list[MessageFileInfoDict], prefetched_message_end_files),
+    )
 
 
 async def _init_agent_chat_records_async(
@@ -738,102 +703,16 @@ async def _init_agent_chat_records_async(
         )
     if message_files:
         session.add_all(message_files)
+        await _seed_message_file_caches_async(
+            session=session,
+            conversation=conversation,
+            message=message,
+            message_files=message_files,
+        )
 
     await session.commit()
     await session.refresh(conversation)
     await session.refresh(message)
-    application_generate_entity.conversation_id = conversation.id
-    application_generate_entity.is_new_conversation = created_new_conversation
-    return conversation, message
-
-
-def _init_advanced_chat_records(
-    *,
-    session: Session,
-    application_generate_entity: AdvancedChatAppGenerateEntity,
-    end_user: FastAPIEndUser,
-    conversation: Conversation | None,
-) -> tuple[Conversation, Message]:
-    """Persist conversation/message rows for public advanced-chat generation."""
-
-    app_config = application_generate_entity.app_config
-    created_new_conversation = conversation is None
-    query = application_generate_entity.query or "New conversation"
-    conversation_name = (query[:20] + "…") if len(query) > 20 else query
-
-    if conversation is None:
-        conversation = Conversation(
-            app_id=app_config.app_id,
-            app_model_config_id=None,
-            model_provider=None,
-            model_id=None,
-            override_model_configs=None,
-            mode=app_config.app_mode.value,
-            name=conversation_name,
-            inputs=application_generate_entity.inputs,
-            introduction=app_config.additional_features.opening_statement if app_config.additional_features else None,
-            system_instruction="",
-            system_instruction_tokens=0,
-            status="normal",
-            invoke_from=application_generate_entity.invoke_from.value,
-            from_source=ConversationFromSource.API.value,
-            from_end_user_id=end_user.id,
-            from_account_id=None,
-        )
-        session.add(conversation)
-        session.flush()
-        session.refresh(conversation)
-    else:
-        conversation.updated_at = naive_utc_now()
-
-    message = Message(
-        app_id=app_config.app_id,
-        model_provider=None,
-        model_id=None,
-        override_model_configs=None,
-        conversation_id=conversation.id,
-        inputs=application_generate_entity.inputs,
-        query=application_generate_entity.query,
-        message={},
-        message_tokens=0,
-        message_unit_price=0,
-        message_price_unit=0,
-        answer="",
-        answer_tokens=0,
-        answer_unit_price=0,
-        answer_price_unit=0,
-        parent_message_id=application_generate_entity.parent_message_id,
-        provider_response_latency=0,
-        total_price=0,
-        currency="USD",
-        invoke_from=application_generate_entity.invoke_from.value,
-        from_source=ConversationFromSource.API.value,
-        from_end_user_id=end_user.id,
-        from_account_id=None,
-        app_mode=app_config.app_mode.value,
-    )
-    session.add(message)
-    session.flush()
-    session.refresh(message)
-
-    message_files: list[MessageFile] = []
-    for file in application_generate_entity.files:
-        message_files.append(
-            MessageFile(
-                message_id=message.id,
-                type=file.type,
-                transfer_method=file.transfer_method,
-                belongs_to=MessageFileBelongsTo.USER.value,
-                url=file.remote_url,
-                upload_file_id=resolve_file_record_id(file.reference),
-                created_by_role=CreatorUserRole.END_USER.value,
-                created_by=end_user.id,
-            )
-        )
-    if message_files:
-        session.add_all(message_files)
-
-    session.commit()
     application_generate_entity.conversation_id = conversation.id
     application_generate_entity.is_new_conversation = created_new_conversation
     return conversation, message
@@ -922,6 +801,12 @@ async def _init_advanced_chat_records_async(
         )
     if message_files:
         session.add_all(message_files)
+        await _seed_message_file_caches_async(
+            session=session,
+            conversation=conversation,
+            message=message,
+            message_files=message_files,
+        )
 
     await session.commit()
     await session.refresh(conversation)
@@ -957,8 +842,8 @@ async def _prefetch_agent_chat_memory_async(
 ) -> None:
     """Attach request-stage agent memory state so sync runners avoid reopening sessions on the active path."""
 
-    setattr(conversation, "_cached_app", app_model)
-    setattr(conversation, "_cached_app_model_config", app_model_config)
+    _set_runtime_cache(conversation, "_cached_app", app_model)
+    _set_runtime_cache(conversation, "_cached_app_model_config", app_model_config)
 
     history_messages = (
         await session.scalars(
@@ -968,7 +853,7 @@ async def _prefetch_agent_chat_memory_async(
             .limit(500)
         )
     ).all()
-    setattr(conversation, "_cached_history_messages", list(history_messages))
+    _set_runtime_cache(conversation, "_cached_history_messages", list(history_messages))
 
     if not history_messages:
         return
@@ -1015,19 +900,25 @@ async def _prefetch_agent_chat_memory_async(
             if message_file.belongs_to in {None, MessageFileBelongsTo.USER.value}
         ]
         assistant_files = [
-            message_file for message_file in message_files if message_file.belongs_to == MessageFileBelongsTo.ASSISTANT.value
+            message_file
+            for message_file in message_files
+            if message_file.belongs_to == MessageFileBelongsTo.ASSISTANT.value
         ]
         cached_thoughts = thoughts_by_message_id.get(history_message.id, [])
         prefetched_message_end_files = [
             prepare_file_dict(message_file, cast(dict[str, Any], upload_files_map)) for message_file in message_files
         ]
-        setattr(history_message, "_cached_user_message_files", user_files)
-        setattr(history_message, "_cached_assistant_message_files", assistant_files)
-        setattr(history_message, "_cached_app_model_config", app_model_config)
-        setattr(history_message, "_cached_conversation", conversation)
-        setattr(history_message, "_cached_agent_thoughts", cached_thoughts)
-        setattr(history_message, "_cached_agent_thought_count", len(cached_thoughts))
-        setattr(history_message, "_cached_message_end_files", cast(list[MessageFileInfoDict], prefetched_message_end_files))
+        _set_runtime_cache(history_message, "_cached_user_message_files", user_files)
+        _set_runtime_cache(history_message, "_cached_assistant_message_files", assistant_files)
+        _set_runtime_cache(history_message, "_cached_app_model_config", app_model_config)
+        _set_runtime_cache(history_message, "_cached_conversation", conversation)
+        _set_runtime_cache(history_message, "_cached_agent_thoughts", cached_thoughts)
+        _set_runtime_cache(history_message, "_cached_agent_thought_count", len(cached_thoughts))
+        _set_runtime_cache(
+            history_message,
+            "_cached_message_end_files",
+            cast(list[MessageFileInfoDict], prefetched_message_end_files),
+        )
 
 
 def _run_advanced_chat_runner(
@@ -1422,8 +1313,8 @@ async def _prepare_native_public_agent_chat(
             app_model_config=app_model_config,
         )
 
-    setattr(message, "_cached_app_model_config", app_model_config)
-    setattr(message, "_cached_agent_thought_count", 0)
+    _set_runtime_cache(message, "_cached_app_model_config", app_model_config)
+    _set_runtime_cache(message, "_cached_agent_thought_count", 0)
 
     return _PreparedAgentChatRun(
         app_model=app_model,

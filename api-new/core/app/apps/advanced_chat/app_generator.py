@@ -33,6 +33,7 @@ from core.app.apps.message_based_app_queue_manager import MessageBasedAppQueueMa
 from core.app.entities.app_invoke_entities import AdvancedChatAppGenerateEntity, InvokeFrom
 from core.app.entities.task_entities import ChatbotAppBlockingResponse, ChatbotAppStreamResponse
 from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig, PauseStatePersistenceLayer
+from core.db.session_factory import session_factory
 from core.helper.trace_id_helper import extract_external_trace_id_from_args
 from core.ops.ops_trace_manager import TraceQueueManager
 from core.prompt.utils.get_thread_messages_length import get_thread_messages_length

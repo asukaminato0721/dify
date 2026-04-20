@@ -83,6 +83,7 @@ from graphon.graph_events import (
 )
 from graphon.runtime import GraphRuntimeState, VariablePool
 from graphon.variable_loader import DUMMY_VARIABLE_LOADER, VariableLoader, load_into_variable_pool
+from graphon.variables.variables import Variable
 from models.workflow import Workflow
 from tasks.mail_human_input_delivery_task import dispatch_human_input_email_task
 
@@ -102,6 +103,12 @@ class WorkflowBasedAppRunner:
         self._variable_loader = variable_loader
         self._app_id = app_id
         self._graph_engine_layers = graph_engine_layers
+
+    @staticmethod
+    def _resolve_environment_variables(workflow: Workflow | FastAPIWorkflow) -> Sequence[Variable]:
+        if isinstance(workflow, FastAPIWorkflow):
+            return cast(Sequence[Variable], workflow.environment_variables_value_objects)
+        return cast(Sequence[Variable], workflow.environment_variables)
 
     @staticmethod
     def _resolve_user_from(invoke_from: InvokeFrom) -> UserFrom:
@@ -194,7 +201,7 @@ class WorkflowBasedAppRunner:
             variable_pool,
             build_bootstrap_variables(
                 system_variables=default_system_variables(),
-                environment_variables=workflow.environment_variables,
+                environment_variables=self._resolve_environment_variables(workflow),
             ),
         )
         graph_runtime_state = GraphRuntimeState(variable_pool=variable_pool, start_at=time.time())
@@ -229,7 +236,7 @@ class WorkflowBasedAppRunner:
 
     def _get_graph_and_variable_pool_for_single_node_run(
         self,
-        workflow: Workflow,
+        workflow: Workflow | FastAPIWorkflow,
         node_id: str,
         user_inputs: dict[str, Any],
         graph_runtime_state: GraphRuntimeState,
@@ -681,7 +688,10 @@ class WorkflowBasedAppRunner:
             if not reason.form_id:
                 continue
             try:
-                dispatch_human_input_email_task.apply_async(
+                apply_async = getattr(dispatch_human_input_email_task, "apply_async", None)
+                if not callable(apply_async):
+                    raise TypeError("dispatch_human_input_email_task is missing apply_async")
+                apply_async(
                     kwargs={"form_id": reason.form_id, "node_title": reason.node_title},
                     queue="mail",
                 )
