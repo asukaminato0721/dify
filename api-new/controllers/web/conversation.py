@@ -1,5 +1,8 @@
+import asyncio
 from typing import Literal
 
+from api_server.errors import ApiError
+from api_server.services.conversation_message import ConversationMessageService
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
 from controllers.common.controller_schemas import ConversationRenamePayload
@@ -7,8 +10,6 @@ from controllers.common.schema import register_schema_models
 from controllers.web import web_ns
 from controllers.web.error import NotChatAppError
 from controllers.web.wraps import WebApiResource
-from core.app.entities.app_invoke_entities import InvokeFrom
-from core.db.session_factory import session_factory
 from fields.conversation_fields import (
     ConversationInfiniteScrollPagination,
     ResultResponse,
@@ -18,8 +19,7 @@ from flask import request
 from libs.helper import uuid_value
 from models.model import AppMode
 from services.conversation_service import ConversationService
-from services.errors.conversation import ConversationNotExistsError, LastConversationNotExistsError
-from services.web_conversation_service import WebConversationService
+from services.errors.conversation import ConversationNotExistsError
 from werkzeug.exceptions import NotFound
 
 
@@ -87,26 +87,27 @@ class ConversationListApi(WebApiResource):
         query = ConversationListQuery.model_validate(raw_args)
 
         try:
-            with session_factory.get_sync_session_maker().begin() as session:
-                pagination = WebConversationService.pagination_by_last_id(
-                    session=session,
-                    app_model=app_model,
-                    user=end_user,
+            pagination = asyncio.run(
+                ConversationMessageService.list_conversations(
+                    app_id=app_model.id,
+                    end_user=end_user,
                     last_id=query.last_id,
                     limit=query.limit,
-                    invoke_from=InvokeFrom.WEB_APP,
                     pinned=query.pinned,
                     sort_by=query.sort_by,
                 )
-                adapter = TypeAdapter(SimpleConversation)
-                conversations = [adapter.validate_python(item, from_attributes=True) for item in pagination.data]
-                return ConversationInfiniteScrollPagination(
-                    limit=pagination.limit,
-                    has_more=pagination.has_more,
-                    data=conversations,
-                ).model_dump(mode="json")
-        except LastConversationNotExistsError:
-            raise NotFound("Last Conversation Not Exists.")
+            )
+            adapter = TypeAdapter(SimpleConversation)
+            conversations = [adapter.validate_python(item, from_attributes=True) for item in pagination["data"]]
+            return ConversationInfiniteScrollPagination(
+                limit=pagination["limit"],
+                has_more=pagination["has_more"],
+                data=conversations,
+            ).model_dump(mode="json")
+        except ApiError as api_error:
+            if api_error.code == "last_conversation_not_exists":
+                raise NotFound("Last Conversation Not Exists.")
+            raise
 
 
 @web_ns.route("/conversations/<uuid:c_id>")
@@ -131,10 +132,20 @@ class ConversationApi(WebApiResource):
 
         conversation_id = str(c_id)
         try:
-            ConversationService.delete(app_model, conversation_id, end_user)
+            result = asyncio.run(
+                ConversationMessageService.delete_conversation(
+                    app_id=app_model.id,
+                    conversation_id=conversation_id,
+                    end_user=end_user,
+                )
+            )
         except ConversationNotExistsError:
             raise NotFound("Conversation Not Exists.")
-        return ResultResponse(result="success").model_dump(mode="json"), 204
+        except ApiError as api_error:
+            if api_error.code == "conversation_not_exists":
+                raise NotFound("Conversation Not Exists.")
+            raise
+        return ResultResponse(**result).model_dump(mode="json"), 204
 
 
 @web_ns.route("/conversations/<uuid:c_id>/name")
@@ -173,8 +184,14 @@ class ConversationRenameApi(WebApiResource):
         payload = ConversationRenamePayload.model_validate(web_ns.payload or {})
 
         try:
-            conversation = ConversationService.rename(
-                app_model, conversation_id, end_user, payload.name, payload.auto_generate
+            conversation = asyncio.run(
+                ConversationMessageService.rename_conversation(
+                    app_id=app_model.id,
+                    conversation_id=conversation_id,
+                    end_user=end_user,
+                    name=payload.name,
+                    auto_generate=payload.auto_generate,
+                )
             )
             return (
                 TypeAdapter(SimpleConversation)
@@ -183,6 +200,10 @@ class ConversationRenameApi(WebApiResource):
             )
         except ConversationNotExistsError:
             raise NotFound("Conversation Not Exists.")
+        except ApiError as api_error:
+            if api_error.code == "conversation_not_exists":
+                raise NotFound("Conversation Not Exists.")
+            raise
 
 
 @web_ns.route("/conversations/<uuid:c_id>/pin")
@@ -208,11 +229,21 @@ class ConversationPinApi(WebApiResource):
         conversation_id = str(c_id)
 
         try:
-            WebConversationService.pin(app_model, conversation_id, end_user)
+            result = asyncio.run(
+                ConversationMessageService.pin_conversation(
+                    app_id=app_model.id,
+                    conversation_id=conversation_id,
+                    end_user=end_user,
+                )
+            )
         except ConversationNotExistsError:
             raise NotFound("Conversation Not Exists.")
+        except ApiError as api_error:
+            if api_error.code == "conversation_not_exists":
+                raise NotFound("Conversation Not Exists.")
+            raise
 
-        return ResultResponse(result="success").model_dump(mode="json")
+        return ResultResponse(**result).model_dump(mode="json")
 
 
 @web_ns.route("/conversations/<uuid:c_id>/unpin")
@@ -236,6 +267,12 @@ class ConversationUnPinApi(WebApiResource):
             raise NotChatAppError()
 
         conversation_id = str(c_id)
-        WebConversationService.unpin(app_model, conversation_id, end_user)
+        result = asyncio.run(
+            ConversationMessageService.unpin_conversation(
+                app_id=app_model.id,
+                conversation_id=conversation_id,
+                end_user=end_user,
+            )
+        )
 
-        return ResultResponse(result="success").model_dump(mode="json")
+        return ResultResponse(**result).model_dump(mode="json")

@@ -1,3 +1,5 @@
+import asyncio
+
 import services
 from controllers.common.errors import (
     FilenameNotExistsError,
@@ -9,10 +11,10 @@ from controllers.common.errors import (
 from controllers.common.schema import register_schema_models
 from controllers.web import web_ns
 from controllers.web.wraps import WebApiResource
-from core.db.session_factory import session_factory
+from api_server.errors import ApiError
+from api_server.services.file_upload import FileUploadService
 from fields.file_fields import FileResponse
 from flask import request
-from services.file_service import FileService
 
 register_schema_models(web_ns, FileResponse)
 
@@ -70,17 +72,25 @@ class FileApi(WebApiResource):
             source = None
 
         try:
-            upload_file = FileService(session_factory.get_sync_session_maker()).upload_file(
-                filename=file.filename,
-                content=file.read(),
-                mimetype=file.mimetype,
-                user=end_user,
-                source="datasets" if source == "datasets" else None,
+            upload_file = asyncio.run(
+                FileUploadService.upload_file(
+                    filename=file.filename,
+                    content=file.read(),
+                    mimetype=file.mimetype,
+                    user=end_user,
+                    source="datasets" if source == "datasets" else None,
+                )
             )
         except services.errors.file.FileTooLargeError as file_too_large_error:
             raise FileTooLargeError(file_too_large_error.description)
         except services.errors.file.UnsupportedFileTypeError:
             raise UnsupportedFileTypeError()
+        except ApiError as api_error:
+            if api_error.code == "file_too_large":
+                raise FileTooLargeError(api_error.message)
+            if api_error.code == "unsupported_file_type":
+                raise UnsupportedFileTypeError()
+            raise
 
         response = FileResponse.model_validate(upload_file, from_attributes=True)
         return response.model_dump(mode="json"), 201

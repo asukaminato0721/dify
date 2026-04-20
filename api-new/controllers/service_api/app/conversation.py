@@ -1,11 +1,13 @@
-from core.db.session_factory import create_sync_session, get_sync_session_maker
+import asyncio
 from datetime import datetime
 from typing import Any, Literal
 
+from api_server.errors import ApiError
+from api_server.services.conversation_message import ConversationMessageService
+from api_server.services.service_api_conversation_variables import ServiceApiConversationVariableService
 from flask import request
 from flask_restx import Resource
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
-from sqlalchemy.orm import sessionmaker
 from werkzeug.exceptions import BadRequest, NotFound
 
 import services
@@ -14,8 +16,6 @@ from controllers.common.schema import register_schema_models
 from controllers.service_api import service_api_ns
 from controllers.service_api.app.error import NotChatAppError
 from controllers.service_api.wraps import FetchUserArg, WhereisUserArg, validate_app_token
-from core.app.entities.app_invoke_entities import InvokeFrom
-from extensions.ext_database import db
 from fields._value_type_serializer import serialize_value_type
 from fields.base import ResponseModel
 from fields.conversation_fields import (
@@ -164,25 +164,27 @@ class ConversationApi(Resource):
         last_id = str(query_args.last_id) if query_args.last_id else None
 
         try:
-            with get_sync_session_maker().begin() as session:
-                pagination = ConversationService.pagination_by_last_id(
-                    session=session,
-                    app_model=app_model,
-                    user=end_user,
+            pagination = asyncio.run(
+                ConversationMessageService.list_conversations(
+                    app_id=app_model.id,
+                    end_user=end_user,
                     last_id=last_id,
                     limit=query_args.limit,
-                    invoke_from=InvokeFrom.SERVICE_API,
+                    pinned=None,
                     sort_by=query_args.sort_by,
                 )
-                adapter = TypeAdapter(SimpleConversation)
-                conversations = [adapter.validate_python(item, from_attributes=True) for item in pagination.data]
-                return ConversationInfiniteScrollPagination(
-                    limit=pagination.limit,
-                    has_more=pagination.has_more,
-                    data=conversations,
-                ).model_dump(mode="json")
-        except services.errors.conversation.LastConversationNotExistsError:
-            raise NotFound("Last Conversation Not Exists.")
+            )
+            adapter = TypeAdapter(SimpleConversation)
+            conversations = [adapter.validate_python(item, from_attributes=True) for item in pagination["data"]]
+            return ConversationInfiniteScrollPagination(
+                limit=pagination["limit"],
+                has_more=pagination["has_more"],
+                data=conversations,
+            ).model_dump(mode="json")
+        except ApiError as api_error:
+            if api_error.code == "last_conversation_not_exists":
+                raise NotFound("Last Conversation Not Exists.")
+            raise
 
 
 @service_api_ns.route("/conversations/<uuid:c_id>")
@@ -207,9 +209,19 @@ class ConversationDetailApi(Resource):
         conversation_id = str(c_id)
 
         try:
-            ConversationService.delete(app_model, conversation_id, end_user)
+            asyncio.run(
+                ConversationMessageService.delete_conversation(
+                    app_id=app_model.id,
+                    conversation_id=conversation_id,
+                    end_user=end_user,
+                )
+            )
         except services.errors.conversation.ConversationNotExistsError:
             raise NotFound("Conversation Not Exists.")
+        except ApiError as api_error:
+            if api_error.code == "conversation_not_exists":
+                raise NotFound("Conversation Not Exists.")
+            raise
         return "", 204
 
 
@@ -238,8 +250,14 @@ class ConversationRenameApi(Resource):
         payload = ConversationRenamePayload.model_validate(service_api_ns.payload or {})
 
         try:
-            conversation = ConversationService.rename(
-                app_model, conversation_id, end_user, payload.name, payload.auto_generate
+            conversation = asyncio.run(
+                ConversationMessageService.rename_conversation(
+                    app_id=app_model.id,
+                    conversation_id=conversation_id,
+                    end_user=end_user,
+                    name=payload.name,
+                    auto_generate=payload.auto_generate,
+                )
             )
             return (
                 TypeAdapter(SimpleConversation)
@@ -248,6 +266,10 @@ class ConversationRenameApi(Resource):
             )
         except services.errors.conversation.ConversationNotExistsError:
             raise NotFound("Conversation Not Exists.")
+        except ApiError as api_error:
+            if api_error.code == "conversation_not_exists":
+                raise NotFound("Conversation Not Exists.")
+            raise
 
 
 @service_api_ns.route("/conversations/<uuid:c_id>/variables")
@@ -285,14 +307,27 @@ class ConversationVariablesApi(Resource):
         last_id = str(query_args.last_id) if query_args.last_id else None
 
         try:
-            pagination = ConversationService.get_conversational_variable(
-                app_model, conversation_id, end_user, query_args.limit, last_id, query_args.variable_name
+            pagination = asyncio.run(
+                ServiceApiConversationVariableService.list_variables(
+                    app=app_model,
+                    conversation_id=conversation_id,
+                    end_user=end_user,
+                    limit=query_args.limit,
+                    last_id=last_id,
+                    variable_name=query_args.variable_name,
+                )
             )
             return ConversationVariableInfiniteScrollPaginationResponse.model_validate(
                 pagination, from_attributes=True
             ).model_dump(mode="json")
         except services.errors.conversation.ConversationNotExistsError:
             raise NotFound("Conversation Not Exists.")
+        except ApiError as api_error:
+            if api_error.code == "conversation_not_exists":
+                raise NotFound("Conversation Not Exists.")
+            if api_error.code == "conversation_variable_not_exists":
+                raise NotFound("Conversation Variable Not Exists.")
+            raise
 
 
 @service_api_ns.route("/conversations/<uuid:c_id>/variables/<uuid:variable_id>")
@@ -331,8 +366,14 @@ class ConversationVariableDetailApi(Resource):
         payload = ConversationVariableUpdatePayload.model_validate(service_api_ns.payload or {})
 
         try:
-            variable = ConversationService.update_conversation_variable(
-                app_model, conversation_id, variable_id, end_user, payload.value
+            variable = asyncio.run(
+                ServiceApiConversationVariableService.update_variable(
+                    app=app_model,
+                    conversation_id=conversation_id,
+                    variable_id=variable_id,
+                    end_user=end_user,
+                    value=payload.value,
+                )
             )
             return ConversationVariableResponse.model_validate(variable, from_attributes=True).model_dump(mode="json")
         except services.errors.conversation.ConversationNotExistsError:
@@ -341,3 +382,11 @@ class ConversationVariableDetailApi(Resource):
             raise NotFound("Conversation Variable Not Exists.")
         except services.errors.conversation.ConversationVariableTypeMismatchError as e:
             raise BadRequest(str(e))
+        except ApiError as api_error:
+            if api_error.code == "conversation_not_exists":
+                raise NotFound("Conversation Not Exists.")
+            if api_error.code == "conversation_variable_not_exists":
+                raise NotFound("Conversation Variable Not Exists.")
+            if api_error.code == "conversation_variable_type_mismatch":
+                raise BadRequest(api_error.message)
+            raise

@@ -1,3 +1,5 @@
+import asyncio
+
 from flask import request
 from flask_restx import Resource
 from flask_restx.api import HTTPStatus
@@ -13,10 +15,10 @@ from controllers.common.errors import (
 from controllers.common.schema import register_schema_models
 from controllers.service_api import service_api_ns
 from controllers.service_api.wraps import FetchUserArg, WhereisUserArg, validate_app_token
-from core.db.session_factory import session_factory
+from api_server.errors import ApiError
+from api_server.services.file_upload import FileUploadService
 from fields.file_fields import FileResponse
 from models import App, EndUser
-from services.file_service import FileService
 
 register_schema_models(service_api_ns, FileResponse)
 
@@ -56,16 +58,24 @@ class FileApi(Resource):
             raise FilenameNotExistsError
 
         try:
-            upload_file = FileService(session_factory.get_sync_session_maker()).upload_file(
-                filename=file.filename,
-                content=file.read(),
-                mimetype=file.mimetype,
-                user=end_user,
+            upload_file = asyncio.run(
+                FileUploadService.upload_file(
+                    filename=file.filename,
+                    content=file.read(),
+                    mimetype=file.mimetype,
+                    user=end_user,
+                )
             )
         except services.errors.file.FileTooLargeError as file_too_large_error:
             raise FileTooLargeError(file_too_large_error.description)
         except services.errors.file.UnsupportedFileTypeError:
             raise UnsupportedFileTypeError()
+        except ApiError as api_error:
+            if api_error.code == "file_too_large":
+                raise FileTooLargeError(api_error.message)
+            if api_error.code == "unsupported_file_type":
+                raise UnsupportedFileTypeError()
+            raise
 
         response = FileResponse.model_validate(upload_file, from_attributes=True)
         return response.model_dump(mode="json"), 201

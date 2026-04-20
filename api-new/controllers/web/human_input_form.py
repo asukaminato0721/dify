@@ -2,11 +2,14 @@
 Web App Human Input Form APIs.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
 from typing import Any, NotRequired, TypedDict
 
+from api_server.errors import ApiError
+from api_server.services.human_input_forms import HumanInputFormService
 from flask_restx import Resource
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -14,14 +17,12 @@ from sqlalchemy import select
 from configs import dify_config
 from controllers.web import web_ns
 from controllers.web.error import NotFoundError, WebFormRateLimitExceededError
-from controllers.web.site import serialize_app_site_payload
-from core.db.session_factory import session_factory
 from extensions.ext_database import db
 from flask import Response, current_app, request
 from libs.helper import RateLimiter, extract_remote_ip
 from models.account import TenantStatus
 from models.model import App, Site
-from services.human_input_service import Form, FormNotFoundError, HumanInputService
+from services.human_input_service import Form
 from werkzeug.exceptions import Forbidden
 
 logger = logging.getLogger(__name__)
@@ -102,18 +103,18 @@ class HumanInputFormApi(Resource):
             raise WebFormRateLimitExceededError()
         _FORM_ACCESS_RATE_LIMITER.increment_rate_limit(ip_address)
 
-        service = HumanInputService(session_factory.get_sync_session_maker())
-        # TODO(QuantumGhost): forbid submission for form tokens
-        # that are only for console.
-        form = service.get_form_by_token(form_token)
+        try:
+            payload = asyncio.run(HumanInputFormService.get_form_definition_response(form_token=form_token))
+        except ApiError as api_error:
+            if api_error.status_code == 404:
+                raise NotFoundError("Form not found")
+            if api_error.status_code == 429:
+                raise WebFormRateLimitExceededError()
+            if api_error.status_code == 403:
+                raise Forbidden()
+            raise
 
-        if form is None:
-            raise NotFoundError("Form not found")
-
-        service.ensure_form_active(form)
-        app_model, site = current_app.ensure_sync(_get_app_site_from_form)(form)
-
-        return _jsonify_form_definition(form, site_payload=serialize_app_site_payload(app_model, site, None))
+        return Response(json.dumps(payload, ensure_ascii=False), mimetype="application/json")
 
     # def post(self, _app_model: App, _end_user: EndUser, form_token: str):
     def post(self, form_token: str):
@@ -137,26 +138,22 @@ class HumanInputFormApi(Resource):
             raise WebFormRateLimitExceededError()
         _FORM_SUBMIT_RATE_LIMITER.increment_rate_limit(ip_address)
 
-        service = HumanInputService(session_factory.get_sync_session_maker())
-        form = service.get_form_by_token(form_token)
-        if form is None:
-            raise NotFoundError("Form not found")
-
-        if (recipient_type := form.recipient_type) is None:
-            logger.warning("Recipient type is None for form, form_id=%s", form.id)
-            raise AssertionError("Recipient type is None")
-
         try:
-            service.submit_form_by_token(
-                recipient_type=recipient_type,
-                form_token=form_token,
-                selected_action_id=payload.action,
-                form_data=payload.inputs,
-                submission_end_user_id=None,
-                # submission_end_user_id=_end_user.id,
+            asyncio.run(
+                HumanInputFormService.submit_form_by_token(
+                    form_token=form_token,
+                    selected_action_id=payload.action,
+                    form_data=payload.inputs,
+                )
             )
-        except FormNotFoundError:
-            raise NotFoundError("Form not found")
+        except ApiError as api_error:
+            if api_error.status_code == 404:
+                raise NotFoundError("Form not found")
+            if api_error.status_code == 429:
+                raise WebFormRateLimitExceededError()
+            if api_error.status_code == 403:
+                raise Forbidden()
+            raise
 
         return {}, 200
 

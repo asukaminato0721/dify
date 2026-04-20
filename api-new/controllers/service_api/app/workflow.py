@@ -1,14 +1,16 @@
-from core.db.session_factory import create_sync_session, get_sync_session_maker
+import asyncio
 import logging
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Literal
 
+from api_server.errors import ApiError
+from api_server.services.service_api_workflow_logs import ServiceApiWorkflowLogService
+from api_server.services.service_api_workflows import ServiceApiWorkflowService
 from dateutil.parser import isoparse
 from flask import request
 from flask_restx import Resource, fields
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.orm import sessionmaker
 from werkzeug.exceptions import BadRequest, InternalServerError, NotFound
 
 from controllers.common.controller_schemas import WorkflowRunPayload as WorkflowRunPayloadBase
@@ -42,7 +44,6 @@ from graphon.model_runtime.errors.invoke import InvokeError
 from libs import helper
 from models.model import App, AppMode, EndUser
 from models.workflow import WorkflowRun
-from repositories.factory import DifyAPIRepositoryFactory
 from services.app_generate_service import AppGenerateService
 from services.errors.app import IsDraftWorkflowError, WorkflowIdFormatError, WorkflowNotFoundError
 from services.errors.llm import InvokeRateLimitError
@@ -234,17 +235,18 @@ class WorkflowRunDetailApi(Resource):
         if app_mode not in [AppMode.WORKFLOW, AppMode.ADVANCED_CHAT]:
             raise NotWorkflowAppError()
 
-        # Use repository to get workflow run
-        session_maker = get_sync_session_maker()
-        workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
-
-        workflow_run = workflow_run_repo.get_workflow_run_by_id(
-            tenant_id=app_model.tenant_id,
-            app_id=app_model.id,
-            run_id=workflow_run_id,
-        )
-        if not workflow_run:
-            raise NotFound("Workflow run not found.")
+        try:
+            workflow_run = asyncio.run(
+                ServiceApiWorkflowService.get_workflow_run(
+                    tenant_id=app_model.tenant_id,
+                    app_id=app_model.id,
+                    workflow_run_id=workflow_run_id,
+                )
+            )
+        except ApiError as api_error:
+            if api_error.code == "workflow_run_not_found":
+                raise NotFound("Workflow run not found.")
+            raise
         return _serialize_workflow_run(workflow_run)
 
 
@@ -428,13 +430,12 @@ class WorkflowAppLogApi(Resource):
         created_at_after = isoparse(args.created_at__after) if args.created_at__after else None
 
         # get paginate workflow app logs
-        workflow_app_service = WorkflowAppService()
-        with get_sync_session_maker().begin() as session:
-            workflow_app_log_pagination = workflow_app_service.get_paginate_workflow_app_logs(
-                session=session,
-                app_model=app_model,
+        workflow_app_log_pagination = asyncio.run(
+            ServiceApiWorkflowLogService.list_logs(
+                tenant_id=app_model.tenant_id,
+                app_id=app_model.id,
                 keyword=args.keyword,
-                status=status,
+                status=args.status,
                 created_at_before=created_at_before,
                 created_at_after=created_at_after,
                 page=args.page,
@@ -442,5 +443,6 @@ class WorkflowAppLogApi(Resource):
                 created_by_end_user_session_id=args.created_by_end_user_session_id,
                 created_by_account=args.created_by_account,
             )
+        )
 
-            return _serialize_workflow_log_pagination(workflow_app_log_pagination)
+        return _serialize_workflow_log_pagination(workflow_app_log_pagination)

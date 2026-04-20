@@ -3,10 +3,12 @@ Web App Workflow Resume APIs.
 """
 
 import json
+import asyncio
 from collections.abc import Generator
 from typing import cast
 
 from api_server.models.workflow import WorkflowRun as FastAPIWorkflowRun
+from api_server.services.workflow_events import WorkflowEventsService
 from controllers.web import api
 from controllers.web.error import InvalidArgumentError, NotFoundError
 from controllers.web.wraps import WebApiResource
@@ -15,11 +17,9 @@ from core.app.apps.base_app_generator import BaseAppGenerator
 from core.app.apps.common.workflow_response_converter import WorkflowResponseConverter
 from core.app.apps.message_generator import MessageGenerator
 from core.app.apps.workflow.app_generator import WorkflowAppGenerator
-from core.db.session_factory import session_factory
 from flask import Response, request
 from models.enums import CreatorUserRole
 from models.model import App, AppMode, EndUser
-from repositories.factory import DifyAPIRepositoryFactory
 from services.workflow_event_snapshot_service import build_workflow_event_stream
 
 
@@ -35,24 +35,14 @@ class WorkflowEventsApi(WebApiResource):
         Returns Server-Sent Events stream.
         """
         workflow_run_id = task_id
-        session_maker = session_factory.get_sync_session_maker()
-        repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
-        workflow_run = repo.get_workflow_run_by_id_and_tenant_id(
-            tenant_id=app_model.tenant_id,
-            run_id=workflow_run_id,
+        workflow_run = asyncio.run(
+            WorkflowEventsService.get_accessible_workflow_run(
+                workflow_run_id=workflow_run_id,
+                tenant_id=app_model.tenant_id,
+                app_id=app_model.id,
+                end_user_id=end_user.id,
+            )
         )
-
-        if workflow_run is None:
-            raise NotFoundError(f"WorkflowRun not found, id={workflow_run_id}")
-
-        if workflow_run.app_id != app_model.id:
-            raise NotFoundError(f"WorkflowRun not found, id={workflow_run_id}")
-
-        if workflow_run.created_by_role != CreatorUserRole.END_USER:
-            raise NotFoundError(f"WorkflowRun not created by end user, id={workflow_run_id}")
-
-        if workflow_run.created_by != end_user.id:
-            raise NotFoundError(f"WorkflowRun not created by the current end user, id={workflow_run_id}")
 
         if workflow_run.finished_at is not None:
             response = WorkflowResponseConverter.workflow_run_result_to_finish_response(
@@ -70,34 +60,15 @@ class WorkflowEventsApi(WebApiResource):
             event_generator = _generate_finished_events
         else:
             app_mode = AppMode.value_of(app_model.mode)
-            msg_generator = MessageGenerator()
-            generator: BaseAppGenerator
-            match app_mode:
-                case AppMode.ADVANCED_CHAT:
-                    generator = AdvancedChatAppGenerator()
-                case AppMode.WORKFLOW:
-                    generator = WorkflowAppGenerator()
-                case _:
-                    raise InvalidArgumentError(f"cannot subscribe to workflow run, workflow_run_id={workflow_run.id}")
-
+            if app_mode not in {AppMode.ADVANCED_CHAT, AppMode.WORKFLOW}:
+                raise InvalidArgumentError(f"cannot subscribe to workflow run, workflow_run_id={workflow_run.id}")
             include_state_snapshot = request.args.get("include_state_snapshot", "false").lower() == "true"
-
-            def _generate_stream_events():
-                if include_state_snapshot:
-                    return generator.convert_to_event_stream(
-                        build_workflow_event_stream(
-                            app_mode=app_mode,
-                            workflow_run=workflow_run,
-                            tenant_id=app_model.tenant_id,
-                            app_id=app_model.id,
-                            session_maker=session_maker,
-                        )
-                    )
-                return generator.convert_to_event_stream(
-                    msg_generator.retrieve_events(app_mode, workflow_run.id),
-                )
-
-            event_generator = _generate_stream_events
+            event_generator = lambda: WorkflowEventsService.stream_events(
+                app_mode=app_mode,
+                workflow_run=workflow_run,
+                end_user=end_user,
+                include_state_snapshot=include_state_snapshot,
+            )
 
         return Response(
             event_generator(),

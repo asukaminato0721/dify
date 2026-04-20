@@ -1,8 +1,11 @@
+import asyncio
 import urllib.parse
 
 import httpx
 from pydantic import BaseModel, Field, HttpUrl
 
+from api_server.errors import ApiError
+from api_server.services.file_upload import FileUploadService
 import services
 from controllers.common import helpers
 from controllers.common.errors import (
@@ -10,7 +13,6 @@ from controllers.common.errors import (
     RemoteFileUploadError,
     UnsupportedFileTypeError,
 )
-from core.db.session_factory import session_factory
 from core.helper import ssrf_proxy
 from fields.file_fields import FileWithSignedUrl, RemoteFileInfo
 from graphon.file import helpers as file_helpers
@@ -127,26 +129,34 @@ class RemoteFileUploadApi(WebApiResource):
         content = resp.content if resp.request.method == "GET" else ssrf_proxy.get(url).content
 
         try:
-            upload_file = FileService(session_factory.get_sync_session_maker()).upload_file(
-                filename=file_info.filename,
-                content=content,
-                mimetype=file_info.mimetype,
-                user=end_user,
-                source_url=url,
+            upload_file = asyncio.run(
+                FileUploadService.upload_file(
+                    filename=file_info.filename,
+                    content=content,
+                    mimetype=file_info.mimetype,
+                    user=end_user,
+                    source_url=url,
+                )
             )
         except services.errors.file.FileTooLargeError as file_too_large_error:
             raise FileTooLargeError(file_too_large_error.description)
         except services.errors.file.UnsupportedFileTypeError:
             raise UnsupportedFileTypeError
+        except ApiError as api_error:
+            if api_error.code == "file_too_large":
+                raise FileTooLargeError(api_error.message)
+            if api_error.code == "unsupported_file_type":
+                raise UnsupportedFileTypeError
+            raise
 
         payload1 = FileWithSignedUrl(
-            id=upload_file.id,
-            name=upload_file.name,
-            size=upload_file.size,
-            extension=upload_file.extension,
-            url=file_helpers.get_signed_file_url(upload_file_id=upload_file.id),
-            mime_type=upload_file.mime_type,
-            created_by=upload_file.created_by,
-            created_at=int(upload_file.created_at.timestamp()),
+            id=upload_file["id"],
+            name=upload_file["name"],
+            size=upload_file["size"],
+            extension=upload_file["extension"],
+            url=file_helpers.get_signed_file_url(upload_file_id=upload_file["id"]),
+            mime_type=upload_file["mime_type"],
+            created_by=upload_file["created_by"],
+            created_at=upload_file["created_at"] or 0,
         )
         return payload1.model_dump(mode="json"), 201
