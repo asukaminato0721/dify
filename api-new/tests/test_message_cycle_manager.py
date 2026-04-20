@@ -87,8 +87,8 @@ def test_get_message_event_type_uses_local_message_file_presence() -> None:
 
 def test_message_file_to_stream_response_uses_event_payload_without_sync_session() -> None:
     manager = _build_manager()
-    original_create_session = message_cycle_manager_module.session_factory.create_session
-    message_cycle_manager_module.session_factory.create_session = lambda: (_ for _ in ()).throw(
+    original_create_sync_session = message_cycle_manager_module.session_factory.create_sync_session
+    message_cycle_manager_module.session_factory.create_sync_session = lambda: (_ for _ in ()).throw(
         AssertionError("sync session should not be used")
     )  # type: ignore[assignment]
     try:
@@ -102,7 +102,7 @@ def test_message_file_to_stream_response_uses_event_payload_without_sync_session
             )
         )
     finally:
-        message_cycle_manager_module.session_factory.create_session = original_create_session
+        message_cycle_manager_module.session_factory.create_sync_session = original_create_sync_session
 
     assert response is not None
     assert response.event == StreamEvent.MESSAGE_FILE
@@ -112,7 +112,7 @@ def test_message_file_to_stream_response_uses_event_payload_without_sync_session
 
 def test_message_file_to_stream_response_falls_back_to_sync_lookup_when_event_is_id_only() -> None:
     manager = _build_manager()
-    original_create_session = message_cycle_manager_module.session_factory.create_session
+    original_create_sync_session = message_cycle_manager_module.session_factory.create_sync_session
     message_file = SimpleNamespace(
         id="file-1",
         message_id="message-1",
@@ -122,11 +122,11 @@ def test_message_file_to_stream_response_falls_back_to_sync_lookup_when_event_is
         transfer_method="tool_file",
         upload_file_id="upload-1",
     )
-    message_cycle_manager_module.session_factory.create_session = lambda: _SessionStub(message_file)  # type: ignore[assignment]
+    message_cycle_manager_module.session_factory.create_sync_session = lambda: _SessionStub(message_file)  # type: ignore[assignment]
     try:
         response = manager.message_file_to_stream_response(QueueMessageFileEvent(message_file_id="file-1"))
     finally:
-        message_cycle_manager_module.session_factory.create_session = original_create_session
+        message_cycle_manager_module.session_factory.create_sync_session = original_create_sync_session
 
     assert response is not None
     assert response.id == "file-1"
@@ -159,7 +159,7 @@ def test_generate_conversation_name_worker_uses_app_config_directly() -> None:
     session_maker = _SessionMakerStub()
 
     with (
-        patch.object(message_cycle_manager_module.session_factory, "get_session_maker", return_value=session_maker),
+        patch.object(message_cycle_manager_module.session_factory, "get_sync_session_maker", return_value=session_maker),
         patch.object(message_cycle_manager_module.redis_client, "get", return_value=None),
         patch.object(message_cycle_manager_module.redis_client, "setex") as setex_mock,
         patch.object(

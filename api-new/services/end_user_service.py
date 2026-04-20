@@ -23,7 +23,7 @@ class EndUserService:
         when an end-user ID is known.
         """
 
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             return session.scalar(
                 select(EndUser)
                 .where(
@@ -53,7 +53,7 @@ class EndUserService:
         if not user_id:
             user_id = DefaultEndUserSessionID.DEFAULT_SESSION_ID
 
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             # Query with ORDER BY to prioritize exact type matches while maintaining backward compatibility
             # This single query approach is more efficient than separate queries
             end_user = session.scalar(
@@ -132,7 +132,7 @@ class EndUserService:
         if not unique_app_ids:
             return result
 
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             # Fetch existing end users for all target apps in a single query
             existing_end_users: list[EndUser] = list(
                 session.scalars(

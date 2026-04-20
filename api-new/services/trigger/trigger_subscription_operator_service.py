@@ -19,7 +19,7 @@ class TriggerSubscriptionOperatorService:
             subscription_id: Subscription ID
             event_name: Event name
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             subscribers = session.scalars(
                 select(WorkflowPluginTrigger)
                 .join(

@@ -180,7 +180,7 @@ def test_get_legacy_sync_session_maker_uses_configured_factory() -> None:
     expected = object()
 
     with patch(
-        "api_server.services.generation.configured_sync_session_factory.get_session_maker",
+        "api_server.services.generation.configured_sync_session_factory.get_sync_session_maker",
         return_value=expected,
     ) as factory_mock:
         session_maker = _get_legacy_sync_session_maker()

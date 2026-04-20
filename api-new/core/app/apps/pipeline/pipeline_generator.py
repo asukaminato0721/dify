@@ -112,7 +112,7 @@ class PipelineGenerator(BaseAppGenerator):
     ) -> Mapping[str, Any] | Generator[Mapping | str, None, None] | None:
         # Add null check for dataset
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset = pipeline.retrieve_dataset(session)
             if not dataset:
                 raise ValueError("Pipeline dataset is required")
@@ -131,7 +131,7 @@ class PipelineGenerator(BaseAppGenerator):
         if invoke_from == InvokeFrom.PUBLISHED_PIPELINE and not is_retry and not args.get("original_document_id"):
             from services.dataset_service import DocumentService
 
-            with session_factory.get_session_maker().begin() as session:
+            with session_factory.get_sync_session_maker().begin() as session:
                 for datasource_info in datasource_info_list:
                     position = DocumentService.get_documents_position(dataset.id)
                     document = self._build_document(
@@ -165,7 +165,7 @@ class PipelineGenerator(BaseAppGenerator):
                     pipeline_id=pipeline.id,
                     created_by=user.id,
                 )
-                with session_factory.get_session_maker().begin() as session:
+                with session_factory.get_sync_session_maker().begin() as session:
                     session.add(document_pipeline_execution_log)
             application_generate_entity = RagPipelineGenerateEntity(
                 task_id=str(uuid.uuid4()),
@@ -199,7 +199,7 @@ class PipelineGenerator(BaseAppGenerator):
             else:
                 workflow_triggered_from = WorkflowRunTriggeredFrom.RAG_PIPELINE_RUN
             # Create workflow node execution repository
-            sync_session_maker = session_factory.get_session_maker()
+            sync_session_maker = session_factory.get_sync_session_maker()
             sync_engine = sync_session_maker.kw["bind"]
             workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
                 session_factory=sync_session_maker,
@@ -293,7 +293,7 @@ class PipelineGenerator(BaseAppGenerator):
         :param streaming: is stream
         :param workflow_thread_pool_id: workflow thread pool id
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             workflow = session.get(Workflow, workflow_id)
             if not workflow:
                 raise ValueError(f"Workflow not found: {workflow_id}")
@@ -364,7 +364,7 @@ class PipelineGenerator(BaseAppGenerator):
             pipeline=pipeline, workflow=workflow, start_node_id=args.get("start_node_id", "shared")
         )
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset = pipeline.retrieve_dataset(session)
             if not dataset:
                 raise ValueError("Pipeline dataset is required")
@@ -393,7 +393,7 @@ class PipelineGenerator(BaseAppGenerator):
         contexts.plugin_tool_providers.set({})
         contexts.plugin_tool_providers_lock.set(threading.Lock())
         # Create workflow node execution repository
-        sync_session_maker = session_factory.get_session_maker()
+        sync_session_maker = session_factory.get_sync_session_maker()
         sync_engine = sync_session_maker.kw["bind"]
 
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
@@ -409,7 +409,7 @@ class PipelineGenerator(BaseAppGenerator):
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             draft_var_srv = WorkflowDraftVariableService(session)
             draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
         var_loader = DraftVarLoader(
@@ -456,7 +456,7 @@ class PipelineGenerator(BaseAppGenerator):
         if args.get("inputs") is None:
             raise ValueError("inputs is required")
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset = pipeline.retrieve_dataset(session)
             if not dataset:
                 raise ValueError("Pipeline dataset is required")
@@ -489,7 +489,7 @@ class PipelineGenerator(BaseAppGenerator):
         contexts.plugin_tool_providers_lock.set(threading.Lock())
 
         # Create workflow node execution repository
-        sync_session_maker = session_factory.get_session_maker()
+        sync_session_maker = session_factory.get_sync_session_maker()
         sync_engine = sync_session_maker.kw["bind"]
 
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
@@ -505,7 +505,7 @@ class PipelineGenerator(BaseAppGenerator):
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             draft_var_srv = WorkflowDraftVariableService(session)
             draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
         var_loader = DraftVarLoader(
@@ -544,7 +544,7 @@ class PipelineGenerator(BaseAppGenerator):
         :return:
         """
         try:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 workflow = session.scalar(
                     select(Workflow).where(
                         Workflow.tenant_id == application_generate_entity.app_config.tenant_id,

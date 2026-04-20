@@ -30,7 +30,7 @@ def retry_document_indexing_task(dataset_id: str, document_ids: list[str], user_
     Usage: retry_document_indexing_task.delay(dataset_id, document_ids, user_id)
     """
     start_at = time.perf_counter()
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
             if not dataset:

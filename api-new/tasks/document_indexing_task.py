@@ -56,7 +56,7 @@ def _document_indexing(dataset_id: str, document_ids: Sequence[str]):
     """
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
         if not dataset:
             logger.info(click.style(f"Dataset is not found: {dataset_id}", fg="yellow"))
@@ -91,7 +91,7 @@ def _document_indexing(dataset_id: str, document_ids: Sequence[str]):
             return
 
     # Phase 1: Update status to parsing (short transaction)
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         documents: list[Document] = list(
             session.scalars(
                 select(Document).where(Document.id.in_(document_ids), Document.dataset_id == dataset_id)
@@ -120,7 +120,7 @@ def _document_indexing(dataset_id: str, document_ids: Sequence[str]):
         has_error = True
 
     if not has_error:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             # Trigger summary index generation for completed documents if enabled
             # Only generate for high_quality indexing technique and when summary_index_setting is enabled
             # Re-query dataset to get latest summary_index_setting (in case it was updated)

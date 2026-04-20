@@ -133,7 +133,7 @@ class ModelInvocationUtils:
             currency="USD",
         )
 
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             session.add(tool_model_invoke)
             session.flush()
             tool_model_invoke_id = tool_model_invoke.id
@@ -161,7 +161,7 @@ class ModelInvocationUtils:
             raise InvokeModelError(f"Invoke error: {e}")
 
         # update tool model invoke
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             persisted_tool_model_invoke = session.get(ToolModelInvoke, tool_model_invoke_id)
             if persisted_tool_model_invoke is None:
                 raise InvokeModelError("Tool model invoke record not found")

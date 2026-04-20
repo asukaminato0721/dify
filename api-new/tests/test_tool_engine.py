@@ -47,8 +47,8 @@ class _SessionMakerStub:
 
 def test_create_message_files_returns_queue_ready_payloads() -> None:
     session_maker = _SessionMakerStub()
-    original_get_session_maker = tool_engine_module.session_factory.get_session_maker
-    tool_engine_module.session_factory.get_session_maker = cast(Any, lambda: session_maker)
+    original_get_sync_session_maker = tool_engine_module.session_factory.get_sync_session_maker
+    tool_engine_module.session_factory.get_sync_session_maker = cast(Any, lambda: session_maker)
     try:
         events = ToolEngine._create_message_files(
             tool_messages=[
@@ -100,7 +100,7 @@ def test_create_message_files_returns_queue_ready_payloads() -> None:
             user_id="end-user-1",
         )
     finally:
-        tool_engine_module.session_factory.get_session_maker = original_get_session_maker
+        tool_engine_module.session_factory.get_sync_session_maker = original_get_sync_session_maker
 
     assert len(events) == 1
     event = events[0]

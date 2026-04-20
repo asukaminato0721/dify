@@ -28,7 +28,7 @@ def sync_website_document_indexing_task(dataset_id: str, document_id: str):
     """
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
         if dataset is None:
             raise ValueError("Dataset not found")

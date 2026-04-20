@@ -53,7 +53,7 @@ def clean_dataset_task(
     logger.info(click.style(f"Start clean dataset when dataset deleted: {dataset_id}", fg="green"))
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             dataset = Dataset(
                 id=dataset_id,

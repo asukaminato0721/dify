@@ -54,7 +54,7 @@ class CreateRagPipelineDatasetApi(Resource):
             yaml_content=payload.yaml_content,
         )
         try:
-            with session_factory.get_session_maker().begin() as session:
+            with session_factory.get_sync_session_maker().begin() as session:
                 rag_pipeline_dsl_service = RagPipelineDslService(session)
                 import_info = rag_pipeline_dsl_service.create_rag_pipeline_dataset(
                     tenant_id=current_tenant_id,

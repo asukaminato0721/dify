@@ -279,7 +279,7 @@ class AppGenerateService:
                         )
 
                     pause_config = pause_state_layer_config_cls(
-                        session_factory=session_factory.get_session_maker(),
+                        session_factory=session_factory.get_sync_session_maker(),
                         state_owner_user_id=workflow.created_by,
                     )
                     return rate_limit.generate(

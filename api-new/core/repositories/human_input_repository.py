@@ -459,7 +459,7 @@ class HumanInputFormRepositoryImpl:
         if params.form_kind == HumanInputFormKind.RUNTIME and workflow_execution_id is None:
             raise ValueError("workflow_execution_id is required for runtime human input forms")
 
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             # Generate unique form ID
             form_id = str(uuidv7())
             start_time = naive_utc_now()
@@ -554,7 +554,7 @@ class HumanInputFormRepositoryImpl:
             HumanInputForm.node_id == node_id,
             HumanInputForm.tenant_id == self._tenant_id,
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             form_model: HumanInputForm | None = session.scalars(form_query).first()
             if form_model is None:
                 return None
@@ -573,7 +573,7 @@ class HumanInputFormSubmissionRepository:
             .options(selectinload(HumanInputFormRecipient.form))
             .where(HumanInputFormRecipient.access_token == form_token)
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             recipient_model = session.scalars(query).first()
             if recipient_model is None or recipient_model.form is None:
                 return None
@@ -592,7 +592,7 @@ class HumanInputFormSubmissionRepository:
                 HumanInputFormRecipient.recipient_type == recipient_type,
             )
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             recipient_model = session.scalars(query).first()
             if recipient_model is None or recipient_model.form is None:
                 return None
@@ -608,7 +608,7 @@ class HumanInputFormSubmissionRepository:
         submission_user_id: str | None,
         submission_end_user_id: str | None,
     ) -> HumanInputFormRecord:
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             form_model = session.get(HumanInputForm, form_id)
             if form_model is None:
                 raise FormNotFoundError(f"form not found, id={form_id}")
@@ -638,7 +638,7 @@ class HumanInputFormSubmissionRepository:
         timeout_status: HumanInputFormStatus,
         reason: str | None = None,
     ) -> HumanInputFormRecord:
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             form_model = session.get(HumanInputForm, form_id)
             if form_model is None:
                 raise FormNotFoundError(f"form not found, id={form_id}")

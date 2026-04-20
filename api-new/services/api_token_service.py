@@ -283,7 +283,7 @@ def query_token_from_db(auth_token: str, scope: str | None) -> ApiToken:
 
     Raises Unauthorized if token is invalid.
     """
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         stmt = select(ApiToken).where(ApiToken.token == auth_token, ApiToken.type == scope)
         api_token = session.scalar(stmt)
 

@@ -30,7 +30,7 @@ def clean_document_task(document_id: str, dataset_id: str, doc_form: str, file_i
     start_at = time.perf_counter()
     total_attachment_files = []
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
 
@@ -62,7 +62,7 @@ def clean_document_task(document_id: str, dataset_id: str, doc_form: str, file_i
     # check segment is exist
     if index_node_ids:
         index_processor = IndexProcessorFactory(doc_form).init_index_processor()
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
             if dataset:
                 index_processor.clean(
@@ -70,7 +70,7 @@ def clean_document_task(document_id: str, dataset_id: str, doc_form: str, file_i
                 )
 
     total_image_files = []
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         for segment_content in segment_contents:
             image_upload_file_ids = get_image_upload_file_ids(segment_content)
             image_files = session.scalars(select(UploadFile).where(UploadFile.id.in_(image_upload_file_ids))).all()
@@ -78,7 +78,7 @@ def clean_document_task(document_id: str, dataset_id: str, doc_form: str, file_i
             image_file_delete_stmt = delete(UploadFile).where(UploadFile.id.in_(image_upload_file_ids))
             session.execute(image_file_delete_stmt)
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         segment_delete_stmt = delete(DocumentSegment).where(DocumentSegment.document_id == document_id)
         session.execute(segment_delete_stmt)
 
@@ -92,7 +92,7 @@ def clean_document_task(document_id: str, dataset_id: str, doc_form: str, file_i
                 image_file_key,
             )
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         if file_id:
             file = session.scalar(select(UploadFile).where(UploadFile.id == file_id).limit(1))
             if file:
@@ -102,7 +102,7 @@ def clean_document_task(document_id: str, dataset_id: str, doc_form: str, file_i
                     logger.exception("Delete file failed when document deleted, file_id: %s", file_id)
                 session.delete(file)
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         # delete segment attachments
         if attachment_ids:
             attachment_file_delete_stmt = delete(UploadFile).where(UploadFile.id.in_(attachment_ids))
@@ -122,7 +122,7 @@ def clean_document_task(document_id: str, dataset_id: str, doc_form: str, file_i
                 attachment_file_key,
             )
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         # delete dataset metadata binding
         session.execute(
             delete(DatasetMetadataBinding).where(

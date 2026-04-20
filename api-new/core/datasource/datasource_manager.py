@@ -267,7 +267,7 @@ class DatasourceManager:
                     url = message.message.text
 
                     datasource_file_id = str(url).split("/")[-1].split(".")[0]
-                    with session_factory.create_session() as session:
+                    with session_factory.create_sync_session() as session:
                         stmt = select(ToolFile).where(
                             ToolFile.id == datasource_file_id, ToolFile.tenant_id == tenant_id
                         )
@@ -344,7 +344,7 @@ class DatasourceManager:
 
     @classmethod
     def get_upload_file_by_id(cls, file_id: str, tenant_id: str) -> File:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             upload_file = session.scalar(
                 select(UploadFile).where(UploadFile.id == file_id, UploadFile.tenant_id == tenant_id).limit(1)
             )

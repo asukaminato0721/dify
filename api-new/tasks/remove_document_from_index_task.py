@@ -25,7 +25,7 @@ def remove_document_from_index_task(document_id: str):
     logger.info(click.style(f"Start remove document segments from index: {document_id}", fg="green"))
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         document = session.scalar(select(Document).where(Document.id == document_id).limit(1))
         if not document:
             logger.info(click.style(f"Document not found: {document_id}", fg="red"))

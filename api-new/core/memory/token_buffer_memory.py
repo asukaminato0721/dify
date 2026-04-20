@@ -44,7 +44,7 @@ class TokenBufferMemory:
     def workflow_run_repo(self) -> APIWorkflowRunRepository:
         if self._workflow_run_repo is None:
             self._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(
-                session_factory.get_session_maker()
+                session_factory.get_sync_session_maker()
             )
         return self._workflow_run_repo
 
@@ -65,7 +65,7 @@ class TokenBufferMemory:
         )
         if not workflow_run:
             raise ValueError(f"Workflow run not found: {message.workflow_run_id}")
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             workflow = session.scalar(select(FastAPIWorkflow).where(FastAPIWorkflow.id == workflow_run.workflow_id))
         if not workflow:
             raise ValueError(f"Workflow not found: {workflow_run.workflow_id}")
@@ -82,7 +82,7 @@ class TokenBufferMemory:
             .order_by(FastAPIMessage.created_at.desc())
             .limit(message_limit)
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             return list(session.scalars(stmt).all())
 
     def _load_message_files(self, *, message: FastAPIMessage, belongs_to: str) -> list[FastAPIMessageFile]:
@@ -91,7 +91,7 @@ class TokenBufferMemory:
         if isinstance(cached_files, list):
             return cast(list[FastAPIMessageFile], cached_files)
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             if belongs_to == "user":
                 message_files = session.scalars(
                     select(FastAPIMessageFile).where(

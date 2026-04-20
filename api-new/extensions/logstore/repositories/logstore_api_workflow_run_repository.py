@@ -355,7 +355,7 @@ class LogstoreAPIWorkflowRunRepository(APIWorkflowRunRepository):
         self, run_id: str, tenant_id: str, app_id: str
     ) -> WorkflowRun | None:
         """Fallback to PostgreSQL via the configured sync compatibility session."""
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(WorkflowRun).where(
                 WorkflowRun.id == run_id, WorkflowRun.tenant_id == tenant_id, WorkflowRun.app_id == app_id
             )
@@ -435,7 +435,7 @@ class LogstoreAPIWorkflowRunRepository(APIWorkflowRunRepository):
 
     def _fallback_get_workflow_run_by_id(self, run_id: str) -> WorkflowRun | None:
         """Fallback to PostgreSQL via the configured sync compatibility session."""
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
             return session.scalar(stmt)
 

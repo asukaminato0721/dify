@@ -127,7 +127,7 @@ class RemoteFileUploadApi(WebApiResource):
         content = resp.content if resp.request.method == "GET" else ssrf_proxy.get(url).content
 
         try:
-            upload_file = FileService(session_factory.get_session_maker()).upload_file(
+            upload_file = FileService(session_factory.get_sync_session_maker()).upload_file(
                 filename=file_info.filename,
                 content=content,
                 mimetype=file_info.mimetype,

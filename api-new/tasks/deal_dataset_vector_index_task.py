@@ -27,7 +27,7 @@ def deal_dataset_vector_index_task(dataset_id: str, action: str):
     logger.info(click.style(f"Start deal dataset vector index: {dataset_id}", fg="green"))
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
 

@@ -22,7 +22,7 @@ class SummaryIndex:
         summary_index_setting: SummaryIndexSettingDict | None = None,
     ) -> None:
         if is_preview:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
                 if not dataset or dataset.indexing_technique != IndexTechniqueType.HIGH_QUALITY:
                     return
@@ -73,7 +73,7 @@ class SummaryIndex:
 
             def process_segment(segment_id: str) -> None:
                 """Process a single segment in a thread with a fresh DB session."""
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     segment = session.scalar(select(DocumentSegment).where(DocumentSegment.id == segment_id).limit(1))
                     if segment is None:
                         return

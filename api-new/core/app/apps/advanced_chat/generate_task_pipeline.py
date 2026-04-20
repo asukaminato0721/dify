@@ -335,7 +335,7 @@ class AdvancedChatAppGenerateTaskPipeline(GraphRuntimeStateSupport):
     @contextmanager
     def _database_session(self):
         """Context manager for database sessions."""
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             yield session
 
     def _ensure_workflow_initialized(self):

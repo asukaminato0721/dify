@@ -233,7 +233,7 @@ class DifyRetrieverAttachmentLoader(RetrieverAttachmentLoaderProtocol):
         self._file_reference_factory = file_reference_factory
 
     def load(self, *, segment_id: str) -> Sequence[File]:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             attachments_with_bindings = session.execute(
                 select(SegmentAttachmentBinding, UploadFile)
                 .join(UploadFile, UploadFile.id == SegmentAttachmentBinding.attachment_id)

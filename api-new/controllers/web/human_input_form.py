@@ -102,7 +102,7 @@ class HumanInputFormApi(Resource):
             raise WebFormRateLimitExceededError()
         _FORM_ACCESS_RATE_LIMITER.increment_rate_limit(ip_address)
 
-        service = HumanInputService(session_factory.get_session_maker())
+        service = HumanInputService(session_factory.get_sync_session_maker())
         # TODO(QuantumGhost): forbid submission for form tokens
         # that are only for console.
         form = service.get_form_by_token(form_token)
@@ -137,7 +137,7 @@ class HumanInputFormApi(Resource):
             raise WebFormRateLimitExceededError()
         _FORM_SUBMIT_RATE_LIMITER.increment_rate_limit(ip_address)
 
-        service = HumanInputService(session_factory.get_session_maker())
+        service = HumanInputService(session_factory.get_sync_session_maker())
         form = service.get_form_by_token(form_token)
         if form is None:
             raise NotFoundError("Form not found")

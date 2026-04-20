@@ -533,7 +533,7 @@ class RetrievalService:
             doc_segment_map: dict[str, list[str]] = {}
             segment_summary_map: dict[str, str] = {}  # Map segment_id to summary content
 
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 attachments = cls.get_segment_attachment_infos(image_doc_ids, session)
 
                 for attachment in attachments:

@@ -55,7 +55,7 @@ def batch_create_segment_to_index_task(
     dataset_config: dict[str, Any] | None = None
     document_config: dict[str, Any] | None = None
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             dataset = session.get(Dataset, dataset_id)
             if not dataset:
@@ -136,7 +136,7 @@ def batch_create_segment_to_index_task(
     else:
         tokens_list = [0] * len(content)
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         for segment, tokens in zip(content, tokens_list):
             content = segment["content"]
             doc_id = str(uuid.uuid4())
@@ -166,14 +166,14 @@ def batch_create_segment_to_index_task(
             session.add(segment_document)
             document_segments.append(segment_document)
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         dataset_document = session.get(Document, document_id)
         if dataset_document:
             assert dataset_document.word_count is not None
             dataset_document.word_count += word_count_change
             session.add(dataset_document)
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         dataset = session.get(Dataset, dataset_id)
         if dataset:
             VectorService.create_segments_vector(None, document_segments, dataset, document_config["doc_form"])

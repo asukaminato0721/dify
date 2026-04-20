@@ -42,7 +42,7 @@ class ToolLabelManager:
         if session is not None:
             cls._update_tool_labels_logics(session, provider_id, controller, labels)
         else:
-            with session_factory.get_session_maker().begin() as _session:
+            with session_factory.get_sync_session_maker().begin() as _session:
                 cls._update_tool_labels_logics(_session, provider_id, controller, labels)
 
     @classmethod
@@ -90,7 +90,7 @@ class ToolLabelManager:
             ToolLabelBinding.tool_type == controller.provider_type,
         )
 
-        with session_factory.get_session_maker().begin() as _session:
+        with session_factory.get_sync_session_maker().begin() as _session:
             labels: list[str] = list(_session.scalars(stmt).all())
 
         return labels
@@ -120,7 +120,7 @@ class ToolLabelManager:
 
         labels: list[ToolLabelBinding] = []
 
-        with session_factory.get_session_maker().begin() as _session:
+        with session_factory.get_sync_session_maker().begin() as _session:
             stmt = select(ToolLabelBinding).where(
                 ToolLabelBinding.tool_id.in_(provider_ids), ToolLabelBinding.tool_type.in_(list(provider_types))
             )

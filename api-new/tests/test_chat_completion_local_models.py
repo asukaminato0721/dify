@@ -114,12 +114,12 @@ def test_local_app_exposes_app_model_config_property() -> None:
         use_icon_as_answer_icon=False,
     )
     config = _build_app_model_config()
-    original_create_session = app_models.configured_sync_session_factory.create_session
-    app_models.configured_sync_session_factory.create_session = lambda: _SessionStub(config)  # type: ignore[assignment]
+    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
+    app_models.configured_sync_session_factory.create_sync_session = lambda: _SessionStub(config)  # type: ignore[assignment]
     try:
         result = app.app_model_config
     finally:
-        app_models.configured_sync_session_factory.create_session = original_create_session
+        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
 
     assert result is config
 

@@ -108,8 +108,8 @@ def test_token_buffer_memory_uses_prefetched_history_without_sync_sessions() -> 
     setattr(message, "_cached_user_message_files", [])
     setattr(message, "_cached_assistant_message_files", [])
 
-    original_create_session = token_buffer_memory_module.session_factory.create_session
-    token_buffer_memory_module.session_factory.create_session = cast(
+    original_create_sync_session = token_buffer_memory_module.session_factory.create_sync_session
+    token_buffer_memory_module.session_factory.create_sync_session = cast(
         Any, lambda: (_ for _ in ()).throw(AssertionError("sync session should not be used"))
     )
     try:
@@ -118,7 +118,7 @@ def test_token_buffer_memory_uses_prefetched_history_without_sync_sessions() -> 
             model_instance=cast(Any, _ModelInstanceStub()),
         ).get_history_prompt_messages()
     finally:
-        token_buffer_memory_module.session_factory.create_session = original_create_session
+        token_buffer_memory_module.session_factory.create_sync_session = original_create_sync_session
 
     assert len(prompt_messages) == 2
     assert prompt_messages[0].content == "hello"

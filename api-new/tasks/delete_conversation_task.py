@@ -28,7 +28,7 @@ def delete_conversation_related_data(conversation_id: str):
     )
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             session.execute(delete(MessageAnnotation).where(MessageAnnotation.conversation_id == conversation_id))
 

@@ -39,7 +39,7 @@ def generate_summary_index_task(dataset_id: str, document_id: str, segment_ids: 
     start_at = time.perf_counter()
 
     try:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
             if not dataset:
                 logger.error(click.style(f"Dataset not found: {dataset_id}", fg="red"))
@@ -108,7 +108,7 @@ def generate_summary_index_task(dataset_id: str, document_id: str, segment_ids: 
         # Update document segments with error status if needed
         if segment_ids:
             error_message = f"Summary generation failed: {str(e)}"
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 session.execute(
                     update(DocumentSegment)
                     .where(

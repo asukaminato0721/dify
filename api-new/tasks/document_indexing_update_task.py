@@ -27,7 +27,7 @@ def document_indexing_update_task(dataset_id: str, document_id: str):
     logger.info(click.style(f"Start update document: {document_id}", fg="green"))
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         document = session.scalar(
             select(Document).where(Document.id == document_id, Document.dataset_id == dataset_id).limit(1)
         )
@@ -66,7 +66,7 @@ def document_indexing_update_task(dataset_id: str, document_id: str):
         logger.exception("Failed to clean document index during update, document_id: %s", document_id)
 
     if clean_success:
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             segment_delete_stmt = delete(DocumentSegment).where(DocumentSegment.document_id == document_id)
             session.execute(segment_delete_stmt)
 

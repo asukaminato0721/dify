@@ -163,7 +163,7 @@ class QAIndexProcessor(BaseIndexProcessor):
         if delete_summaries:
             if node_ids:
                 # Find segments by index_node_id
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     segments = session.scalars(
                         select(DocumentSegment).where(
                             DocumentSegment.dataset_id == dataset.id,

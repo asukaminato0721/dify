@@ -275,7 +275,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
             event = message.event
 
             if isinstance(event, QueueErrorEvent):
-                with session_factory.get_session_maker().begin() as session:
+                with session_factory.get_sync_session_maker().begin() as session:
                     err = self.handle_error(event=event, session=session, message_id=self._message_id)
                 yield self.error_to_stream_response(err)
                 break
@@ -296,7 +296,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
                         answer=output_moderation_answer
                     )
 
-                with session_factory.get_session_maker().begin() as session:
+                with session_factory.get_sync_session_maker().begin() as session:
                     # Save message
                     self._save_message(session=session, trace_manager=trace_manager)
                 message_end_resp = self._message_end_to_stream_response()
@@ -482,7 +482,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
 
         files = self._message_cycle_manager.get_cached_message_end_files(self._message_id)
         if files is None:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 message_files = session.scalars(
                     select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == self._message_id)
                 ).all()
@@ -547,7 +547,7 @@ class EasyUIBasedGenerateTaskPipeline(BasedGenerateTaskPipeline):
                 message_files=event.message_files,
             )
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             agent_thought: FastAPIMessageAgentThought | None = session.scalar(
                 select(FastAPIMessageAgentThought).where(FastAPIMessageAgentThought.id == event.agent_thought_id).limit(1)
             )

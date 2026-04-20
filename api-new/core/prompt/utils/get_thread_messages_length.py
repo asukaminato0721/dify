@@ -11,7 +11,7 @@ def get_thread_messages_length(conversation_id: str) -> int:
     """
     # Fetch all messages related to the conversation
     stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc())
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         messages = session.scalars(stmt).all()
 
     # Extract thread messages

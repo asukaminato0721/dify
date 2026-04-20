@@ -33,7 +33,7 @@ def mail_clean_document_notify_task():
 
     # send document clean notify mail
     try:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset_auto_disable_logs = session.scalars(
                 select(DatasetAutoDisableLog).where(DatasetAutoDisableLog.notified.is_(False))
             ).all()

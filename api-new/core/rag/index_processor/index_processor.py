@@ -62,7 +62,7 @@ class IndexProcessor:
         batch: Any,
         summary_index_setting: SummaryIndexSettingDict | None = None,
     ) -> IndexingResultDict:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             document = session.scalar(select(Document).where(Document.id == document_id).limit(1))
             if not document:
                 raise KnowledgeIndexNodeError(f"Document {document_id} not found.")
@@ -91,7 +91,7 @@ class IndexProcessor:
         if index_node_ids:
             index_processor.clean(dataset, index_node_ids, with_keywords=True, delete_child_chunks=True)
 
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             if index_node_ids:
                 segment_delete_stmt = delete(DocumentSegment).where(DocumentSegment.document_id == original_document_id)
                 session.execute(segment_delete_stmt)
@@ -99,7 +99,7 @@ class IndexProcessor:
         index_processor.index(dataset, document, chunks)
         indexing_end_at = time.perf_counter()
 
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             document.indexing_latency = indexing_end_at - indexing_start_at
             document.indexing_status = "completed"
             document.completed_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
@@ -151,7 +151,7 @@ class IndexProcessor:
         summary_index_setting: SummaryIndexSettingDict | None,
     ) -> Preview:
         doc_language = None
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             if document_id:
                 document = session.scalar(select(Document).where(Document.id == document_id).limit(1))
             else:

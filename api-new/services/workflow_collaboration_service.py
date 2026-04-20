@@ -79,7 +79,7 @@ class WorkflowCollaborationService:
 
     def _can_access_workflow(self, workflow_id: str, tenant_id: str) -> bool:
         """Check room access without relying on Flask's app-context-bound scoped session."""
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             app_id = session.scalar(select(App.id).where(App.id == workflow_id, App.tenant_id == tenant_id).limit(1))
         return app_id is not None
 

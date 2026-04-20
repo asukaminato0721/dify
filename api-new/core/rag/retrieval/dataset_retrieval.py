@@ -275,7 +275,7 @@ class DatasetRetrieval:
             dataset_ids = [i.segment.dataset_id for i in records]
             document_ids = [i.segment.document_id for i in records]
 
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 datasets = session.scalars(select(Dataset).where(Dataset.id.in_(dataset_ids))).all()
                 documents = session.scalars(select(DatasetDocument).where(DatasetDocument.id.in_(document_ids))).all()
 
@@ -1826,7 +1826,7 @@ class DatasetRetrieval:
                 thread_exceptions.append(e)
 
     def _get_available_datasets(self, tenant_id: str, dataset_ids: list[str]) -> list[Dataset]:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             subquery = (
                 select(DocumentModel.dataset_id, func.count(DocumentModel.id).label("available_document_count"))
                 .where(
@@ -1863,7 +1863,7 @@ class DatasetRetrieval:
             redis_client.zremrangebyscore(key, 0, current_time - 60000)
             request_count = redis_client.zcard(key)
             if request_count > knowledge_rate_limit.limit:
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     rate_limit_log = RateLimitLog(
                         tenant_id=tenant_id,
                         subscription_plan=knowledge_rate_limit.subscription_plan,

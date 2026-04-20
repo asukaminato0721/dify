@@ -115,7 +115,7 @@ class InsertExploreAppListApi(Resource):
             privacy_policy = site.privacy_policy or payload.privacy_policy or ""
             custom_disclaimer = site.custom_disclaimer or payload.custom_disclaimer or ""
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             recommended_app = session.execute(
                 select(RecommendedApp).where(RecommendedApp.app_id == payload.app_id)
             ).scalar_one_or_none()
@@ -191,7 +191,7 @@ class InsertExploreAppApi(Resource):
     @only_edition_cloud
     @admin_required
     def delete(self, app_id):
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             recommended_app = session.execute(
                 select(RecommendedApp).where(RecommendedApp.app_id == str(app_id))
             ).scalar_one_or_none()
@@ -199,13 +199,13 @@ class InsertExploreAppApi(Resource):
         if not recommended_app:
             return {"result": "success"}, 204
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             app = session.execute(select(App).where(App.id == recommended_app.app_id)).scalar_one_or_none()
 
         if app:
             app.is_public = False
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             installed_apps = (
                 session.execute(
                     select(InstalledApp).where(

@@ -258,7 +258,7 @@ def dispatch_triggered_workflow(
         tenant_id=subscription.tenant_id, provider_id=TriggerProviderID(subscription.provider_id)
     )
     trigger_entity: TriggerProviderEntity = provider_controller.entity
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         workflows: Mapping[str, Workflow] = _get_latest_workflows_by_app_ids(session, subscribers)
 
         end_users: Mapping[str, EndUser] = EndUserService.create_end_user_batch(

@@ -44,7 +44,7 @@ class _DebuggerDraftVariableSaver:
         self._enclosing_node_id = enclosing_node_id
 
     def save(self, process_data: Mapping[str, Any] | None, outputs: Mapping[str, Any] | None) -> None:
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             DraftVariableSaverImpl(
                 session=session,
                 app_id=self._app_id,

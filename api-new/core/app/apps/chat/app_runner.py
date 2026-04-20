@@ -48,7 +48,7 @@ class ChatAppRunner(AppRunner):
         app_config = application_generate_entity.app_config
         app_config = cast(ChatAppConfig, app_config)
         stmt = select(FastAPIApp).where(FastAPIApp.id == app_config.app_id)
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             app_record = session.scalar(stmt)
         if not app_record:
             raise ValueError("App not found")

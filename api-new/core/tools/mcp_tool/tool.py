@@ -251,7 +251,7 @@ class MCPTool(Tool):
 
         # Step 1: Load provider entity and credentials in a short-lived session
         # This minimizes database connection hold time
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             mcp_service = MCPToolManageService(session=session)
             provider_entity = mcp_service.get_provider_entity(self.provider_id, self.tenant_id, by_server_id=True)
 

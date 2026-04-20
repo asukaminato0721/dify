@@ -56,7 +56,7 @@ class FileApi(Resource):
             raise FilenameNotExistsError
 
         try:
-            upload_file = FileService(session_factory.get_session_maker()).upload_file(
+            upload_file = FileService(session_factory.get_sync_session_maker()).upload_file(
                 filename=file.filename,
                 content=file.read(),
                 mimetype=file.mimetype,

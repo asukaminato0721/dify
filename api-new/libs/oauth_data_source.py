@@ -95,7 +95,7 @@ class NotionOAuth(OAuthDataSource):
             pages=pages,
         )
         # save data source binding
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             data_source_binding = session.scalar(
                 select(DataSourceOauthBinding).where(
                     DataSourceOauthBinding.tenant_id == current_user.current_tenant_id,
@@ -131,7 +131,7 @@ class NotionOAuth(OAuthDataSource):
             pages=pages,
         )
         # save data source binding
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             data_source_binding = session.scalar(
                 select(DataSourceOauthBinding).where(
                     DataSourceOauthBinding.tenant_id == current_user.current_tenant_id,
@@ -156,7 +156,7 @@ class NotionOAuth(OAuthDataSource):
 
     def sync_data_source(self, binding_id: str) -> None:
         # save data source binding
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             data_source_binding = session.scalar(
                 select(DataSourceOauthBinding).where(
                     DataSourceOauthBinding.tenant_id == current_user.current_tenant_id,

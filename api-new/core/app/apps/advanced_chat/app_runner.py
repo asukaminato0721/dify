@@ -135,7 +135,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
         if isinstance(self._app, FastAPIApp):
             app_record = self._app
         else:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 app_record = session.scalar(select(FastAPIApp).where(FastAPIApp.id == app_config.app_id))
 
         if not app_record:
@@ -267,7 +267,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         workflow_entry.graph_engine.layer(persistence_layer)
         conversation_variable_layer = ConversationVariablePersistenceLayer(
-            ConversationVariableUpdater(session_factory.get_session_maker())
+            ConversationVariableUpdater(session_factory.get_sync_session_maker())
         )
         workflow_entry.graph_engine.layer(conversation_variable_layer)
         for layer in self._graph_engine_layers:
@@ -293,8 +293,8 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
             workflow_execution_id=self.application_generate_entity.workflow_run_id,
         )
 
-        with session_factory.create_session() as session:
-            app_record = session.scalar(select(FastAPIApp).where(FastAPIApp.id == app_config.app_id))
+        async with session_factory.create_session() as session:
+            app_record = await session.scalar(select(FastAPIApp).where(FastAPIApp.id == app_config.app_id))
 
         if not app_record:
             raise ValueError("App not found")
@@ -415,7 +415,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         workflow_entry.graph_engine.layer(persistence_layer)
         conversation_variable_layer = ConversationVariablePersistenceLayer(
-            ConversationVariableUpdater(session_factory.get_session_maker())
+            ConversationVariableUpdater(session_factory.get_sync_session_maker())
         )
         workflow_entry.graph_engine.layer(conversation_variable_layer)
         for layer in self._graph_engine_layers:
@@ -554,7 +554,7 @@ class AdvancedChatAppRunner(WorkflowBasedAppRunner):
 
         :return: List of conversation variables ready for use
         """
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             existing_variables = self._load_existing_conversation_variables(session)
 
             if not existing_variables:

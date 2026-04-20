@@ -227,7 +227,7 @@ class AgentRuntimeSupport:
         if conversation_id is None:
             return None
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(Conversation).where(Conversation.app_id == app_id, Conversation.id == conversation_id)
             conversation = session.scalar(stmt)
             if not conversation:

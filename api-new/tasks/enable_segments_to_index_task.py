@@ -29,7 +29,7 @@ def enable_segments_to_index_task(segment_ids: list, dataset_id: str, document_i
     Usage: enable_segments_to_index_task.delay(segment_ids, dataset_id, document_id)
     """
     start_at = time.perf_counter()
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
         if not dataset:
             logger.info(click.style(f"Dataset {dataset_id} not found, pass.", fg="cyan"))

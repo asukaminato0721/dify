@@ -43,7 +43,7 @@ def batch_clean_document_task(document_ids: list[str], dataset_id: str, doc_form
 
     try:
         # ============ Step 1: Query segment and file data (short read-only transaction) ============
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             # Get segments info
             segments = session.scalars(
                 select(DocumentSegment).where(DocumentSegment.document_id.in_(document_ids))
@@ -74,7 +74,7 @@ def batch_clean_document_task(document_ids: list[str], dataset_id: str, doc_form
         if index_node_ids:
             try:
                 # Fetch dataset in a fresh session to avoid DetachedInstanceError
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
                     if not dataset:
                         logger.warning("Dataset not found for vector index cleanup, dataset_id: %s", dataset_id)
@@ -93,7 +93,7 @@ def batch_clean_document_task(document_ids: list[str], dataset_id: str, doc_form
 
         # ============ Step 3: Delete metadata binding (separate short transaction) ============
         try:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 result = cast(
                     CursorResult,
                     session.execute(
@@ -120,7 +120,7 @@ def batch_clean_document_task(document_ids: list[str], dataset_id: str, doc_form
             for i in range(0, len(total_image_upload_file_ids), BATCH_SIZE):
                 batch = total_image_upload_file_ids[i : i + BATCH_SIZE]
                 try:
-                    with session_factory.create_session() as session:
+                    with session_factory.create_sync_session() as session:
                         stmt = delete(UploadFile).where(UploadFile.id.in_(batch))
                         session.execute(stmt)
                         session.commit()
@@ -147,7 +147,7 @@ def batch_clean_document_task(document_ids: list[str], dataset_id: str, doc_form
             for i in range(0, len(segment_ids), BATCH_SIZE):
                 batch = segment_ids[i : i + BATCH_SIZE]
                 try:
-                    with session_factory.create_session() as session:
+                    with session_factory.create_sync_session() as session:
                         segment_delete_stmt = delete(DocumentSegment).where(DocumentSegment.id.in_(batch))
                         session.execute(segment_delete_stmt)
                         session.commit()
@@ -171,7 +171,7 @@ def batch_clean_document_task(document_ids: list[str], dataset_id: str, doc_form
         # ============ Step 6: Delete document-associated files (separate short transaction) ============
         if file_ids:
             try:
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     stmt = delete(UploadFile).where(UploadFile.id.in_(file_ids))
                     session.execute(stmt)
                     session.commit()

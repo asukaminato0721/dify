@@ -434,7 +434,7 @@ class AppRunner:
             created_by=user_id,
         )
 
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             session.add(message_file)
             session.flush()
             session.refresh(message_file)

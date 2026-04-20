@@ -80,7 +80,7 @@ class AgentMessageTransformer:
                 if not isinstance(tool_file_id, str) or not tool_file_id:
                     raise ToolFileNotFoundError("missing tool_file_id metadata")
 
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     stmt = select(ToolFile).where(ToolFile.id == tool_file_id)
                     tool_file = session.scalar(stmt)
                     if tool_file is None:
@@ -105,7 +105,7 @@ class AgentMessageTransformer:
                 tool_file_id = message.meta.get("tool_file_id")
                 if not isinstance(tool_file_id, str) or not tool_file_id:
                     raise ToolFileNotFoundError("missing tool_file_id metadata")
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     stmt = select(ToolFile).where(ToolFile.id == tool_file_id)
                     tool_file = session.scalar(stmt)
                     if tool_file is None:

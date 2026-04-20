@@ -7,7 +7,7 @@ from models.account import TenantPluginPermission
 class PluginPermissionService:
     @staticmethod
     def get_permission(tenant_id: str) -> TenantPluginPermission | None:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             return session.scalar(
                 select(TenantPluginPermission).where(TenantPluginPermission.tenant_id == tenant_id).limit(1)
             )
@@ -18,7 +18,7 @@ class PluginPermissionService:
         install_permission: TenantPluginPermission.InstallPermission,
         debug_permission: TenantPluginPermission.DebugPermission,
     ):
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             permission = session.scalar(
                 select(TenantPluginPermission).where(TenantPluginPermission.tenant_id == tenant_id).limit(1)
             )

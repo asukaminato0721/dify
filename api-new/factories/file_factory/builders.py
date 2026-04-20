@@ -135,7 +135,7 @@ def _build_from_local_file(
         UploadFile.id == upload_file_id,
         UploadFile.tenant_id == tenant_id,
     )
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         row = session.scalar(access_controller.apply_upload_file_filters(stmt))
         if row is None:
             raise ValueError("Invalid upload file")
@@ -180,7 +180,7 @@ def _build_from_remote_url(
             UploadFile.id == upload_file_id,
             UploadFile.tenant_id == tenant_id,
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             upload_file = session.scalar(access_controller.apply_upload_file_filters(stmt))
             if upload_file is None:
                 raise ValueError("Invalid upload file")
@@ -249,7 +249,7 @@ def _build_from_tool_file(
         ToolFile.id == tool_file_id,
         ToolFile.tenant_id == tenant_id,
     )
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         tool_file = session.scalar(access_controller.apply_tool_file_filters(stmt))
         if tool_file is None:
             raise ValueError(f"ToolFile {tool_file_id} not found")
@@ -292,7 +292,7 @@ def _build_from_datasource_file(
         UploadFile.id == datasource_file_id,
         UploadFile.tenant_id == tenant_id,
     )
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         datasource_file = session.scalar(access_controller.apply_upload_file_filters(stmt))
         if datasource_file is None:
             raise ValueError(f"DatasourceFile {mapping.get('datasource_file_id')} not found")

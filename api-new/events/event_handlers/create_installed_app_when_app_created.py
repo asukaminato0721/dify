@@ -12,6 +12,6 @@ def handle(sender, **kwargs):
         app_id=app.id,
         app_owner_tenant_id=app.tenant_id,
     )
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         session.add(installed_app)
         session.commit()

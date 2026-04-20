@@ -32,7 +32,7 @@ def run_schedule_trigger(schedule_id: str) -> None:
         TenantOwnerNotFoundError: If no owner/admin for tenant
         ScheduleExecutionError: If workflow trigger fails
     """
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         schedule = session.get(WorkflowSchedulePlan, schedule_id)
         if not schedule:
             raise ScheduleNotFoundError(f"Schedule {schedule_id} not found")

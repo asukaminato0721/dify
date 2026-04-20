@@ -16,6 +16,6 @@ def save_workflow_execution_task(
     self,
     deletions: list[DraftVarFileDeletion],
 ):
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         srv = WorkflowDraftVariableService(session=session)
         srv.delete_workflow_draft_variable_file(deletions=deletions)

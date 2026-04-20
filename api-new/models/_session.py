@@ -30,7 +30,7 @@ def legacy_sync_session() -> Iterator[Session]:
     directly.
     """
 
-    with configured_sync_session_factory.create_session() as session:
+    with configured_sync_session_factory.create_sync_session() as session:
         yield session
 
 
@@ -61,7 +61,7 @@ def legacy_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None
 
 
 def legacy_session_maker() -> sessionmaker[Session]:
-    return configured_sync_session_factory.get_session_maker()
+    return configured_sync_session_factory.get_sync_session_maker()
 
 
 async def with_async_session[ReturnT](callback: Callable[[AsyncSession], Awaitable[ReturnT]]) -> ReturnT:

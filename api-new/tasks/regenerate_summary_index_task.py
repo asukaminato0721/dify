@@ -46,7 +46,7 @@ def regenerate_summary_index_task(
     start_at = time.perf_counter()
 
     try:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
             if not dataset:
                 logger.error(click.style(f"Dataset not found: {dataset_id}", fg="red"))

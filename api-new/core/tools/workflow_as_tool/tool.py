@@ -221,7 +221,7 @@ class WorkflowTool(Tool):
         """
         Resolve user from database (worker/Celery context).
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             tenant_stmt = select(Tenant).where(Tenant.id == self.runtime.tenant_id)
             tenant = session.scalar(tenant_stmt)
             if not tenant:
@@ -246,7 +246,7 @@ class WorkflowTool(Tool):
         """
         get the workflow by app id and version
         """
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             if not version:
                 stmt = (
                     select(Workflow)
@@ -269,7 +269,7 @@ class WorkflowTool(Tool):
         get the app by app id
         """
         stmt = select(App).where(App.id == app_id)
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             app = session.scalar(stmt)
             if not app:
                 raise ValueError("app not found")

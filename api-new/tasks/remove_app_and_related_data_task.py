@@ -352,7 +352,7 @@ def _delete_app_conversations(tenant_id: str, app_id: str):
 
 
 def _delete_conversation_variables(*, app_id: str):
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         stmt = delete(ConversationVariable).where(ConversationVariable.app_id == app_id)
         session.execute(stmt)
         session.commit()
@@ -485,7 +485,7 @@ def delete_draft_variables_batch(app_id: str, batch_size: int = 1000) -> int:
     total_files_deleted = 0
 
     while True:
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             # Get a batch of draft variable IDs along with their file_ids
             query_sql = """
                 SELECT id, file_id FROM workflow_draft_variables
@@ -681,7 +681,7 @@ def _delete_workflow_trigger_logs(tenant_id: str, app_id: str):
 
 def _delete_records(query_sql: str, params: dict[str, Any], delete_func: Callable, name: str) -> None:
     while True:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             rs = session.execute(sa.text(query_sql), params)
             rows = rs.fetchall()
             if not rows:

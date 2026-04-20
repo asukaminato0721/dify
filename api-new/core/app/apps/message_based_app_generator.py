@@ -102,7 +102,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
                 FastAPIAppModelConfig.id == conversation.app_model_config_id,
                 FastAPIAppModelConfig.app_id == app_model.id,
             )
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 app_model_config = session.scalar(stmt)
 
             if not app_model_config:
@@ -172,7 +172,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
 
         created_new_conversation = conversation is None
         try:
-            with session_factory.get_session_maker().begin() as session:
+            with session_factory.get_sync_session_maker().begin() as session:
                 if not conversation:
                     conversation = FastAPIConversation(
                         app_id=app_config.app_id,
@@ -283,7 +283,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
         :param conversation_id: conversation id
         :return: conversation
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             conversation = session.scalar(select(FastAPIConversation).where(FastAPIConversation.id == conversation_id))
 
         if not conversation:
@@ -297,7 +297,7 @@ class MessageBasedAppGenerator(BaseAppGenerator):
         :param message_id: message id
         :return: message
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             message = session.scalar(select(FastAPIMessage).where(FastAPIMessage.id == message_id))
 
         if message is None:

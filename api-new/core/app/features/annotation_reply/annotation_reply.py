@@ -37,7 +37,7 @@ class AnnotationReplyFeature:
         from services.dataset_service import DatasetCollectionBindingService
 
         stmt = select(AppAnnotationSetting).where(AppAnnotationSetting.app_id == app_record.id)
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             annotation_setting = session.scalar(stmt)
 
         if not annotation_setting:
@@ -45,7 +45,7 @@ class AnnotationReplyFeature:
 
         try:
             score_threshold = annotation_setting.score_threshold or 1
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 collection_binding_detail = session.scalar(
                     select(DatasetCollectionBinding).where(
                         DatasetCollectionBinding.id == annotation_setting.collection_binding_id

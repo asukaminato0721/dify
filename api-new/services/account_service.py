@@ -808,7 +808,7 @@ class AccountService:
         This keeps backward compatibility for older records that stored uppercase emails while the
         rest of the system gradually normalizes new inputs.
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             account = session.execute(select(Account).where(Account.email == email)).scalar_one_or_none()
             if account or email == email.lower():
                 return account

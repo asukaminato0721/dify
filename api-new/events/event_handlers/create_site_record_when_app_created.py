@@ -22,6 +22,6 @@ def handle(sender, **kwargs):
             created_by=app.created_by,
             updated_by=app.updated_by,
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             session.add(site)
             session.commit()

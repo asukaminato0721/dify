@@ -111,7 +111,7 @@ def load_user_from_request(request_from_flask_login: Request) -> LoginUser | Non
         if admin_api_key and admin_api_key == auth_token:
             workspace_id = request.headers.get("X-WORKSPACE-ID")
             if workspace_id:
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     tenant_account_join = session.execute(
                         select(Tenant, TenantAccountJoin)
                         .where(Tenant.id == workspace_id)
@@ -135,7 +135,7 @@ def load_user_from_request(request_from_flask_login: Request) -> LoginUser | Non
             raise Unauthorized("Invalid Authorization token.")
         if not user_id:
             raise Unauthorized("Invalid Authorization token.")
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             return _load_logged_in_account(session, user_id)
     elif request.blueprint == "web":
         app_code = request.headers.get(HEADER_NAME_APP_CODE)
@@ -146,7 +146,7 @@ def load_user_from_request(request_from_flask_login: Request) -> LoginUser | Non
             end_user_id = decoded.get("end_user_id")
             if not end_user_id:
                 raise Unauthorized("Invalid Authorization token.")
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 return _load_end_user(session, end_user_id)
         else:
             if not auth_token:
@@ -154,7 +154,7 @@ def load_user_from_request(request_from_flask_login: Request) -> LoginUser | Non
             decoded = PassportService().verify(auth_token)
             end_user_id = decoded.get("end_user_id")
             if end_user_id:
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     return _load_end_user(session, end_user_id)
             else:
                 raise Unauthorized("Invalid Authorization token for web API.")
@@ -162,7 +162,7 @@ def load_user_from_request(request_from_flask_login: Request) -> LoginUser | Non
         server_code = request.view_args.get("server_code") if request.view_args else None
         if not server_code:
             raise Unauthorized("Invalid Authorization token.")
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             app_mcp_server = session.scalar(
                 select(AppMCPServer).where(AppMCPServer.server_code == server_code).limit(1)
             )

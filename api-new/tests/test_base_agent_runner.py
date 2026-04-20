@@ -45,7 +45,7 @@ def test_load_agent_thought_count_uses_prefetched_cache() -> None:
     setattr(runner.message, "_cached_agent_thought_count", 3)
 
     with patch(
-        "core.agent.base_agent_runner.session_factory.create_session",
+        "core.agent.base_agent_runner.session_factory.create_sync_session",
         side_effect=AssertionError("sync session should not be used"),
     ):
         result = runner._load_agent_thought_count()
@@ -156,7 +156,7 @@ def test_organize_agent_history_uses_prefetched_cache_without_sync_sessions() ->
     runner.message = current_message
 
     with patch(
-        "core.agent.base_agent_runner.session_factory.create_session",
+        "core.agent.base_agent_runner.session_factory.create_sync_session",
         side_effect=AssertionError("sync session should not be used"),
     ):
         result = runner.organize_agent_history([])

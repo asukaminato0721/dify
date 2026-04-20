@@ -80,7 +80,7 @@ class MessageCycleManager:
                 belongs_to=event.belongs_to or MessageFileBelongsTo.USER.value,
             )
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             return session.scalar(select(FastAPIMessageFile).where(FastAPIMessageFile.id == event.message_file_id))
 
     def _cache_message_end_file(self, message_file: FastAPIMessageFile) -> None:
@@ -88,7 +88,7 @@ class MessageCycleManager:
         transfer_method = getattr(message_file, "transfer_method", None)
         upload_file_id = getattr(message_file, "upload_file_id", None)
         if transfer_method == FileTransferMethod.LOCAL_FILE and upload_file_id:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 upload_file = session.scalar(select(FastAPIUploadFile).where(FastAPIUploadFile.id == upload_file_id))
             if upload_file is not None:
                 upload_files_map[upload_file.id] = upload_file
@@ -165,7 +165,7 @@ class MessageCycleManager:
                     logger.exception("generate conversation name failed, conversation_id: %s", conversation_id)
                 name = query[:47] + "..." if len(query) > 50 else query
 
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             session.execute(
                 update(FastAPIConversation)
                 .where(FastAPIConversation.id == conversation_id)

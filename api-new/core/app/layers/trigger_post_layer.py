@@ -45,7 +45,7 @@ class TriggerPostLayer(GraphEngineLayer):
         Update trigger log with success or failure.
         """
         if isinstance(event, tuple(self._STATUS_MAP.keys())):
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 repo = SQLAlchemyWorkflowTriggerLogRepository(session)
                 trigger_log = repo.get_by_id(self.trigger_log_id)
                 if not trigger_log:

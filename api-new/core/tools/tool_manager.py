@@ -221,7 +221,7 @@ class ToolManager:
                             tool_invoke_from=tool_invoke_from,
                         )
                     )
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     builtin_provider: BuiltinToolProvider | None = None
                     if isinstance(provider_controller, PluginToolProviderController):
                         provider_id_entity = ToolProviderID(provider_id)
@@ -349,7 +349,7 @@ class ToolManager:
                 workflow_provider_stmt = select(WorkflowToolProvider).where(
                     WorkflowToolProvider.tenant_id == tenant_id, WorkflowToolProvider.id == provider_id
                 )
-                with session_factory.create_session() as session, session.begin():
+                with session_factory.create_sync_session() as session, session.begin():
                     workflow_provider = session.scalar(workflow_provider_stmt)
 
                 if workflow_provider is None:
@@ -682,7 +682,7 @@ class ToolManager:
                 ) ranked WHERE rn = 1
                 """
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             ids = [row.id for row in session.execute(sa.text(sql), {"tenant_id": tenant_id}).all()]
             return list(session.scalars(select(BuiltinToolProvider).where(BuiltinToolProvider.id.in_(ids))))
 
@@ -699,7 +699,7 @@ class ToolManager:
             filters.append(typ)
 
         # Use a single session for all database operations to reduce connection overhead
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             if "builtin" in filters:
                 builtin_providers = list(cls.list_builtin_providers(tenant_id))
 
@@ -817,7 +817,7 @@ class ToolManager:
 
         :return: the provider controller, the credentials
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             provider: ApiToolProvider | None = session.scalar(
                 select(ApiToolProvider)
                 .where(
@@ -855,7 +855,7 @@ class ToolManager:
 
         :return: the provider controller, the credentials
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             mcp_service = MCPToolManageService(session=session)
             try:
                 provider = mcp_service.get_provider(server_identifier=provider_id, tenant_id=tenant_id)
@@ -872,7 +872,7 @@ class ToolManager:
         get api provider
         """
         provider_name = provider
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             provider_obj: ApiToolProvider | None = session.scalar(
                 select(ApiToolProvider)
                 .where(
@@ -965,7 +965,7 @@ class ToolManager:
     @classmethod
     def generate_workflow_tool_icon_url(cls, tenant_id: str, provider_id: str) -> EmojiIconDict:
         try:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 workflow_provider: WorkflowToolProvider | None = session.scalar(
                     select(WorkflowToolProvider)
                     .where(WorkflowToolProvider.tenant_id == tenant_id, WorkflowToolProvider.id == provider_id)
@@ -983,7 +983,7 @@ class ToolManager:
     @classmethod
     def generate_api_tool_icon_url(cls, tenant_id: str, provider_id: str) -> EmojiIconDict:
         try:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 api_provider: ApiToolProvider | None = session.scalar(
                     select(ApiToolProvider)
                     .where(ApiToolProvider.tenant_id == tenant_id, ApiToolProvider.id == provider_id)
@@ -1001,7 +1001,7 @@ class ToolManager:
     @classmethod
     def generate_mcp_tool_icon_url(cls, tenant_id: str, provider_id: str) -> EmojiIconDict | str:
         try:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 mcp_service = MCPToolManageService(session=session)
                 try:
                     mcp_provider = mcp_service.get_provider_entity(

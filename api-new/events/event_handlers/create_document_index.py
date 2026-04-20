@@ -22,7 +22,7 @@ def handle(sender, **kwargs):
     document_ids = kwargs.get("document_ids", [])
     documents = []
     start_at = time.perf_counter()
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         for document_id in document_ids:
             logger.info(click.style(f"Start process document: {document_id}", fg="green"))
 

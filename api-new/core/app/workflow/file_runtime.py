@@ -145,7 +145,7 @@ class DifyWorkflowFileRuntime(WorkflowFileRuntimeProtocol):
             raise ValueError("Missing file reference")
 
         record_id = parsed_reference.record_id
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             if file.transfer_method in {
                 FileTransferMethod.LOCAL_FILE,
                 FileTransferMethod.REMOTE_URL,
@@ -165,7 +165,7 @@ class DifyWorkflowFileRuntime(WorkflowFileRuntimeProtocol):
         if self._file_access_controller.current_scope() is None:
             return
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             upload_file = self._file_access_controller.get_upload_file(session=session, file_id=upload_file_id)
             if upload_file is None:
                 raise ValueError(f"Upload file {upload_file_id} not found")
@@ -174,7 +174,7 @@ class DifyWorkflowFileRuntime(WorkflowFileRuntimeProtocol):
         if self._file_access_controller.current_scope() is None:
             return
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             tool_file = self._file_access_controller.get_tool_file(session=session, file_id=tool_file_id)
             if tool_file is None:
                 raise ValueError(f"Tool file {tool_file_id} not found")

@@ -54,7 +54,7 @@ class PluginParameterService:
                     credentials = {}
                 else:
                     # fetch credentials from db
-                    with session_factory.create_session() as session:
+                    with session_factory.create_sync_session() as session:
                         if credential_id:
                             db_record = session.scalar(
                                 select(BuiltinToolProvider)

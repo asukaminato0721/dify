@@ -114,7 +114,7 @@ def _execute_workflow_common(
 ):
     """Execute workflow with common logic and trigger log updates."""
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         trigger_log_repo = SQLAlchemyWorkflowTriggerLogRepository(session)
 
         # Get trigger log
@@ -158,7 +158,7 @@ def _execute_workflow_common(
                 args["workflow_id"] = str(trigger_data.workflow_id)
 
             pause_config = PauseStateLayerConfig(
-                session_factory=session_factory.get_session_maker(),
+                session_factory=session_factory.get_sync_session_maker(),
                 state_owner_user_id=workflow.created_by,
             )
 

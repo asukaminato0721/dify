@@ -73,7 +73,7 @@ def deduct_llm_quota(*, tenant_id: str, model_instance: ModelInstance, usage: LL
                     pool_type="paid",
                 )
             case ProviderQuotaType.FREE:
-                with session_factory.get_session_maker().begin() as session:
+                with session_factory.get_sync_session_maker().begin() as session:
                     stmt = (
                         update(Provider)
                         .where(

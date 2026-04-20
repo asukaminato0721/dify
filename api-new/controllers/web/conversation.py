@@ -87,7 +87,7 @@ class ConversationListApi(WebApiResource):
         query = ConversationListQuery.model_validate(raw_args)
 
         try:
-            with session_factory.get_session_maker().begin() as session:
+            with session_factory.get_sync_session_maker().begin() as session:
                 pagination = WebConversationService.pagination_by_last_id(
                     session=session,
                     app_model=app_model,

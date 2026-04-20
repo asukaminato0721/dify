@@ -189,7 +189,7 @@ class WorkflowAppGenerator(BaseAppGenerator):
 
             # Create repositories
             #
-            sync_session_maker = session_factory.get_session_maker()
+            sync_session_maker = session_factory.get_sync_session_maker()
             sync_engine = sync_session_maker.kw["bind"]
             # Create workflow execution(aka workflow run) repository
             if triggered_from is not None:
@@ -390,7 +390,7 @@ class WorkflowAppGenerator(BaseAppGenerator):
 
         # Create repositories
         #
-        sync_session_maker = session_factory.get_session_maker()
+        sync_session_maker = session_factory.get_sync_session_maker()
         sync_engine = sync_session_maker.kw["bind"]
         # Create workflow execution(aka workflow run) repository
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
@@ -406,7 +406,7 @@ class WorkflowAppGenerator(BaseAppGenerator):
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             draft_var_srv = WorkflowDraftVariableService(session)
             draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
         var_loader = DraftVarLoader(
@@ -475,7 +475,7 @@ class WorkflowAppGenerator(BaseAppGenerator):
 
         # Create repositories
         #
-        sync_session_maker = session_factory.get_session_maker()
+        sync_session_maker = session_factory.get_sync_session_maker()
         sync_engine = sync_session_maker.kw["bind"]
         # Create workflow execution(aka workflow run) repository
         workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
@@ -491,7 +491,7 @@ class WorkflowAppGenerator(BaseAppGenerator):
             app_id=application_generate_entity.app_config.app_id,
             triggered_from=WorkflowNodeExecutionTriggeredFrom.SINGLE_STEP,
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             draft_var_srv = WorkflowDraftVariableService(session)
             draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user.id)
         var_loader = DraftVarLoader(
@@ -531,7 +531,7 @@ class WorkflowAppGenerator(BaseAppGenerator):
         :param workflow_thread_pool_id: workflow thread pool id
         :return:
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             workflow = session.scalar(
                 select(Workflow).where(
                     Workflow.tenant_id == application_generate_entity.app_config.tenant_id,

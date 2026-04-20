@@ -123,7 +123,7 @@ class BaseAgentRunner(AppRunner):
         if isinstance(cached_count, int):
             return cached_count
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             count = session.scalar(
                 select(func.count())
                 .select_from(FastAPIMessageAgentThought)
@@ -136,7 +136,7 @@ class BaseAgentRunner(AppRunner):
         if isinstance(cached_messages, list):
             return cast(list[FastAPIMessage], cached_messages)
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             messages = (
                 session.execute(
                     select(FastAPIMessage)
@@ -153,7 +153,7 @@ class BaseAgentRunner(AppRunner):
         if isinstance(cached_thoughts, list):
             return cast(list[FastAPIMessageAgentThought], cached_thoughts)
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             agent_thoughts = session.scalars(
                 select(FastAPIMessageAgentThought)
                 .where(FastAPIMessageAgentThought.message_id == message.id)
@@ -166,7 +166,7 @@ class BaseAgentRunner(AppRunner):
         if isinstance(cached_files, list):
             return cast(list[FastAPIMessageFile], cached_files)
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             files = session.scalars(select(FastAPIMessageFile).where(FastAPIMessageFile.message_id == message.id)).all()
         return list(files)
 
@@ -178,7 +178,7 @@ class BaseAgentRunner(AppRunner):
         if isinstance(cached_conversation, FastAPIConversation):
             return cached_conversation
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             return session.scalar(select(FastAPIConversation).where(FastAPIConversation.id == message.conversation_id))
 
     def _load_message_app_model_config(self, conversation: FastAPIConversation) -> FastAPIAppModelConfig | None:
@@ -189,7 +189,7 @@ class BaseAgentRunner(AppRunner):
         if not conversation.app_model_config_id:
             return None
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             return session.scalar(
                 select(FastAPIAppModelConfig).where(FastAPIAppModelConfig.id == conversation.app_model_config_id)
             )
@@ -392,7 +392,7 @@ class BaseAgentRunner(AppRunner):
             created_by=self.user_id,
         )
 
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             session.add(thought)
             session.flush()
             agent_thought_id = str(thought.id)
@@ -415,7 +415,7 @@ class BaseAgentRunner(AppRunner):
         """
         Save agent thought
         """
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             stmt = select(FastAPIMessageAgentThought).where(FastAPIMessageAgentThought.id == agent_thought_id)
             agent_thought = session.scalar(stmt)
             if not agent_thought:

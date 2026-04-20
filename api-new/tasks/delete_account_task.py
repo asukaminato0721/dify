@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task(queue="dataset")
 def delete_account_task(account_id):
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         account = session.scalar(select(Account).where(Account.id == account_id).limit(1))
         try:
             if dify_config.BILLING_ENABLED:

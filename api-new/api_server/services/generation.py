@@ -313,7 +313,7 @@ def _get_legacy_sync_session_maker() -> sessionmaker[Session]:
     async database bootstrap instead of probing `db.engine.sync_engine` ad hoc.
     """
 
-    return configured_sync_session_factory.get_session_maker()
+    return configured_sync_session_factory.get_sync_session_maker()
 
 
 def _prepare_workflow_generation_entity(

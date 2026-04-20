@@ -97,7 +97,7 @@ def trigger_subscription_refresh(tenant_id: str, subscription_id: str) -> None:
     logger.info("Begin subscription refresh: tenant=%s id=%s", tenant_id, subscription_id)
     try:
         now: int = _now_ts()
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             subscription: TriggerSubscription | None = _load_subscription(session, tenant_id, subscription_id)
 
             if not subscription:

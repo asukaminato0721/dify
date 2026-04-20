@@ -35,7 +35,7 @@ def load_form_tokens_by_form_id(
     if session is not None:
         return _load_form_tokens_by_form_id(session, unique_form_ids)
 
-    with session_factory.create_session() as new_session:
+    with session_factory.create_sync_session() as new_session:
         return _load_form_tokens_by_form_id(new_session, unique_form_ids)
 
 

@@ -108,7 +108,7 @@ class SummaryIndexService:
         Returns:
             Created or updated DocumentSegmentSummary instance
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             # Check if summary record already exists
             existing_summary = session.scalar(
                 select(DocumentSegmentSummary)
@@ -279,7 +279,7 @@ class SummaryIndexService:
                 use_provided_session = session is not None
                 if not use_provided_session:
                     logger.debug("Creating new session for vectorization of segment %s", segment.id)
-                    session_context = session_factory.create_session()
+                    session_context = session_factory.create_sync_session()
                     session = session_context.__enter__()
                 else:
                     logger.debug("Using provided session for vectorization of segment %s", segment.id)
@@ -497,7 +497,7 @@ class SummaryIndexService:
                     )
                     # Always create a new session for error handling to avoid issues with closed sessions
                     # Even if original_session was provided, we create a new one for safety
-                    with session_factory.create_session() as error_session:
+                    with session_factory.create_sync_session() as error_session:
                         # Try to find the record by id first
                         # Note: Using assignment only (no type annotation) to avoid redeclaration error
                         summary_record_in_session = error_session.scalar(
@@ -567,7 +567,7 @@ class SummaryIndexService:
         if not segment_ids:
             return
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             # Query existing summary records
             existing_summaries = session.scalars(
                 select(DocumentSegmentSummary).where(
@@ -618,7 +618,7 @@ class SummaryIndexService:
             dataset: Dataset containing the segment
             error: Error message
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             summary_record = session.scalar(
                 select(DocumentSegmentSummary)
                 .where(
@@ -657,7 +657,7 @@ class SummaryIndexService:
         Raises:
             ValueError: If summary generation fails
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             try:
                 # Get or refresh summary record in this session
                 summary_record_in_session = session.scalar(
@@ -798,7 +798,7 @@ class SummaryIndexService:
             only_parent_chunks,
         )
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             # Query segments (only enabled segments)
             stmt = select(DocumentSegment).where(
                 DocumentSegment.dataset_id == dataset.id,
@@ -878,7 +878,7 @@ class SummaryIndexService:
         """
         from libs.datetime_utils import naive_utc_now
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(DocumentSegmentSummary).where(
                 DocumentSegmentSummary.dataset_id == dataset.id,
                 DocumentSegmentSummary.enabled.is_(True),  # Only disable enabled summaries
@@ -941,7 +941,7 @@ class SummaryIndexService:
         if dataset.indexing_technique != IndexTechniqueType.HIGH_QUALITY:
             return
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(DocumentSegmentSummary).where(
                 DocumentSegmentSummary.dataset_id == dataset.id,
                 DocumentSegmentSummary.enabled.is_(False),  # Only enable disabled summaries
@@ -1018,7 +1018,7 @@ class SummaryIndexService:
             dataset: Dataset containing the segments
             segment_ids: List of segment IDs to delete summaries for. If None, delete all.
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(DocumentSegmentSummary).where(DocumentSegmentSummary.dataset_id == dataset.id)
 
             if segment_ids:
@@ -1072,7 +1072,7 @@ class SummaryIndexService:
         if segment.document and segment.document.doc_form == "qa_model":
             return None
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             try:
                 # Check if summary_content is empty (whitespace-only strings are considered empty)
                 if not summary_content or not summary_content.strip():
@@ -1228,7 +1228,7 @@ class SummaryIndexService:
         Returns:
             DocumentSegmentSummary instance if found, None otherwise
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             return session.scalar(
                 select(DocumentSegmentSummary)
                 .where(
@@ -1254,7 +1254,7 @@ class SummaryIndexService:
         if not segment_ids:
             return {}
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             summary_records = session.scalars(
                 select(DocumentSegmentSummary).where(
                     DocumentSegmentSummary.chunk_id.in_(segment_ids),
@@ -1280,7 +1280,7 @@ class SummaryIndexService:
         Returns:
             List of DocumentSegmentSummary instances (only enabled summaries)
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(DocumentSegmentSummary).where(
                 DocumentSegmentSummary.document_id == document_id,
                 DocumentSegmentSummary.dataset_id == dataset_id,
@@ -1306,7 +1306,7 @@ class SummaryIndexService:
             "SUMMARIZING" if there are pending summaries, None otherwise
         """
         # Get all segments for this document (excluding qa_model and re_segment)
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             segment_ids = list(
                 session.scalars(
                     select(DocumentSegment.id).where(
@@ -1352,7 +1352,7 @@ class SummaryIndexService:
             return {}
 
         # Get all segments for these documents (excluding qa_model and re_segment)
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             segments = session.execute(
                 select(DocumentSegment.id, DocumentSegment.document_id).where(
                     DocumentSegment.document_id.in_(document_ids),

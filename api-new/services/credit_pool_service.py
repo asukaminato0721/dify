@@ -21,14 +21,14 @@ class CreditPoolService:
             quota_used=0,
             pool_type=ProviderQuotaType.TRIAL,
         )
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             session.add(credit_pool)
         return credit_pool
 
     @classmethod
     def get_pool(cls, tenant_id: str, pool_type: str = "trial") -> TenantCreditPool | None:
         """get tenant credit pool"""
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             return session.scalar(
                 select(TenantCreditPool)
                 .where(
@@ -71,7 +71,7 @@ class CreditPoolService:
         actual_credits = min(credits_required, pool.remaining_credits)
 
         try:
-            with session_factory.get_session_maker().begin() as session:
+            with session_factory.get_sync_session_maker().begin() as session:
                 stmt = (
                     update(TenantCreditPool)
                     .where(

@@ -211,7 +211,7 @@ class App(Base):
             return cached_config
         if self.app_model_config_id is None:
             return None
-        with configured_sync_session_factory.create_session() as session:
+        with configured_sync_session_factory.create_sync_session() as session:
             return session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
 
 
@@ -586,7 +586,7 @@ class Conversation(Base):
         cached_app = getattr(self, "_cached_app", None)
         if isinstance(cached_app, App):
             return cached_app
-        with configured_sync_session_factory.create_session() as session:
+        with configured_sync_session_factory.create_sync_session() as session:
             return session.scalar(select(App).where(App.id == self.app_id))
 
     @property
@@ -610,7 +610,7 @@ class Conversation(Base):
             if isinstance(cached_config, AppModelConfig):
                 app_model_config = cached_config
             else:
-                with configured_sync_session_factory.create_session() as session:
+                with configured_sync_session_factory.create_sync_session() as session:
                     app_model_config = session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
             if app_model_config is not None:
                 model_config = app_model_config.to_dict()
@@ -692,7 +692,7 @@ class Message(Base):
             return cached_config
         if not self.conversation_id:
             return None
-        with configured_sync_session_factory.create_session() as session:
+        with configured_sync_session_factory.create_sync_session() as session:
             conversation = session.scalar(select(Conversation).where(Conversation.id == self.conversation_id))
             if conversation is None or conversation.app_model_config_id is None:
                 return None
@@ -708,7 +708,7 @@ class Message(Base):
             return cast(list[dict[str, Any]], cached_files)
 
         access_controller = DatabaseFileAccessController()
-        with configured_sync_session_factory.create_session() as session:
+        with configured_sync_session_factory.create_sync_session() as session:
             message_files = session.scalars(select(MessageFile).where(MessageFile.message_id == self.id)).all()
             app = session.scalar(select(App).where(App.id == self.app_id))
         if app is None:

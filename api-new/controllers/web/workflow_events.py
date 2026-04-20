@@ -35,7 +35,7 @@ class WorkflowEventsApi(WebApiResource):
         Returns Server-Sent Events stream.
         """
         workflow_run_id = task_id
-        session_maker = session_factory.get_session_maker()
+        session_maker = session_factory.get_sync_session_maker()
         repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
         workflow_run = repo.get_workflow_run_by_id_and_tenant_id(
             tenant_id=app_model.tenant_id,

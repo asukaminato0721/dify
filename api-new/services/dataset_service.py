@@ -1455,7 +1455,7 @@ class DocumentService:
 
         document_id_list: list[str] = [str(document_id) for document_id in document_ids]
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             result = session.execute(
                 update(Document)
                 .where(

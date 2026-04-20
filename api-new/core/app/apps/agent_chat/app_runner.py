@@ -54,7 +54,7 @@ class AgentChatAppRunner(AppRunner):
             fastapi_app_record = app_record
         else:
             app_stmt = select(FastAPIApp).where(FastAPIApp.id == app_config.app_id)
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 fastapi_app_record = session.scalar(app_stmt)
         if not fastapi_app_record:
             raise ValueError("App not found")
@@ -66,7 +66,7 @@ class AgentChatAppRunner(AppRunner):
         if isinstance(conversation, FastAPIConversation):
             fastapi_conversation = conversation
         else:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 conversation_stmt = select(FastAPIConversation).where(FastAPIConversation.id == conversation.id)
                 fastapi_conversation = session.scalar(conversation_stmt)
                 if fastapi_conversation is None:
@@ -75,7 +75,7 @@ class AgentChatAppRunner(AppRunner):
         if isinstance(message, FastAPIMessage):
             fastapi_message = message
         else:
-            with session_factory.create_session() as session:
+            with session_factory.create_sync_session() as session:
                 msg_stmt = select(FastAPIMessage).where(FastAPIMessage.id == message.id)
                 fastapi_message = session.scalar(msg_stmt)
                 if fastapi_message is None:

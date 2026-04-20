@@ -91,7 +91,7 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
             DocumentSegment.enabled == True,
             DocumentSegment.index_node_id.in_(index_node_ids),
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             segments = list(session.scalars(document_segment_stmt).all())
 
         if segments:
@@ -107,7 +107,7 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
             if self.return_resource:
                 context_list: list[RetrievalSourceMetadata] = []
                 resource_number = 1
-                with session_factory.create_session() as session:
+                with session_factory.create_sync_session() as session:
                     for segment in sorted_segments:
                         dataset = session.get(Dataset, segment.dataset_id)
                         document_stmt = select(Document).where(
@@ -155,7 +155,7 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
         all_documents: list,
         hit_callbacks: list[DatasetIndexToolCallbackHandler],
     ):
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             stmt = select(Dataset).where(Dataset.tenant_id == self.tenant_id, Dataset.id == dataset_id)
             dataset = session.scalar(stmt)
 

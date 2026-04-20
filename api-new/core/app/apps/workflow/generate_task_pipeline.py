@@ -272,7 +272,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
             with sessionmaker(bind=session_factory, expire_on_commit=False).begin() as session:
                 yield session
             return
-        with sync_session_factory.get_session_maker().begin() as session:
+        with sync_session_factory.get_sync_session_maker().begin() as session:
             yield session
 
     def _ensure_workflow_initialized(self):

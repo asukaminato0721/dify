@@ -131,7 +131,7 @@ class ConversationService:
         if auto_generate:
             return cls.auto_generate_name(app_model, conversation)
         else:
-            with session_factory.get_session_maker().begin() as session:
+            with session_factory.get_sync_session_maker().begin() as session:
                 session.add(conversation)
                 conversation.name = name or ""
                 conversation.updated_at = naive_utc_now()
@@ -141,7 +141,7 @@ class ConversationService:
     @classmethod
     def auto_generate_name(cls, app_model: App | FastAPIApp, conversation: FastAPIConversation):
         # get conversation first message
-        with session_factory.get_session_maker().begin() as session:
+        with session_factory.get_sync_session_maker().begin() as session:
             message = session.scalar(
                 select(Message)
                 .where(Message.app_id == app_model.id, Message.conversation_id == conversation.id)
@@ -170,7 +170,7 @@ class ConversationService:
         conversation_id: str,
         user: Account | EndUser | FastAPIEndUser | None,
     ):
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             conversation = session.scalar(
                 select(FastAPIConversation)
                 .where(
@@ -211,7 +211,7 @@ class ConversationService:
                 conversation_id,
             )
 
-            with session_factory.get_session_maker().begin() as session:
+            with session_factory.get_sync_session_maker().begin() as session:
                 session.add(conversation)
                 session.delete(conversation)
 
@@ -261,7 +261,7 @@ class ConversationService:
                     )
                 )
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             if last_id:
                 last_variable = session.scalar(stmt.where(ConversationVariable.id == last_id))
                 if not last_variable:
@@ -328,7 +328,7 @@ class ConversationService:
             .where(ConversationVariable.id == variable_id)
         )
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             existing_variable = session.scalar(stmt)
             if not existing_variable:
                 raise ConversationVariableNotExistsError()
@@ -363,7 +363,7 @@ class ConversationService:
             updated_variable = variable_factory.build_conversation_variable_from_mapping(updated_variable_dict)
 
             # Use the conversation variable updater to persist the changes
-            updater = ConversationVariableUpdater(session_factory.get_session_maker())
+            updater = ConversationVariableUpdater(session_factory.get_sync_session_maker())
             updater.update(conversation_id, updated_variable)
             updater.flush()
 

@@ -47,7 +47,7 @@ def test_local_conversation_model_config_uses_app_model_config_when_no_override(
         is_deleted=False,
     )
 
-    original_create_session = app_models.configured_sync_session_factory.create_session
+    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
 
     class _SessionStub:
         def __enter__(self):
@@ -59,11 +59,11 @@ def test_local_conversation_model_config_uses_app_model_config_when_no_override(
         def scalar(self, _stmt):
             return app_model_config
 
-    app_models.configured_sync_session_factory.create_session = cast(Any, lambda: _SessionStub())
+    app_models.configured_sync_session_factory.create_sync_session = cast(Any, lambda: _SessionStub())
     try:
         result = conversation.model_config
     finally:
-        app_models.configured_sync_session_factory.create_session = original_create_session
+        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
 
     assert result["provider"] == "openai"
     assert result["model_id"] == "gpt-4o-mini"
@@ -219,12 +219,12 @@ def test_local_conversation_app_prefers_prefetched_app() -> None:
 
     setattr(conversation, "_cached_app", app)
 
-    original_create_session = app_models.configured_sync_session_factory.create_session
-    app_models.configured_sync_session_factory.create_session = cast(Any, lambda: (_ for _ in ()).throw(AssertionError))
+    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
+    app_models.configured_sync_session_factory.create_sync_session = cast(Any, lambda: (_ for _ in ()).throw(AssertionError))
     try:
         result = conversation.app
     finally:
-        app_models.configured_sync_session_factory.create_session = original_create_session
+        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
 
     assert result is app
 
@@ -271,12 +271,12 @@ def test_local_conversation_model_config_prefers_prefetched_config() -> None:
 
     setattr(conversation, "_cached_app_model_config", app_model_config)
 
-    original_create_session = app_models.configured_sync_session_factory.create_session
-    app_models.configured_sync_session_factory.create_session = cast(Any, lambda: (_ for _ in ()).throw(AssertionError))
+    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
+    app_models.configured_sync_session_factory.create_sync_session = cast(Any, lambda: (_ for _ in ()).throw(AssertionError))
     try:
         result = conversation.model_config
     finally:
-        app_models.configured_sync_session_factory.create_session = original_create_session
+        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
 
     assert result["provider"] == "openai"
     assert result["model_id"] == "gpt-4o-mini"

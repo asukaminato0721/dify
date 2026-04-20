@@ -23,7 +23,7 @@ def disable_annotation_reply_task(job_id: str, app_id: str, tenant_id: str):
     logger.info(click.style(f"Start delete app annotations index: {app_id}", fg="green"))
     start_at = time.perf_counter()
     # get app info
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         app = session.scalar(
             select(App).where(App.id == app_id, App.tenant_id == tenant_id, App.status == "normal").limit(1)
         )

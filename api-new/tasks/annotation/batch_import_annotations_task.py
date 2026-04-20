@@ -34,7 +34,7 @@ def batch_import_annotations_task(job_id: str, content_list: list[dict], app_id:
     indexing_cache_key = f"app_annotation_batch_import_{str(job_id)}"
     active_jobs_key = f"annotation_import_active:{tenant_id}"
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         # get app info
         app = session.scalar(
             select(App).where(App.id == app_id, App.tenant_id == tenant_id, App.status == "normal").limit(1)

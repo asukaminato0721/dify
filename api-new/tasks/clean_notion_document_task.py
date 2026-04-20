@@ -25,7 +25,7 @@ def clean_notion_document_task(document_ids: list[str], dataset_id: str):
     start_at = time.perf_counter()
     total_index_node_ids = []
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
 
         if not dataset:
@@ -40,14 +40,14 @@ def clean_notion_document_task(document_ids: list[str], dataset_id: str):
             segments = session.scalars(select(DocumentSegment).where(DocumentSegment.document_id == document_id)).all()
             total_index_node_ids.extend([segment.index_node_id for segment in segments])
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
         if dataset:
             index_processor.clean(
                 dataset, total_index_node_ids, with_keywords=True, delete_child_chunks=True, delete_summaries=True
             )
 
-    with session_factory.create_session() as session, session.begin():
+    with session_factory.create_sync_session() as session, session.begin():
         segment_delete_stmt = delete(DocumentSegment).where(DocumentSegment.document_id.in_(document_ids))
         session.execute(segment_delete_stmt)
 

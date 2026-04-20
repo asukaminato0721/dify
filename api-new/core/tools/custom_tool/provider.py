@@ -178,7 +178,7 @@ class ApiToolProviderController(ToolProviderController):
         tools: list[ApiTool] = []
 
         # get tenant api providers
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             db_providers = list(
                 session.scalars(
                     select(ApiToolProvider).where(

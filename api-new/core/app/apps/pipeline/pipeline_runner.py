@@ -83,7 +83,7 @@ class PipelineRunner(WorkflowBasedAppRunner):
         user_from = self._resolve_user_from(invoke_from)
 
         user_id = None
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             if invoke_from in {InvokeFrom.WEB_APP, InvokeFrom.SERVICE_API}:
                 end_user = session.get(EndUser, self.application_generate_entity.user_id)
                 if end_user:
@@ -296,7 +296,7 @@ class PipelineRunner(WorkflowBasedAppRunner):
         """
         if isinstance(event, GraphRunFailedEvent):
             if document_id and dataset_id:
-                with session_factory.get_session_maker().begin() as session:
+                with session_factory.get_sync_session_maker().begin() as session:
                     document = session.scalar(
                         select(Document).where(Document.id == document_id, Document.dataset_id == dataset_id).limit(1)
                     )

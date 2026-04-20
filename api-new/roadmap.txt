@@ -1,1 +1,2 @@
 source_file | todo_file
+core/db/session_factory.py | done: default factory now returns AsyncSession; legacy sync callers use explicit sync helpers

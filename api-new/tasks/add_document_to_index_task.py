@@ -30,7 +30,7 @@ def add_document_to_index_task(dataset_document_id: str):
     logger.info(click.style(f"Start add document to index: {dataset_document_id}", fg="green"))
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         dataset_document = session.scalar(
             select(DatasetDocument).where(DatasetDocument.id == dataset_document_id).limit(1)
         )

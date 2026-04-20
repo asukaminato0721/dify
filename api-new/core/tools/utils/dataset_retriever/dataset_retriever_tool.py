@@ -58,7 +58,7 @@ class DatasetRetrieverTool(DatasetRetrieverBaseTool):
 
     def _run(self, query: str) -> str:
         dataset_stmt = select(Dataset).where(Dataset.tenant_id == self.tenant_id, Dataset.id == self.dataset_id)
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             dataset = session.scalar(dataset_stmt)
 
         if not dataset:
@@ -190,7 +190,7 @@ class DatasetRetrieverTool(DatasetRetrieverBaseTool):
                         )
 
                     if self.return_resource:
-                        with session_factory.create_session() as session:
+                        with session_factory.create_sync_session() as session:
                             for record in records:
                                 segment = record.segment
                                 dataset = session.get(Dataset, segment.dataset_id)

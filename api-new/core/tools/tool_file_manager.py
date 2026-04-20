@@ -96,7 +96,7 @@ class ToolFileManager:
         filepath = f"tools/{tenant_id}/{unique_filename}"
         storage.save(filepath, file_binary)
 
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             tool_file = ToolFile(
                 user_id=user_id,
                 tenant_id=tenant_id,
@@ -139,7 +139,7 @@ class ToolFileManager:
         filename = f"{unique_name}{extension}"
         filepath = f"tools/{tenant_id}/{filename}"
         storage.save(filepath, blob)
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             tool_file = ToolFile(
                 user_id=user_id,
                 tenant_id=tenant_id,
@@ -165,7 +165,7 @@ class ToolFileManager:
 
         :return: the binary of the file, mime type
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             tool_file: ToolFile | None = session.scalar(select(ToolFile).where(ToolFile.id == id).limit(1))
 
         if not tool_file:
@@ -183,7 +183,7 @@ class ToolFileManager:
 
         :return: the binary of the file, mime type
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             message_file: MessageFile | None = session.scalar(select(MessageFile).where(MessageFile.id == id).limit(1))
 
             # Check if message_file is not None
@@ -215,7 +215,7 @@ class ToolFileManager:
 
         :return: the binary of the file, mime type
         """
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             tool_file: ToolFile | None = session.scalar(select(ToolFile).where(ToolFile.id == tool_file_id).limit(1))
 
         if not tool_file:

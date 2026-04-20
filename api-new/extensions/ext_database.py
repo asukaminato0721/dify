@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import relationship
 
 from configs import dify_config
-from core.db.session_factory import configure_session_factory
+from core.db.session_factory import configure_session_factory, configure_sync_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,8 @@ class AsyncDatabaseManager:
         engine_options = _normalize_async_engine_options(database_uri, dict(dify_config.SQLALCHEMY_ENGINE_OPTIONS))
         self.engine = create_async_engine(database_uri, **engine_options)
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
-        configure_session_factory(self.engine.sync_engine, expire_on_commit=False)
+        configure_session_factory(self.session_maker)
+        configure_sync_session_factory(self.engine.sync_engine, expire_on_commit=False)
         app.state.db = self
 
     async def dispose(self) -> None:

@@ -46,7 +46,7 @@ def save_workflow_execution_task(
         True if successful, False otherwise
     """
     try:
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             # Deserialize execution data
             execution = WorkflowExecution.model_validate(execution_data)
 

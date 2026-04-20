@@ -24,7 +24,7 @@ def recover_document_indexing_task(dataset_id: str, document_id: str):
     logger.info(click.style(f"Recover document: {document_id}", fg="green"))
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         document = session.scalar(
             select(Document).where(Document.id == document_id, Document.dataset_id == dataset_id).limit(1)
         )

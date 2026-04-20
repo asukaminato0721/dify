@@ -50,7 +50,7 @@ class WorkflowToolProviderController(ToolProviderController):
 
     @classmethod
     def from_db(cls, db_provider: WorkflowToolProvider) -> WorkflowToolProviderController:
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             app = session.get(App, db_provider.app_id)
             if not app:
                 raise ValueError("app not found")
@@ -215,7 +215,7 @@ class WorkflowToolProviderController(ToolProviderController):
         if self.tools:
             return self.tools
 
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             db_provider: WorkflowToolProvider | None = session.scalar(
                 select(WorkflowToolProvider)
                 .where(

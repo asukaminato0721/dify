@@ -29,7 +29,7 @@ def test_agent_thought_to_stream_response_uses_event_payload_without_sync_lookup
     )
 
     with patch(
-        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.session_factory.create_session",
+        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.session_factory.create_sync_session",
         side_effect=AssertionError("sync session should not be used"),
     ):
         response = pipeline._agent_thought_to_stream_response(event)
@@ -80,7 +80,7 @@ def test_message_end_to_stream_response_uses_cached_files_without_sync_lookup() 
     )
 
     with patch(
-        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.session_factory.create_session",
+        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.session_factory.create_sync_session",
         side_effect=AssertionError("sync session should not be used"),
     ):
         response = pipeline._message_end_to_stream_response()
@@ -193,7 +193,7 @@ def test_pipeline_init_seeds_prefetched_message_end_files_without_sync_lookup() 
     )
 
     with patch(
-        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.session_factory.create_session",
+        "core.app.task_pipeline.easy_ui_based_generate_task_pipeline.session_factory.create_sync_session",
         side_effect=AssertionError("sync session should not be used"),
     ):
         response = pipeline._message_end_to_stream_response()

@@ -968,7 +968,7 @@ class ToolProviderMCPApi(Resource):
         authentication = MCPAuthentication.model_validate(payload.authentication) if payload.authentication else None
 
         # 1) Create provider in a short transaction (no network I/O inside)
-        with session_factory.create_session() as session, session.begin():
+        with session_factory.create_sync_session() as session, session.begin():
             service = MCPToolManageService(session=session)
             result = service.create_provider(
                 tenant_id=tenant_id,
@@ -994,7 +994,7 @@ class ToolProviderMCPApi(Resource):
                 sse_read_timeout=configuration.sse_read_timeout,
             )
             # Update just-created provider with authed/tools in a new short transaction
-            with session_factory.create_session() as session, session.begin():
+            with session_factory.create_sync_session() as session, session.begin():
                 service = MCPToolManageService(session=session)
                 db_provider = service.get_provider(provider_id=result.id, tenant_id=tenant_id)
                 db_provider.authed = reconnect.authed

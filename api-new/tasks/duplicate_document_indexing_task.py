@@ -80,7 +80,7 @@ def _duplicate_document_indexing_task(dataset_id: str, document_ids: Sequence[st
     documents: list[Document] = []
     start_at = time.perf_counter()
 
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
             if dataset is None:

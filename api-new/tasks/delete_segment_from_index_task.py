@@ -27,7 +27,7 @@ def delete_segment_from_index_task(
     """
     logger.info(click.style("Start delete segment from index", fg="green"))
     start_at = time.perf_counter()
-    with session_factory.create_session() as session:
+    with session_factory.create_sync_session() as session:
         try:
             dataset = session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
             if not dataset:

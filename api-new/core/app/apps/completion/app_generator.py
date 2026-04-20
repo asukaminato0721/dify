@@ -252,7 +252,7 @@ class CompletionAppGenerator(MessageBasedAppGenerator):
             FastAPIMessage.from_end_user_id == (user.id if isinstance(user, FastAPIEndUser) else None),
             FastAPIMessage.from_account_id == (user.id if isinstance(user, Account) else None),
         )
-        with session_factory.create_session() as session:
+        with session_factory.create_sync_session() as session:
             message = session.scalar(stmt)
 
         if not message:
