@@ -1,68 +1,18 @@
 """Session helpers for legacy model convenience accessors.
 
 The FastAPI port uses `AsyncSession` for request handling, but a number of ORM
-models still expose synchronous convenience properties. Those properties cannot
-`await`, so they need an explicit compatibility path instead of touching
-`db.session` or constructing direct SQLAlchemy sync sessions from the async
-engine.
+models still expose async loader helpers that should go through the shared
+database manager instead of reaching into request globals.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import Executable
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
-
-from core.db.session_factory import SyncSessionAdapter, SyncSessionMakerAdapter
-from core.db.session_factory import session_factory as configured_sync_session_factory
 
 from .engine import db
-
-
-@contextmanager
-def legacy_sync_session() -> Iterator[SyncSessionAdapter]:
-    """Yield a sync session backed by `AsyncEngine.sync_engine`.
-
-    This is a temporary bridge for legacy model helpers that still run in sync
-    contexts. New FastAPI request code should prefer `db.session_context()`
-    directly.
-    """
-
-    with configured_sync_session_factory.create_sync_session() as session:
-        yield session
-
-
-def with_legacy_sync_session[ReturnT](callback: Callable[[SyncSessionAdapter], ReturnT]) -> ReturnT:
-    with legacy_sync_session() as session:
-        return callback(session)
-
-
-def legacy_scalar(statement: Executable) -> object | None:
-    return with_legacy_sync_session(lambda session: session.scalar(statement))
-
-
-def legacy_scalars_all(statement: Executable) -> list[object]:
-    return with_legacy_sync_session(lambda session: list(session.scalars(statement).all()))
-
-
-def legacy_scalar_as[ResultT](statement: Executable, expected_type: type[ResultT]) -> ResultT | None:
-    result = legacy_scalar(statement)
-    return result if isinstance(result, expected_type) else None
-
-
-def legacy_scalars_as[ResultT](statement: Executable, expected_type: type[ResultT]) -> list[ResultT]:
-    return [result for result in legacy_scalars_all(statement) if isinstance(result, expected_type)]
-
-
-def legacy_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None:
-    return with_legacy_sync_session(lambda session: session.get(model_type, ident))
-
-
-def legacy_session_maker() -> SyncSessionMakerAdapter:
-    return configured_sync_session_factory.get_sync_session_maker()
 
 
 async def with_async_session[ReturnT](callback: Callable[[AsyncSession], Awaitable[ReturnT]]) -> ReturnT:

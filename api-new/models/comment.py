@@ -7,10 +7,17 @@ import sqlalchemy as sa
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ._session import async_get, legacy_get
+from core.db.session_factory import create_sync_session
+
+from ._session import async_get
 from .account import Account
 from .base import Base
 from .types import StringUUID
+
+
+def _sync_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None:
+    with create_sync_session() as session:
+        return session.get(model_type, ident)
 
 
 class WorkflowComment(Base):
@@ -70,7 +77,7 @@ class WorkflowComment(Base):
         """Get creator account."""
         if hasattr(self, "_created_by_account_cache"):
             return self._created_by_account_cache
-        return legacy_get(Account, self.created_by)
+        return _sync_get(Account, self.created_by)
 
     async def aload_created_by_account(self) -> Account | None:
         return await async_get(Account, self.created_by)
@@ -85,7 +92,7 @@ class WorkflowComment(Base):
         if hasattr(self, "_resolved_by_account_cache"):
             return self._resolved_by_account_cache
         if self.resolved_by:
-            return legacy_get(Account, self.resolved_by)
+            return _sync_get(Account, self.resolved_by)
         return None
 
     async def aload_resolved_by_account(self) -> Account | None:
@@ -175,7 +182,7 @@ class WorkflowCommentReply(Base):
         """Get creator account."""
         if hasattr(self, "_created_by_account_cache"):
             return self._created_by_account_cache
-        return legacy_get(Account, self.created_by)
+        return _sync_get(Account, self.created_by)
 
     async def aload_created_by_account(self) -> Account | None:
         return await async_get(Account, self.created_by)
@@ -223,7 +230,7 @@ class WorkflowCommentMention(Base):
         """Get mentioned account."""
         if hasattr(self, "_mentioned_user_account_cache"):
             return self._mentioned_user_account_cache
-        return legacy_get(Account, self.mentioned_user_id)
+        return _sync_get(Account, self.mentioned_user_id)
 
     async def aload_mentioned_user_account(self) -> Account | None:
         return await async_get(Account, self.mentioned_user_id)

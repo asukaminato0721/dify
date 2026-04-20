@@ -20,13 +20,20 @@ from core.tools.entities.tool_entities import (
     WorkflowToolParameterConfiguration,
 )
 
-from ._session import async_scalar, legacy_scalar
+from core.db.session_factory import create_sync_session
+
+from ._session import async_scalar
 from .base import TypeBase
 from .model import Account, App, Tenant
 from .types import EnumText, LongText, StringUUID
 
 if TYPE_CHECKING:
     from core.entities.mcp_provider import MCPProviderEntity
+
+
+def _sync_scalar(statement: sa.Executable) -> object | None:
+    with create_sync_session() as session:
+        return session.scalar(statement)
 
 
 # system level tool oauth client params (client_id, client_secret, etc.)
@@ -194,12 +201,12 @@ class ApiToolProvider(TypeBase):
     def user(self) -> Account | None:
         if not self.user_id:
             return None
-        account = legacy_scalar(select(Account).where(Account.id == self.user_id))
+        account = _sync_scalar(select(Account).where(Account.id == self.user_id))
         return account if isinstance(account, Account) else None
 
     @property
     def tenant(self) -> Tenant | None:
-        tenant = legacy_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        tenant = _sync_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
         return tenant if isinstance(tenant, Tenant) else None
 
     async def aload_user(self) -> Account | None:
@@ -282,12 +289,12 @@ class WorkflowToolProvider(TypeBase):
 
     @property
     def user(self) -> Account | None:
-        account = legacy_scalar(select(Account).where(Account.id == self.user_id))
+        account = _sync_scalar(select(Account).where(Account.id == self.user_id))
         return account if isinstance(account, Account) else None
 
     @property
     def tenant(self) -> Tenant | None:
-        tenant = legacy_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
+        tenant = _sync_scalar(select(Tenant).where(Tenant.id == self.tenant_id))
         return tenant if isinstance(tenant, Tenant) else None
 
     @property
@@ -299,7 +306,7 @@ class WorkflowToolProvider(TypeBase):
 
     @property
     def app(self) -> App | None:
-        app = legacy_scalar(select(App).where(App.id == self.app_id))
+        app = _sync_scalar(select(App).where(App.id == self.app_id))
         return app if isinstance(app, App) else None
 
     async def aload_user(self) -> Account | None:
@@ -369,7 +376,7 @@ class MCPToolProvider(TypeBase):
     encrypted_headers: Mapped[str | None] = mapped_column(LongText, nullable=True, default=None)
 
     def load_user(self) -> Account | None:
-        account = legacy_scalar(select(Account).where(Account.id == self.user_id))
+        account = _sync_scalar(select(Account).where(Account.id == self.user_id))
         return account if isinstance(account, Account) else None
 
     async def aload_user(self) -> Account | None:

@@ -5,11 +5,18 @@ import sqlalchemy as sa
 from sqlalchemy import DateTime, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ._session import async_scalar, legacy_scalar
+from core.db.session_factory import create_sync_session
+
+from ._session import async_scalar
 from .base import TypeBase
 from .enums import CreatorUserRole
 from .model import Message
 from .types import EnumText, StringUUID
+
+
+def _sync_scalar(statement: sa.Executable) -> object | None:
+    with create_sync_session() as session:
+        return session.scalar(statement)
 
 
 class SavedMessage(TypeBase):
@@ -38,7 +45,7 @@ class SavedMessage(TypeBase):
 
     @property
     def message(self) -> Message | None:
-        message = legacy_scalar(select(Message).where(Message.id == self.message_id))
+        message = _sync_scalar(select(Message).where(Message.id == self.message_id))
         return message if isinstance(message, Message) else None
 
     async def aload_message(self) -> Message | None:

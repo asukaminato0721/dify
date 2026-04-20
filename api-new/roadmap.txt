@@ -4,3 +4,4 @@ api_server/models/app.py | done: FastAPI-local lazy loaders now query through as
 models/dataset.py | done: restore postponed annotation evaluation so async-port test collection stays green
 repo-wide Session/sessionmaker(db.engine) usage | done: direct sync SQLAlchemy constructor sites now route through async-backed session adapters
 services/workflow_draft_variable_service.py | done: draft variable loading/persistence now accepts async-backed session adapters instead of requiring a real sync Engine
+models/_session.py and model legacy helpers | done: removed `legacy_*` / `with_legacy_sync_session` usage from model modules

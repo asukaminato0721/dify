@@ -10,7 +10,6 @@ when a caller can `await` safely.
 
 from __future__ import annotations
 
-from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import re
 import uuid
@@ -30,6 +29,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from configs import dify_config
 from constants import DEFAULT_FILE_NUMBER_LIMITS
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from core.tools.signature import sign_tool_file
 from extensions.storage.storage_type import StorageType
 from graphon.enums import WorkflowExecutionStatus
@@ -41,11 +41,6 @@ from models.utils.file_input_compat import build_file_from_input_mapping
 
 from ._session import (
     async_scalar_as,
-    legacy_scalar,
-    legacy_scalar_as,
-    legacy_scalars_as,
-    legacy_session_maker,
-    with_legacy_sync_session,
 )
 from .account import Account, Tenant
 from .base import Base, TypeBase, gen_uuidv4_string
@@ -86,8 +81,28 @@ def _get_file_access_controller():
     return DatabaseFileAccessController()
 
 
+def _with_sync_session[ReturnT](callback: Callable[[object], ReturnT]) -> ReturnT:
+    with create_sync_session() as session:
+        return callback(session)
+
+
+def _sync_scalar(statement: sa.Executable) -> object | None:
+    with create_sync_session() as session:
+        return session.scalar(statement)
+
+
+def _sync_scalar_as[ResultT](statement: sa.Executable, expected_type: type[ResultT]) -> ResultT | None:
+    result = _sync_scalar(statement)
+    return result if isinstance(result, expected_type) else None
+
+
+def _sync_scalars_as[ResultT](statement: sa.Executable, expected_type: type[ResultT]) -> list[ResultT]:
+    with create_sync_session() as session:
+        return [result for result in list(session.scalars(statement).all()) if isinstance(result, expected_type)]
+
+
 def _resolve_app_tenant_id(app_id: str) -> str:
-    resolved_tenant_id = legacy_scalar(select(App.tenant_id).where(App.id == app_id))
+    resolved_tenant_id = _sync_scalar(select(App.tenant_id).where(App.id == app_id))
     if not resolved_tenant_id:
         raise ValueError(f"Unable to resolve tenant_id for app {app_id}")
     return str(resolved_tenant_id)
@@ -445,12 +460,12 @@ class App(Base):
 
     @property
     def site(self) -> Site | None:
-        return legacy_scalar_as(select(Site).where(Site.app_id == self.id), Site)
+        return _sync_scalar_as(select(Site).where(Site.app_id == self.id), Site)
 
     @property
     def app_model_config(self) -> AppModelConfig | None:
         if self.app_model_config_id:
-            return legacy_scalar_as(
+            return _sync_scalar_as(
                 select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id),
                 AppModelConfig,
             )
@@ -462,7 +477,7 @@ class App(Base):
         if self.workflow_id:
             from .workflow import Workflow
 
-            return legacy_scalar_as(select(Workflow).where(Workflow.id == self.workflow_id), Workflow)
+            return _sync_scalar_as(select(Workflow).where(Workflow.id == self.workflow_id), Workflow)
 
         return None
 
@@ -490,7 +505,7 @@ class App(Base):
 
     @property
     def tenant(self) -> Tenant | None:
-        return legacy_scalar_as(select(Tenant).where(Tenant.id == self.tenant_id), Tenant)
+        return _sync_scalar_as(select(Tenant).where(Tenant.id == self.tenant_id), Tenant)
 
     async def aload_tenant(self) -> Tenant | None:
         return await async_scalar_as(select(Tenant).where(Tenant.id == self.tenant_id), Tenant)
@@ -511,7 +526,7 @@ class App(Base):
                 session.merge(self)
                 session.commit()
 
-            with_legacy_sync_session(persist_mode)
+            _with_sync_session(persist_mode)
             return True
         return False
 
@@ -571,7 +586,7 @@ class App(Base):
         if not api_provider_ids and not builtin_provider_ids:
             return []
 
-        with legacy_session_maker().begin() as session:
+        with get_sync_session_maker().begin() as session:
             if api_provider_ids:
                 existing_api_providers = [
                     str(api_provider.id)
@@ -638,7 +653,7 @@ class App(Base):
 
     @property
     def tags(self) -> Sequence[Tag]:
-        tags = legacy_scalars_as(
+        tags = _sync_scalars_as(
             select(Tag)
             .join(TagBinding, Tag.id == TagBinding.tag_id)
             .where(
@@ -655,7 +670,7 @@ class App(Base):
     @property
     def author_name(self) -> str | None:
         if self.created_by:
-            account = legacy_scalar_as(select(Account).where(Account.id == self.created_by), Account)
+            account = _sync_scalar_as(select(Account).where(Account.id == self.created_by), Account)
             if account:
                 return account.name
 

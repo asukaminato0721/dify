@@ -1,7 +1,7 @@
 import copy
 import json
 import logging
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Optional, TypedDict, cast
@@ -23,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 from typing_extensions import deprecated
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from core.trigger.constants import TRIGGER_PLUGIN_NODE_TYPE
 from core.workflow.human_input_compat import normalize_node_config_for_graph
 from core.workflow.variable_prefixes import (
@@ -47,7 +48,7 @@ from graphon.variables.variables import FloatVariable, IntegerVariable, RAGPipel
 from libs.datetime_utils import naive_utc_now
 from libs.uuid_utils import uuidv7
 
-from ._session import async_get, async_scalar, legacy_get, legacy_scalar, legacy_session_maker, with_legacy_sync_session
+from ._session import async_get, async_scalar
 from ._workflow_exc import NodeNotFoundError, WorkflowDataError
 
 if TYPE_CHECKING:
@@ -72,10 +73,25 @@ SerializedWorkflowValue = dict[str, Any]
 SerializedWorkflowVariables = dict[str, SerializedWorkflowValue]
 
 
+def _with_sync_session[ReturnT](callback: Callable[[object], ReturnT]) -> ReturnT:
+    with create_sync_session() as session:
+        return callback(session)
+
+
+def _sync_scalar(statement: sa.Executable) -> object | None:
+    with create_sync_session() as session:
+        return session.scalar(statement)
+
+
+def _sync_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None:
+    with create_sync_session() as session:
+        return session.get(model_type, ident)
+
+
 def _resolve_workflow_app_tenant_id(app_id: str) -> str:
     from .model import App
 
-    tenant_id = legacy_scalar(select(App.tenant_id).where(App.id == app_id))
+    tenant_id = _sync_scalar(select(App.tenant_id).where(App.id == app_id))
     if not tenant_id:
         raise ValueError(f"Unable to resolve tenant_id for app {app_id}")
     return cast(str, tenant_id)
@@ -242,11 +258,11 @@ class Workflow(Base):  # bug
 
     @property
     def created_by_account(self) -> Account | None:
-        return legacy_get(Account, self.created_by)
+        return _sync_get(Account, self.created_by)
 
     @property
     def updated_by_account(self) -> Account | None:
-        return legacy_get(Account, self.updated_by) if self.updated_by else None
+        return _sync_get(Account, self.updated_by) if self.updated_by else None
 
     async def aload_created_by_account(self) -> Account | None:
         return await async_get(Account, self.created_by)
@@ -523,7 +539,7 @@ class Workflow(Base):  # bug
                 WorkflowToolProvider.app_id == self.app_id,
             )
         )
-        return with_legacy_sync_session(lambda session: session.execute(stmt).scalar_one())
+        return _with_sync_session(lambda session: session.execute(stmt).scalar_one())
 
     @property
     def environment_variables(
@@ -784,7 +800,7 @@ class WorkflowRun(Base):
     @deprecated("This method is retained for historical reasons; avoid using it if possible.")
     def created_by_account(self) -> Account | None:
         created_by_role = CreatorUserRole(self.created_by_role)
-        return legacy_get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
+        return _sync_get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
 
     @property
     @deprecated("This method is retained for historical reasons; avoid using it if possible.")
@@ -792,7 +808,7 @@ class WorkflowRun(Base):
         from .model import EndUser
 
         created_by_role = CreatorUserRole(self.created_by_role)
-        return legacy_get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
+        return _sync_get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
 
     async def aload_created_by_account(self) -> Account | None:
         created_by_role = CreatorUserRole(self.created_by_role)
@@ -825,7 +841,7 @@ class WorkflowRun(Base):
     def message(self):
         from .model import Message
 
-        message = legacy_scalar(
+        message = _sync_scalar(
             select(Message).where(Message.app_id == self.app_id, Message.workflow_run_id == self.id)
         )
         return message if isinstance(message, Message) else None
@@ -833,7 +849,7 @@ class WorkflowRun(Base):
     @property
     @deprecated("This method is retained for historical reasons; avoid using it if possible.")
     def workflow(self):
-        workflow = legacy_scalar(select(Workflow).where(Workflow.id == self.workflow_id))
+        workflow = _sync_scalar(select(Workflow).where(Workflow.id == self.workflow_id))
         return workflow if isinstance(workflow, Workflow) else None
 
     def to_dict(self) -> WorkflowRunDict:
@@ -1034,7 +1050,7 @@ class WorkflowNodeExecutionModel(Base):  # This model is expected to have `offlo
         created_by_role = CreatorUserRole(self.created_by_role)
         if created_by_role == CreatorUserRole.ACCOUNT:
             stmt = select(Account).where(Account.id == self.created_by)
-            account = legacy_scalar(stmt)
+            account = _sync_scalar(stmt)
             return account if isinstance(account, Account) else None
         return None
 
@@ -1045,7 +1061,7 @@ class WorkflowNodeExecutionModel(Base):  # This model is expected to have `offlo
         created_by_role = CreatorUserRole(self.created_by_role)
         if created_by_role == CreatorUserRole.END_USER:
             stmt = select(EndUser).where(EndUser.id == self.created_by)
-            end_user = legacy_scalar(stmt)
+            end_user = _sync_scalar(stmt)
             return end_user if end_user is not None else None
         return None
 
@@ -1313,7 +1329,7 @@ class WorkflowAppLog(TypeBase):
         if self.workflow_run_id:
             from repositories.factory import DifyAPIRepositoryFactory
 
-            session_maker = legacy_session_maker()
+            session_maker = get_sync_session_maker()
             repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
             return repo.get_workflow_run_by_id_without_tenant(run_id=self.workflow_run_id)
 
@@ -1328,14 +1344,14 @@ class WorkflowAppLog(TypeBase):
     @property
     def created_by_account(self) -> Account | None:
         created_by_role = CreatorUserRole(self.created_by_role)
-        return legacy_get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
+        return _sync_get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
 
     @property
     def created_by_end_user(self):
         from .model import EndUser
 
         created_by_role = CreatorUserRole(self.created_by_role)
-        return legacy_get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
+        return _sync_get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
 
     def to_dict(self) -> WorkflowAppLogDict:
         result: WorkflowAppLogDict = {

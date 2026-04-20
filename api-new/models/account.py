@@ -14,15 +14,25 @@ from typing_extensions import deprecated
 
 from flask_login import UserMixin
 
+from core.db.session_factory import create_sync_session
+
 from ._session import (
     async_scalar,
     async_scalars_all,
-    legacy_scalar,
     with_async_session,
-    with_legacy_sync_session,
 )
 from .base import TypeBase
 from .types import EnumText, LongText, StringUUID
+
+
+def _with_sync_session[ReturnT](callback: Callable[[object], ReturnT]) -> ReturnT:
+    with create_sync_session() as session:
+        return callback(session)
+
+
+def _sync_scalar(statement: sa.Executable) -> object | None:
+    with create_sync_session() as session:
+        return session.scalar(statement)
 
 
 class TenantAccountRole(enum.StrEnum):
@@ -153,7 +163,7 @@ class Account(UserMixin, TypeBase):
             tenant_reloaded = session.scalars(tenant_query).one()
             return tenant_join, tenant_reloaded
 
-        tenant_join, tenant_reloaded = with_legacy_sync_session(load_tenant_context)
+        tenant_join, tenant_reloaded = _with_sync_session(load_tenant_context)
 
         if tenant_join:
             self.role = TenantAccountRole(tenant_join.role)
@@ -199,7 +209,7 @@ class Account(UserMixin, TypeBase):
             tenant, join = tenant_account_join
             return tenant, join
 
-        tenant_account_join = with_legacy_sync_session(load_tenant)
+        tenant_account_join = _with_sync_session(load_tenant)
         if tenant_account_join is None:
             return
         tenant, join = tenant_account_join
@@ -232,7 +242,7 @@ class Account(UserMixin, TypeBase):
 
     @classmethod
     def get_by_openid(cls, provider: str, open_id: str) -> Account | None:
-        account_integrate = with_legacy_sync_session(
+        account_integrate = _with_sync_session(
             lambda session: session.execute(
                 select(AccountIntegrate).where(
                     AccountIntegrate.provider == provider,
@@ -241,7 +251,7 @@ class Account(UserMixin, TypeBase):
             ).scalar_one_or_none()
         )
         if account_integrate:
-            account = legacy_scalar(select(Account).where(Account.id == account_integrate.account_id))
+            account = _sync_scalar(select(Account).where(Account.id == account_integrate.account_id))
             return account if isinstance(account, Account) else None
         return None
 
@@ -330,7 +340,7 @@ class Tenant(TypeBase):
     )
 
     def get_accounts(self) -> list[Account]:
-        accounts = with_legacy_sync_session(
+        accounts = _with_sync_session(
             lambda session: list(
                 session.scalars(
                     select(Account).where(

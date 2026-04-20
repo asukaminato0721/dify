@@ -12,10 +12,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from graphon.model_runtime.entities.model_entities import ModelType
 from libs.uuid_utils import uuidv7
 
-from ._session import async_scalar, legacy_scalar
+from core.db.session_factory import create_sync_session
+
+from ._session import async_scalar
 from .base import TypeBase
 from .enums import CredentialSourceType, PaymentStatus, ProviderQuotaType
 from .types import EnumText, LongText, StringUUID
+
+
+def _sync_scalar(statement: sa.Executable) -> object | None:
+    with create_sync_session() as session:
+        return session.scalar(statement)
 
 
 class ProviderType(StrEnum):
@@ -82,7 +89,7 @@ class Provider(TypeBase):
     @cached_property
     def credential(self) -> ProviderCredential | None:
         if self.credential_id:
-            credential = legacy_scalar(select(ProviderCredential).where(ProviderCredential.id == self.credential_id))
+            credential = _sync_scalar(select(ProviderCredential).where(ProviderCredential.id == self.credential_id))
             return credential if isinstance(credential, ProviderCredential) else None
         return None
 
@@ -153,7 +160,7 @@ class ProviderModel(TypeBase):
     @cached_property
     def credential(self) -> ProviderModelCredential | None:
         if self.credential_id:
-            credential = legacy_scalar(
+            credential = _sync_scalar(
                 select(ProviderModelCredential).where(ProviderModelCredential.id == self.credential_id)
             )
             return credential if isinstance(credential, ProviderModelCredential) else None

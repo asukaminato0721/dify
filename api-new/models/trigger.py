@@ -11,13 +11,14 @@ from sqlalchemy import DateTime, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.plugin.entities.plugin_daemon import CredentialType
+from core.db.session_factory import create_sync_session
 from core.trigger.entities.api_entities import TriggerProviderSubscriptionApiEntity
 from core.trigger.entities.entities import Subscription
 from core.trigger.utils.endpoint import generate_plugin_trigger_endpoint_url, generate_webhook_trigger_endpoint
 from libs.datetime_utils import naive_utc_now
 from libs.uuid_utils import uuidv7
 
-from ._session import async_get, legacy_get
+from ._session import async_get
 from .base import TypeBase
 from .enums import AppTriggerStatus, AppTriggerType, CreatorUserRole, WorkflowTriggerStatus
 from .model import Account
@@ -25,6 +26,11 @@ from .types import EnumText, LongText, StringUUID
 
 TriggerJsonObject = dict[str, object]
 TriggerCredentials = dict[str, str]
+
+
+def _sync_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None:
+    with create_sync_session() as session:
+        return session.get(model_type, ident)
 
 
 class WorkflowTriggerLogDict(TypedDict):
@@ -288,14 +294,14 @@ class WorkflowTriggerLog(TypeBase):
     @property
     def created_by_account(self) -> Account | None:
         created_by_role = CreatorUserRole(self.created_by_role)
-        return legacy_get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
+        return _sync_get(Account, self.created_by) if created_by_role == CreatorUserRole.ACCOUNT else None
 
     @property
     def created_by_end_user(self):
         from .model import EndUser
 
         created_by_role = CreatorUserRole(self.created_by_role)
-        return legacy_get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
+        return _sync_get(EndUser, self.created_by) if created_by_role == CreatorUserRole.END_USER else None
 
     async def aload_created_by_account(self) -> Account | None:
         created_by_role = CreatorUserRole(self.created_by_role)

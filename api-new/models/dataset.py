@@ -30,6 +30,7 @@ from sqlalchemy import DateTime, String, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from configs import dify_config
+from core.db.session_factory import create_sync_session
 from core.rag.entities import ParentMode, Rule
 from core.rag.index_processor.constant.built_in_field import BuiltInField, MetadataDataSource
 from core.rag.index_processor.constant.index_type import IndexStructureType, IndexTechniqueType
@@ -43,11 +44,6 @@ from ._session import (
     async_get,
     async_scalar_as,
     async_scalars_as,
-    legacy_get,
-    legacy_scalar,
-    legacy_scalar_as,
-    legacy_scalars_as,
-    with_legacy_sync_session,
 )
 from .account import Account
 from .base import Base, TypeBase
@@ -74,8 +70,28 @@ from .types import AdjustedJSON, BinaryData, EnumText, LongText, StringUUID, adj
 logger = logging.getLogger(__name__)
 
 
+def _sync_scalar(statement: sa.Executable) -> object | None:
+    with create_sync_session() as session:
+        return session.scalar(statement)
+
+
+def _sync_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None:
+    with create_sync_session() as session:
+        return session.get(model_type, ident)
+
+
+def _sync_scalar_as[ResultT](statement: sa.Executable, expected_type: type[ResultT]) -> ResultT | None:
+    result = _sync_scalar(statement)
+    return result if isinstance(result, expected_type) else None
+
+
+def _sync_scalars_as[ResultT](statement: sa.Executable, expected_type: type[ResultT]) -> list[ResultT]:
+    with create_sync_session() as session:
+        return [result for result in list(session.scalars(statement).all()) if isinstance(result, expected_type)]
+
+
 def _legacy_count(statement: sa.Executable) -> int:
-    count = legacy_scalar(statement)
+    count = _sync_scalar(statement)
     return int(count) if count is not None else 0
 
 
@@ -254,7 +270,7 @@ class Dataset(Base):
 
     @property
     def dataset_keyword_table(self) -> DatasetKeywordTable | None:
-        return legacy_scalar_as(
+        return _sync_scalar_as(
             select(DatasetKeywordTable).where(DatasetKeywordTable.dataset_id == self.id),
             DatasetKeywordTable,
         )
@@ -273,7 +289,7 @@ class Dataset(Base):
 
     @property
     def created_by_account(self) -> Account | None:
-        return legacy_get(Account, self.created_by)
+        return _sync_get(Account, self.created_by)
 
     async def aload_created_by_account(self) -> Account | None:
         return await async_get(Account, self.created_by)
@@ -287,7 +303,7 @@ class Dataset(Base):
 
     @property
     def latest_process_rule(self) -> DatasetProcessRule | None:
-        return legacy_scalar_as(
+        return _sync_scalar_as(
             select(DatasetProcessRule)
             .where(DatasetProcessRule.dataset_id == self.id)
             .order_by(DatasetProcessRule.created_at.desc())
@@ -328,7 +344,7 @@ class Dataset(Base):
 
     @property
     def word_count(self) -> int:
-        count = legacy_scalar(
+        count = _sync_scalar(
             select(func.coalesce(func.sum(Document.word_count), 0)).where(Document.dataset_id == self.id)
         )
         return int(count) if count is not None else 0
@@ -337,7 +353,7 @@ class Dataset(Base):
     def doc_form(self) -> str | None:
         if self.chunk_structure:
             return self.chunk_structure
-        document = legacy_scalar_as(select(Document).where(Document.dataset_id == self.id).limit(1), Document)
+        document = _sync_scalar_as(select(Document).where(Document.dataset_id == self.id).limit(1), Document)
         if document:
             return document.doc_form
         return None
@@ -355,7 +371,7 @@ class Dataset(Base):
 
     @property
     def tags(self) -> Sequence[Tag]:
-        tags = legacy_scalars_as(
+        tags = _sync_scalars_as(
             select(Tag)
             .join(TagBinding, Tag.id == TagBinding.tag_id)
             .where(
@@ -386,7 +402,7 @@ class Dataset(Base):
     def external_knowledge_info(self) -> dict[str, Any] | None:
         if self.provider != "external":
             return None
-        external_knowledge_binding = legacy_scalar_as(
+        external_knowledge_binding = _sync_scalar_as(
             select(ExternalKnowledgeBindings).where(
                 ExternalKnowledgeBindings.dataset_id == self.id,
                 ExternalKnowledgeBindings.tenant_id == self.tenant_id,
@@ -395,7 +411,7 @@ class Dataset(Base):
         )
         if not external_knowledge_binding:
             return None
-        external_knowledge_api = legacy_scalar_as(
+        external_knowledge_api = _sync_scalar_as(
             select(ExternalKnowledgeApis).where(
                 ExternalKnowledgeApis.id == external_knowledge_binding.external_knowledge_api_id,
                 ExternalKnowledgeApis.tenant_id == self.tenant_id,
@@ -414,14 +430,14 @@ class Dataset(Base):
     @property
     def is_published(self) -> bool:
         if self.pipeline_id:
-            pipeline = legacy_scalar_as(select(Pipeline).where(Pipeline.id == self.pipeline_id), Pipeline)
+            pipeline = _sync_scalar_as(select(Pipeline).where(Pipeline.id == self.pipeline_id), Pipeline)
             if pipeline:
                 return pipeline.is_published
         return False
 
     @property
     def doc_metadata(self) -> list[dict[str, str]]:
-        dataset_metadatas = legacy_scalars_as(
+        dataset_metadatas = _sync_scalars_as(
             select(DatasetMetadata).where(DatasetMetadata.dataset_id == self.id),
             DatasetMetadata,
         )
