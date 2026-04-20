@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 import time
@@ -118,7 +119,7 @@ def _load_variable_pool(workflow_run_id: str | None) -> VariablePool | None:
     if not workflow_run_id:
         return None
 
-    session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+    session_factory = get_sync_session_maker()
     workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_factory)
     pause_entity = workflow_run_repo.get_workflow_pause(workflow_run_id)
     if pause_entity is None:
@@ -137,7 +138,7 @@ def _load_variable_pool(workflow_run_id: str | None) -> VariablePool | None:
 
 def _open_session(session_factory: sessionmaker | Session | None):
     if session_factory is None:
-        return Session(db.engine)
+        return create_sync_session()
     if isinstance(session_factory, Session):
         return session_factory
     return session_factory()

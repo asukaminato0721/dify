@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 import time
@@ -102,7 +103,7 @@ class WorkflowService:
     def __init__(self, session_maker: sessionmaker | None = None):
         """Initialize WorkflowService with repository dependencies."""
         if session_maker is None:
-            session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+            session_maker = get_sync_session_maker()
         self._node_execution_service_repo = DifyAPIRepositoryFactory.create_api_workflow_node_execution_repository(
             session_maker
         )
@@ -831,7 +832,7 @@ class WorkflowService:
         """
         files = files or []
 
-        with Session(bind=db.engine, expire_on_commit=False) as session, session.begin():
+        with create_sync_session() as session, session.begin():
             draft_var_srv = WorkflowDraftVariableService(session)
             draft_var_srv.prefill_conversation_variable_default_values(draft_workflow, user_id=account.id)
 
@@ -839,7 +840,7 @@ class WorkflowService:
         node_type = Workflow.get_node_type_from_node_config(node_config)
         node_data = node_config["data"]
         if is_start_node_type(node_type):
-            with Session(bind=db.engine) as session, session.begin():
+            with create_sync_session() as session, session.begin():
                 draft_var_srv = WorkflowDraftVariableService(session)
                 conversation_id = draft_var_srv.get_or_create_conversation(
                     account_id=account.id,
@@ -921,10 +922,10 @@ class WorkflowService:
         if workflow_node_execution is None:
             raise ValueError(f"WorkflowNodeExecution with id {node_execution.id} not found after saving")
 
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             outputs = workflow_node_execution.load_full_outputs(session, storage)
 
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             draft_var_saver = DraftVariableSaver(
                 session=session,
                 app_id=app_model.id,
@@ -1063,7 +1064,7 @@ class WorkflowService:
 
         enclosing_node_type_and_id = draft_workflow.get_enclosing_node_type_and_id(node_config)
         enclosing_node_id = enclosing_node_type_and_id[1] if enclosing_node_type_and_id else None
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             draft_var_saver = DraftVariableSaver(
                 session=session,
                 app_id=app_model.id,
@@ -1191,7 +1192,7 @@ class WorkflowService:
     def _load_email_recipients(form_id: str) -> list[DeliveryTestEmailRecipient]:
         logger = logging.getLogger(__name__)
 
-        with Session(bind=db.engine) as session:
+        with create_sync_session() as session:
             recipients = session.scalars(
                 select(HumanInputFormRecipient).where(HumanInputFormRecipient.form_id == form_id)
             ).all()
@@ -1255,7 +1256,7 @@ class WorkflowService:
         manual_inputs: Mapping[str, Any],
         user_id: str,
     ) -> VariablePool:
-        with Session(bind=db.engine, expire_on_commit=False) as session, session.begin():
+        with create_sync_session() as session, session.begin():
             draft_var_srv = WorkflowDraftVariableService(session)
             draft_var_srv.prefill_conversation_variable_default_values(workflow, user_id=user_id)
 

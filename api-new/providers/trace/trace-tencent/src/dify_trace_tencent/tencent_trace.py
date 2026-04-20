@@ -2,6 +2,7 @@
 Tencent APM tracing implementation with separated concerns
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 
 from sqlalchemy import select
@@ -221,9 +222,9 @@ class TencentDataTrace(BaseTraceInstance):
     def _get_workflow_node_executions(self, trace_info: WorkflowTraceInfo) -> list[WorkflowNodeExecution]:
         """Retrieve workflow node executions from database."""
         try:
-            session_maker = sessionmaker(bind=db.engine)
+            session_maker = get_sync_session_maker()
 
-            with Session(db.engine, expire_on_commit=False) as session:
+            with create_sync_session() as session:
                 app_id = trace_info.metadata.get("app_id")
                 if not app_id:
                     raise ValueError("No app_id found in trace_info metadata")
@@ -284,7 +285,7 @@ class TencentDataTrace(BaseTraceInstance):
                     .where(Account.id == user_id, TenantAccountJoin.tenant_id == tenant_id)
                 )
 
-                session_maker = sessionmaker(bind=db.engine)
+                session_maker = get_sync_session_maker()
                 with session_maker() as session:
                     account_name = session.scalar(stmt)
                     return account_name or str(user_id)

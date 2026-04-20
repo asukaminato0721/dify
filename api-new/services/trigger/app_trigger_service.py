@@ -5,6 +5,7 @@ Handles AppTrigger model CRUD operations and status management.
 This service centralizes all AppTrigger-related business logic.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 
 from sqlalchemy import update
@@ -34,7 +35,7 @@ class AppTriggerService:
 
         """
         try:
-            with sessionmaker(bind=db.engine).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 session.execute(
                     update(AppTrigger)
                     .where(AppTrigger.tenant_id == tenant_id, AppTrigger.status == AppTriggerStatus.ENABLED)

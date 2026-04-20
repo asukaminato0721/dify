@@ -1,13 +1,14 @@
 import dataclasses
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, ClassVar, NotRequired, TypedDict
 
-from sqlalchemy import Engine, delete, orm, select
+from sqlalchemy import delete, orm, select
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
@@ -46,6 +47,7 @@ from models import Account, App, Conversation
 from models.enums import ConversationFromSource, DraftVariableType
 from models.utils.file_input_compat import build_file_from_stored_mapping
 from models.workflow import Workflow, WorkflowDraftVariable, WorkflowDraftVariableFile, is_system_variable_editable
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from repositories.factory import DifyAPIRepositoryFactory
 from services.file_service import FileService
 from services.variable_truncator import VariableTruncator
@@ -83,7 +85,7 @@ class DraftVarLoader(VariableLoader):
     # ref: graphon.variable_loader.VariableLoader
 
     # Database engine used for loading variables.
-    _engine: Engine
+    _engine: AsyncEngine | object
     # Application ID for which variables are being loaded.
     _app_id: str
     _user_id: str
@@ -92,7 +94,7 @@ class DraftVarLoader(VariableLoader):
 
     def __init__(
         self,
-        engine: Engine,
+        engine: AsyncEngine | object,
         app_id: str,
         tenant_id: str,
         user_id: str,
@@ -114,7 +116,7 @@ class DraftVarLoader(VariableLoader):
         # Map each selector (as a tuple via `_selector_to_tuple`) to its corresponding variable instance.
         variable_by_selector: dict[tuple[str, str], VariableBase] = {}
 
-        with Session(bind=self._engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             srv = WorkflowDraftVariableService(session)
             draft_vars = srv.get_draft_variables_by_selectors(self._app_id, selectors, user_id=self._user_id)
 
@@ -128,7 +130,7 @@ class DraftVarLoader(VariableLoader):
                 files.append(value.value)
             elif isinstance(value, ArrayFileSegment):
                 files.extend(value.value)
-        with Session(bind=self._engine) as session:
+        with create_sync_session() as session:
             storage_key_loader = StorageKeyLoader(
                 session,
                 tenant_id=self._tenant_id,
@@ -214,12 +216,8 @@ class WorkflowDraftVariableService:
             AssertionError: If the provided session is not bound to an `Engine` object.
         """
         self._session = session
-        engine = session.get_bind()
-        # Ensure the session is bound to a engine.
-        assert isinstance(engine, Engine)
-        session_maker = sessionmaker(bind=engine, expire_on_commit=False)
         self._api_node_execution_repo = DifyAPIRepositoryFactory.create_api_workflow_node_execution_repository(
-            session_maker
+            get_sync_session_maker()
         )
 
     def get_variable(self, variable_id: str) -> WorkflowDraftVariable | None:
@@ -1073,9 +1071,7 @@ class DraftVariableSaver:
 
         original_size = len(original_content_serialized.encode("utf-8"))
 
-        bind = self._session.get_bind()
-        assert isinstance(bind, Engine)
-        file_srv = FileService(bind)
+        file_srv = FileService(get_sync_session_maker())
 
         upload_file = file_srv.upload_file(
             filename=filename,
@@ -1095,9 +1091,7 @@ class DraftVariableSaver:
             tenant_id=self._user.current_tenant_id,
             user_id=self._user.id,
         )
-        engine = bind = self._session.get_bind()
-        assert isinstance(engine, Engine)
-        with sessionmaker(bind=engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             session.add(variable_file)
 
         return truncation_result.result, variable_file

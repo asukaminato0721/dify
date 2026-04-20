@@ -10,6 +10,7 @@ when a caller can `await` safely.
 
 from __future__ import annotations
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import re
 import uuid
@@ -1363,7 +1364,7 @@ class Conversation(Base):
 
     @property
     def app(self) -> App | None:
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             return session.scalar(select(App).where(App.id == self.app_id))
 
     @property
@@ -1751,7 +1752,7 @@ class Message(Base):
 
             from repositories.factory import DifyAPIRepositoryFactory
 
-            session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+            session_maker = get_sync_session_maker()
             repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
             return repo.get_workflow_run_by_id_without_tenant(run_id=self.workflow_run_id)
 

@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import datetime
 import json
 import logging
@@ -122,7 +123,7 @@ class ClearFreePlanTenantExpiredLogs:
             apps = db.session.scalars(select(App).where(App.tenant_id == tenant_id)).all()
             app_ids = [app.id for app in apps]
             while True:
-                with sessionmaker(bind=db.engine, autoflush=False).begin() as session:
+                with get_sync_session_maker().begin() as session:
                     messages = session.scalars(
                         select(Message)
                         .where(
@@ -161,7 +162,7 @@ class ClearFreePlanTenantExpiredLogs:
                     )
 
             while True:
-                with sessionmaker(bind=db.engine, autoflush=False).begin() as session:
+                with get_sync_session_maker().begin() as session:
                     conversations = session.scalars(
                         select(Conversation)
                         .where(
@@ -200,7 +201,7 @@ class ClearFreePlanTenantExpiredLogs:
                     )
 
             # Process expired workflow node executions with backup
-            session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+            session_maker = get_sync_session_maker()
             node_execution_repo = DifyAPIRepositoryFactory.create_api_workflow_node_execution_repository(session_maker)
             before_date = datetime.datetime.now() - datetime.timedelta(days=days)
             total_deleted = 0
@@ -247,7 +248,7 @@ class ClearFreePlanTenantExpiredLogs:
                     break
 
             # Process expired workflow runs with backup
-            session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+            session_maker = get_sync_session_maker()
             workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
             before_date = datetime.datetime.now() - datetime.timedelta(days=days)
             total_deleted = 0
@@ -294,7 +295,7 @@ class ClearFreePlanTenantExpiredLogs:
                     break
 
             while True:
-                with sessionmaker(bind=db.engine, autoflush=False).begin() as session:
+                with get_sync_session_maker().begin() as session:
                     workflow_app_logs = session.scalars(
                         select(WorkflowAppLog)
                         .where(
@@ -346,7 +347,7 @@ class ClearFreePlanTenantExpiredLogs:
         started_at = datetime.datetime(2023, 4, 3, 8, 59, 24)
         current_time = started_at
 
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             total_tenant_count = session.scalar(select(func.count(Tenant.id))) or 0
 
         click.echo(click.style(f"Total tenant count: {total_tenant_count}", fg="white"))
@@ -398,7 +399,7 @@ class ClearFreePlanTenantExpiredLogs:
                 # Initial interval of 1 day, will be dynamically adjusted based on tenant count
                 interval = datetime.timedelta(days=1)
                 # Process tenants in this batch
-                with sessionmaker(db.engine).begin() as session:
+                with get_sync_session_maker().begin() as session:
                     # Calculate tenant count in next batch with current interval
                     # Try different intervals until we find one with a reasonable tenant count
                     test_intervals = [

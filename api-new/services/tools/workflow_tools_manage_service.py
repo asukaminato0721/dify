@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 from datetime import datetime
@@ -44,7 +45,7 @@ class WorkflowToolManageService:
     ):
         # check if the name is unique
         existing_workflow_tool_provider: WorkflowToolProvider | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             # query if the name or app_id exists
             existing_workflow_tool_provider = _session.scalar(
                 select(WorkflowToolProvider)
@@ -62,7 +63,7 @@ class WorkflowToolManageService:
 
         # query the app
         app: App | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             app = _session.scalar(select(App).where(App.id == workflow_app_id, App.tenant_id == tenant_id).limit(1))
 
         # if not found raise error
@@ -99,7 +100,7 @@ class WorkflowToolManageService:
             logger.warning(e, exc_info=True)
             raise ValueError(str(e))
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             _session.add(workflow_tool_provider)
 
         # keep the session open to make orm instances in the same session
@@ -141,7 +142,7 @@ class WorkflowToolManageService:
         """
 
         existing_workflow_tool_provider: WorkflowToolProvider | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             # query if the name exists for other tools
             existing_workflow_tool_provider = _session.scalar(
                 select(WorkflowToolProvider)
@@ -159,7 +160,7 @@ class WorkflowToolManageService:
 
         # query the workflow tool provider
         workflow_tool_provider: WorkflowToolProvider | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             workflow_tool_provider = _session.scalar(
                 select(WorkflowToolProvider)
                 .where(WorkflowToolProvider.tenant_id == tenant_id, WorkflowToolProvider.id == workflow_tool_id)
@@ -172,7 +173,7 @@ class WorkflowToolManageService:
 
         # query the app
         app: App | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             app = _session.scalar(
                 select(App).where(App.id == workflow_tool_provider.app_id, App.tenant_id == tenant_id).limit(1)
             )
@@ -191,7 +192,7 @@ class WorkflowToolManageService:
         # check if workflow configuration is synced
         WorkflowToolConfigurationUtils.ensure_no_human_input_nodes(workflow.graph_dict)
 
-        with sessionmaker(db.engine).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             _session.add(workflow_tool_provider)
 
             # update workflow tool provider
@@ -229,7 +230,7 @@ class WorkflowToolManageService:
         """
 
         providers: list[WorkflowToolProvider] = []
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             providers = list(
                 _session.scalars(select(WorkflowToolProvider).where(WorkflowToolProvider.tenant_id == tenant_id)).all()
             )
@@ -278,7 +279,7 @@ class WorkflowToolManageService:
         :param workflow_tool_id: the workflow tool id
         """
 
-        with sessionmaker(db.engine).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             _ = _session.execute(
                 delete(WorkflowToolProvider).where(
                     WorkflowToolProvider.tenant_id == tenant_id, WorkflowToolProvider.id == workflow_tool_id
@@ -299,7 +300,7 @@ class WorkflowToolManageService:
         """
 
         tool_provider: WorkflowToolProvider | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             tool_provider = _session.scalar(
                 select(WorkflowToolProvider)
                 .where(WorkflowToolProvider.tenant_id == tenant_id, WorkflowToolProvider.id == workflow_tool_id)
@@ -319,7 +320,7 @@ class WorkflowToolManageService:
         :return: the tool
         """
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             tool_provider: WorkflowToolProvider | None = _session.scalar(
                 select(WorkflowToolProvider)
                 .where(WorkflowToolProvider.tenant_id == tenant_id, WorkflowToolProvider.app_id == workflow_app_id)
@@ -340,7 +341,7 @@ class WorkflowToolManageService:
             raise ValueError("Tool not found")
 
         workflow_app: App | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             workflow_app = _session.scalar(
                 select(App).where(App.id == db_tool.app_id, App.tenant_id == db_tool.tenant_id).limit(1)
             )
@@ -391,7 +392,7 @@ class WorkflowToolManageService:
         """
 
         provider: WorkflowToolProvider | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             provider = _session.scalar(
                 select(WorkflowToolProvider)
                 .where(WorkflowToolProvider.tenant_id == tenant_id, WorkflowToolProvider.id == workflow_tool_id)

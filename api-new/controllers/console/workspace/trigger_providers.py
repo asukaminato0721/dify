@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from typing import Any
 
@@ -375,7 +376,7 @@ class TriggerSubscriptionDeleteApi(Resource):
         assert user.current_tenant_id is not None
 
         try:
-            with sessionmaker(db.engine).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 # Delete trigger provider subscription
                 TriggerProviderService.delete_trigger_provider(
                     session=session,

@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 import secrets
 import time
@@ -215,7 +216,7 @@ class TriggerService:
                 not_found_in_cache.append(node_info)
                 continue
 
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             try:
                 # lock the concurrent plugin trigger creation
                 redis_client.lock(f"{cls.__PLUGIN_TRIGGER_NODE_CACHE_KEY__}:apps:{app.id}:lock", timeout=10)

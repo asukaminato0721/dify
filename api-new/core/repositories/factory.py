@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from configs import dify_config
+from core.db.session_factory import SyncSessionMakerAdapter
 from graphon.entities import WorkflowExecution, WorkflowNodeExecution
 from libs.module_loading import import_string
 from models import Account, EndUser
@@ -61,7 +62,7 @@ class DifyCoreRepositoryFactory:
     @classmethod
     def create_workflow_execution_repository(
         cls,
-        session_factory: sessionmaker | Engine,
+        session_factory: sessionmaker | Engine | SyncSessionMakerAdapter,
         user: Account | EndUser,
         app_id: str,
         triggered_from: WorkflowRunTriggeredFrom,
@@ -97,7 +98,7 @@ class DifyCoreRepositoryFactory:
     @classmethod
     def create_workflow_node_execution_repository(
         cls,
-        session_factory: sessionmaker | Engine,
+        session_factory: sessionmaker | Engine | SyncSessionMakerAdapter,
         user: Account | EndUser,
         app_id: str,
         triggered_from: WorkflowNodeExecutionTriggeredFrom,

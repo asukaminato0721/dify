@@ -5,6 +5,7 @@ This service deletes archived workflow run data from the database while keeping
 archive logs intact.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -48,7 +49,7 @@ class ArchivedWorkflowRunDeletion:
         result = DeleteResult(run_id=run_id, tenant_id="", success=False)
 
         repo = self._get_workflow_run_repo()
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         with session_maker() as session:
             run = session.get(WorkflowRun, run_id)
             if not run:
@@ -73,7 +74,7 @@ class ArchivedWorkflowRunDeletion:
         end_date: datetime,
         limit: int = 100,
     ) -> list[DeleteResult]:
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         results: list[DeleteResult] = []
 
         repo = self._get_workflow_run_repo()
@@ -139,6 +140,6 @@ class ArchivedWorkflowRunDeletion:
         from repositories.factory import DifyAPIRepositoryFactory
 
         self.workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(
-            sessionmaker(bind=db.engine, expire_on_commit=False)
+            get_sync_session_maker()
         )
         return self.workflow_run_repo

@@ -5,6 +5,7 @@ to attribute the created app; workspace/membership validation is done by the
 Go admin-api caller.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from flask import request
 from flask_restx import Resource
 from pydantic import BaseModel, Field
@@ -56,7 +57,7 @@ class EnterpriseAppDSLImport(Resource):
 
         account.set_tenant_id(workspace_id)
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             dsl_service = AppDslService(session)
             result = dsl_service.import_app(
                 account=account,

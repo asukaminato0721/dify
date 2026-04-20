@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from datetime import UTC, datetime, timedelta
 from typing import Literal, TypedDict, cast
 
@@ -502,7 +503,7 @@ class ConsoleWorkflowPauseDetailsApi(Resource):
         """
 
         # Query WorkflowRun to determine if workflow is suspended
-        session_maker = sessionmaker(bind=db.engine)
+        session_maker = get_sync_session_maker()
         workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker=session_maker)
 
         workflow_run = db.session.get(WorkflowRun, workflow_run_id)

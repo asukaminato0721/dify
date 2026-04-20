@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import datetime
 import logging
 import random
@@ -369,7 +370,7 @@ class MessagesCleanService:
             batch_deleted_messages = 0
 
             # Step 1: Fetch a batch of messages using cursor
-            with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 fetch_messages_start = time.monotonic()
                 msg_stmt = (
                     select(Message.id, Message.app_id, Message.created_at)
@@ -477,7 +478,7 @@ class MessagesCleanService:
 
             # Step 4: Batch delete messages and their relations
             if not self._dry_run:
-                with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+                with get_sync_session_maker().begin() as session:
                     delete_relations_start = time.monotonic()
                     # Delete related records first
                     self._batch_delete_message_relations(session, message_ids_to_delete)

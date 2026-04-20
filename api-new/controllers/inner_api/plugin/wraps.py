@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from collections.abc import Callable
 from functools import wraps
 
@@ -32,7 +33,7 @@ def get_user(tenant_id: str, user_id: str | None) -> EndUser:
         user_id = DefaultEndUserSessionID.DEFAULT_SESSION_ID
     is_anonymous = user_id == DefaultEndUserSessionID.DEFAULT_SESSION_ID
     try:
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             user_model = None
 
             if is_anonymous:

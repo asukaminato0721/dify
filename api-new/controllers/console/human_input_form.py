@@ -2,6 +2,7 @@
 Console/Studio Human Input Form APIs.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 from collections.abc import Generator
@@ -134,7 +135,7 @@ class ConsoleWorkflowEventsApi(Resource):
         """
 
         user, tenant_id = current_account_with_tenant()
-        session_maker = sessionmaker(db.engine)
+        session_maker = get_sync_session_maker()
         repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
         workflow_run = repo.get_workflow_run_by_id_and_tenant_id(
             tenant_id=tenant_id,
@@ -149,7 +150,7 @@ class ConsoleWorkflowEventsApi(Resource):
         if workflow_run.created_by != user.id:
             raise NotFoundError(f"WorkflowRun not created by the current account, id={workflow_run_id}")
 
-        with Session(expire_on_commit=False, bind=db.engine) as session:
+        with create_sync_session() as session:
             app = _retrieve_app_for_workflow_run(session, workflow_run)
 
         if workflow_run.finished_at is not None:

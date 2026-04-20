@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from typing import Any, Union
 
 from flask import Response
@@ -68,7 +69,7 @@ class MCPAppApi(Resource):
         request_id: Union[int, str] | None = args.id
         mcp_request = self._parse_mcp_request(args.model_dump(exclude_none=True))
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # Get MCP server and app
             mcp_server, app = self._get_mcp_server_and_app(server_code, session)
             self._validate_server_status(mcp_server)
@@ -196,7 +197,7 @@ class MCPAppApi(Resource):
 
     def _retrieve_end_user(self, tenant_id: str, mcp_server_id: str) -> EndUser | None:
         """Get end user - manages its own database session"""
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             return session.scalar(
                 select(EndUser)
                 .where(EndUser.tenant_id == tenant_id)
@@ -236,7 +237,7 @@ class MCPAppApi(Resource):
         if not end_user and isinstance(mcp_request.root, mcp_types.InitializeRequest):
             client_info = mcp_request.root.params.clientInfo
             client_name = f"{client_info.name}@{client_info.version}"
-            with sessionmaker(db.engine, expire_on_commit=False).begin() as create_session:
+            with get_sync_session_maker().begin() as create_session:
                 end_user = self._create_end_user(client_name, app.tenant_id, app.id, mcp_server.id, create_session)
 
         return handle_mcp_request(app, mcp_request, user_input_form, mcp_server, end_user, request_id)

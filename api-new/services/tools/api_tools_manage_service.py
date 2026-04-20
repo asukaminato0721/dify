@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 from typing import Any, TypedDict, cast
@@ -139,7 +140,7 @@ class ApiToolManageService:
 
         # check if the provider exists
         # Create new session with automatic transaction management
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             provider: ApiToolProvider | None = _session.scalar(
                 select(ApiToolProvider)
                 .where(
@@ -238,7 +239,7 @@ class ApiToolManageService:
 
         # create new session with automatic transaction management
         provider: ApiToolProvider | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             provider = _session.scalar(
                 select(ApiToolProvider)
                 .where(
@@ -298,7 +299,7 @@ class ApiToolManageService:
 
         # check if the provider exists
         # create new session with automatic transaction management
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             provider: ApiToolProvider | None = _session.scalar(
                 select(ApiToolProvider)
                 .where(
@@ -377,7 +378,7 @@ class ApiToolManageService:
         """
 
         # create new session with automatic transaction management
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             provider: ApiToolProvider | None = _session.scalar(
                 select(ApiToolProvider)
                 .where(
@@ -444,7 +445,7 @@ class ApiToolManageService:
 
         # create new session with automatic transaction management to get the provider
         provider: ApiToolProvider | None = None
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             provider = _session.scalar(
                 select(ApiToolProvider)
                 .where(
@@ -519,7 +520,7 @@ class ApiToolManageService:
         # get all api providers
         # create new session with automatic transaction management
         providers: list[ApiToolProvider] = []
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as _session:
+        with get_sync_session_maker().begin() as _session:
             providers = list(
                 _session.scalars(select(ApiToolProvider).where(ApiToolProvider.tenant_id == tenant_id)).all()
             )

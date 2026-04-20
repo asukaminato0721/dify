@@ -15,6 +15,7 @@ Archived tables:
 
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import datetime
 import io
 import json
@@ -208,7 +209,7 @@ class WorkflowRunArchiver:
             click.echo(click.style(f"Archive storage not configured: {e}", fg="red"))
             return summary
 
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         repo = self._get_workflow_run_repo()
 
         def _archive_with_session(run: WorkflowRun) -> ArchiveResult:
@@ -544,6 +545,6 @@ class WorkflowRunArchiver:
 
         from repositories.factory import DifyAPIRepositoryFactory
 
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         self.workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
         return self.workflow_run_repo

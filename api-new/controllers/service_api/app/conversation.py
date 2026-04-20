@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from datetime import datetime
 from typing import Any, Literal
 
@@ -163,7 +164,7 @@ class ConversationApi(Resource):
         last_id = str(query_args.last_id) if query_args.last_id else None
 
         try:
-            with sessionmaker(db.engine).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 pagination = ConversationService.pagination_by_last_id(
                     session=session,
                     app_model=app_model,

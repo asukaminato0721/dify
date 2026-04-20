@@ -50,6 +50,32 @@ dev = [
 [tool.uv]
 package = false
 
+[tool.pyrefly]
+project-includes = [
+    "api_server/**",
+    "core/db/**",
+    "extensions/ext_database.py",
+    "extensions/ext_session_factory.py",
+    "models/_session.py",
+    "tests/test_session_factory.py",
+    "tests/test_tool_engine.py",
+    "tests/test_base_agent_runner.py",
+    "tests/test_easy_ui_generate_task_pipeline.py",
+    "tests/test_message_cycle_manager.py",
+    "tests/test_token_buffer_memory.py",
+    "tests/test_agent_chat_local_models.py",
+    "tests/test_chat_completion_local_models.py",
+    "tests/test_generation_service.py",
+]
+project-excludes = [
+    ".venv",
+    "migrations/",
+    "providers/**",
+]
+python-platform = "linux"
+python-version = "3.12.0"
+infer-with-first-use = false
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"

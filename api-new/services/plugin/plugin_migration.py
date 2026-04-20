@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import datetime
 import json
 import logging
@@ -66,7 +67,7 @@ class PluginMigration:
         started_at = datetime.datetime(2023, 4, 3, 8, 59, 24)
         current_time = started_at
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             total_tenant_count = session.scalar(select(func.count(Tenant.id))) or 0
 
         click.echo(click.style(f"Total tenant count: {total_tenant_count}", fg="white"))
@@ -110,7 +111,7 @@ class PluginMigration:
             # Initial interval of 1 day, will be dynamically adjusted based on tenant count
             interval = datetime.timedelta(days=1)
             # Process tenants in this batch
-            with Session(db.engine) as session:
+            with create_sync_session() as session:
                 # Calculate tenant count in next batch with current interval
                 # Try different intervals until we find one with a reasonable tenant count
                 test_intervals = [
@@ -222,7 +223,7 @@ class PluginMigration:
         """
         Extract model table.
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             rs = session.execute(
                 sa.text(f"SELECT DISTINCT {column} FROM {table} WHERE tenant_id = :tenant_id"), {"tenant_id": tenant_id}
             )
@@ -238,7 +239,7 @@ class PluginMigration:
         """
         Extract tool tables.
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             rs = session.scalars(select(BuiltinToolProvider).where(BuiltinToolProvider.tenant_id == tenant_id)).all()
             result = []
             for row in rs:
@@ -252,7 +253,7 @@ class PluginMigration:
         Extract workflow tables, only ToolNode is required.
         """
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             rs = session.scalars(select(Workflow).where(Workflow.tenant_id == tenant_id)).all()
             result = []
             for row in rs:
@@ -275,7 +276,7 @@ class PluginMigration:
         """
         Extract app tables.
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             apps = session.scalars(select(App).where(App.tenant_id == tenant_id)).all()
             if not apps:
                 return []

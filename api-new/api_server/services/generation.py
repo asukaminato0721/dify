@@ -19,7 +19,7 @@ from typing import Any, cast
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 import contexts
 from api_server.errors import bad_request, forbidden, not_found, service_unavailable
@@ -94,6 +94,7 @@ from core.app.entities.task_entities import (
 from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig, PauseStatePersistenceLayer
 from core.app.task_pipeline.easy_ui_based_generate_task_pipeline import EasyUIBasedGenerateTaskPipeline
 from core.app.task_pipeline.message_file_utils import MessageFileInfoDict, prepare_file_dict
+from core.db.session_factory import SyncSessionMakerAdapter
 from core.db.session_factory import session_factory as configured_sync_session_factory
 from core.model_manager import ModelInstance
 from core.ops.ops_trace_manager import TraceQueueManager
@@ -305,7 +306,7 @@ def _ensure_supported_features(
         )
 
 
-def _get_legacy_sync_session_maker() -> sessionmaker[Session]:
+def _get_legacy_sync_session_maker() -> SyncSessionMakerAdapter:
     """Return the configured sync session maker for copied workflow seams.
 
     The active FastAPI slice still drives a copied sync-first workflow runtime.

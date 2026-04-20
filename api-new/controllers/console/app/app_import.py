@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from flask_restx import Resource
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -54,7 +55,7 @@ class AppImportApi(Resource):
 
         # AppDslService performs internal commits for some creation paths, so use a plain
         # Session here instead of nesting it inside sessionmaker(...).begin().
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             import_service = AppDslService(session)
             # Import app
             account = current_user
@@ -100,7 +101,7 @@ class AppImportConfirmApi(Resource):
         # Check user role first
         current_user, _ = current_account_with_tenant()
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             import_service = AppDslService(session)
             # Confirm import
             account = current_user
@@ -125,7 +126,7 @@ class AppImportCheckDependenciesApi(Resource):
     @account_initialization_required
     @edit_permission_required
     def get(self, app_model: App):
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             import_service = AppDslService(session)
             result = import_service.check_dependencies(app_model=app_model)
 

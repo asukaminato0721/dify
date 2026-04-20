@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 import re
@@ -97,7 +98,7 @@ class RagPipelineService:
     def __init__(self, session_maker: sessionmaker | None = None):
         """Initialize RagPipelineService with repository dependencies."""
         if session_maker is None:
-            session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+            session_maker = get_sync_session_maker()
         self._node_execution_service_repo = DifyAPIRepositoryFactory.create_api_workflow_node_execution_repository(
             session_maker
         )
@@ -557,7 +558,7 @@ class RagPipelineService:
             workflow_node_execution.id
         )
 
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             draft_var_saver = DraftVariableSaver(
                 session=session,
                 app_id=pipeline.id,
@@ -1185,7 +1186,7 @@ class RagPipelineService:
         workflow = db.session.get(Workflow, pipeline.workflow_id)
         if not workflow:
             raise ValueError("Workflow not found")
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             dataset = pipeline.retrieve_dataset(session=session)
             if not dataset:
                 raise ValueError("Dataset not found")
@@ -1212,7 +1213,7 @@ class RagPipelineService:
 
         from services.rag_pipeline.rag_pipeline_dsl_service import RagPipelineDslService
 
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             rag_pipeline_dsl_service = RagPipelineDslService(session)
             dsl = rag_pipeline_dsl_service.export_rag_pipeline_dsl(pipeline=pipeline, include_secret=True)
         if args.get("icon_info") is None:
@@ -1252,7 +1253,7 @@ class RagPipelineService:
         self, pipeline: Pipeline, workflow: Workflow, node_id: str
     ) -> WorkflowNodeExecutionModel | None:
         node_execution_service_repo = DifyAPIRepositoryFactory.create_api_workflow_node_execution_repository(
-            sessionmaker(db.engine)
+            get_sync_session_maker()
         )
 
         node_exec = node_execution_service_repo.get_node_last_execution(
@@ -1328,7 +1329,7 @@ class RagPipelineService:
         # Convert node_execution to WorkflowNodeExecution after save
         workflow_node_execution_db_model = repository._to_db_model(workflow_node_execution)  # type: ignore
 
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             draft_var_saver = DraftVariableSaver(
                 session=session,
                 app_id=pipeline.id,

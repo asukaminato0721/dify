@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -124,7 +124,7 @@ logger = logging.getLogger(__name__)
 class HumanInputService:
     def __init__(
         self,
-        session_factory: sessionmaker[Session] | Engine,
+        session_factory: sessionmaker[Session] | Engine | Callable[..., Session],
         form_repository: HumanInputFormSubmissionRepository | None = None,
     ):
         if isinstance(session_factory, Engine):

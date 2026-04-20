@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 import re
@@ -247,7 +248,7 @@ class ProviderConfiguration(BaseModel):
             else []
         )
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             # Prefer the actual provider record name if exists (to handle aliased provider names)
             provider_record = self._get_provider_record(session)
             provider_name = provider_record.provider_name if provider_record else self.provider.provider
@@ -332,7 +333,7 @@ class ProviderConfiguration(BaseModel):
         )
 
         if credential_id:
-            with Session(db.engine) as session:
+            with create_sync_session() as session:
                 try:
                     stmt = select(ProviderCredential).where(
                         ProviderCredential.tenant_id == self.tenant_id,
@@ -443,7 +444,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_name: credential name
         :return:
         """
-        with Session(db.engine) as pre_session:
+        with create_sync_session() as pre_session:
             if credential_name:
                 if self._check_provider_credential_name_exists(credential_name=credential_name, session=pre_session):
                     raise ValueError(f"Credential with name '{credential_name}' already exists.")
@@ -452,7 +453,7 @@ class ProviderConfiguration(BaseModel):
 
         credentials = self.validate_provider_credentials(credentials=credentials)
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             provider_record = self._get_provider_record(session)
             try:
                 new_record = ProviderCredential(
@@ -517,7 +518,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_name: credential name
         :return:
         """
-        with Session(db.engine) as pre_session:
+        with create_sync_session() as pre_session:
             if credential_name and self._check_provider_credential_name_exists(
                 credential_name=credential_name, session=pre_session, exclude_id=credential_id
             ):
@@ -525,7 +526,7 @@ class ProviderConfiguration(BaseModel):
 
         credentials = self.validate_provider_credentials(credentials=credentials, credential_id=credential_id)
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             provider_record = self._get_provider_record(session)
             stmt = select(ProviderCredential).where(
                 ProviderCredential.id == credential_id,
@@ -614,7 +615,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_id: credential id
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             stmt = select(ProviderCredential).where(
                 ProviderCredential.id == credential_id,
                 ProviderCredential.tenant_id == self.tenant_id,
@@ -691,7 +692,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_id: credential id
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             stmt = select(ProviderCredential).where(
                 ProviderCredential.id == credential_id,
                 ProviderCredential.tenant_id == self.tenant_id,
@@ -760,7 +761,7 @@ class ProviderConfiguration(BaseModel):
             else []
         )
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             stmt = select(ProviderModelCredential).where(
                 ProviderModelCredential.id == credential_id,
                 ProviderModelCredential.tenant_id == self.tenant_id,
@@ -881,7 +882,7 @@ class ProviderConfiguration(BaseModel):
         )
 
         if credential_id:
-            with Session(db.engine) as session:
+            with create_sync_session() as session:
                 try:
                     stmt = select(ProviderModelCredential).where(
                         ProviderModelCredential.id == credential_id,
@@ -928,7 +929,7 @@ class ProviderConfiguration(BaseModel):
         :param credentials: model credentials dict
         :return:
         """
-        with Session(db.engine) as pre_session:
+        with create_sync_session() as pre_session:
             if credential_name:
                 if self._check_custom_model_credential_name_exists(
                     model=model, model_type=model_type, credential_name=credential_name, session=pre_session
@@ -943,7 +944,7 @@ class ProviderConfiguration(BaseModel):
             model_type=model_type, model=model, credentials=credentials
         )
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             provider_model_record = self._get_custom_model_record(model_type=model_type, model=model, session=session)
 
             try:
@@ -999,7 +1000,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_id: credential id
         :return:
         """
-        with Session(db.engine) as pre_session:
+        with create_sync_session() as pre_session:
             if credential_name and self._check_custom_model_credential_name_exists(
                 model=model,
                 model_type=model_type,
@@ -1016,7 +1017,7 @@ class ProviderConfiguration(BaseModel):
             credential_id=credential_id,
         )
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             provider_model_record = self._get_custom_model_record(model_type=model_type, model=model, session=session)
 
             stmt = select(ProviderModelCredential).where(
@@ -1062,7 +1063,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_id: credential id
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             stmt = select(ProviderModelCredential).where(
                 ProviderModelCredential.id == credential_id,
                 ProviderModelCredential.tenant_id == self.tenant_id,
@@ -1135,7 +1136,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_id: credential id
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             stmt = select(ProviderModelCredential).where(
                 ProviderModelCredential.id == credential_id,
                 ProviderModelCredential.tenant_id == self.tenant_id,
@@ -1186,7 +1187,7 @@ class ProviderConfiguration(BaseModel):
         :param credential_id: credential id
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             stmt = select(ProviderModelCredential).where(
                 ProviderModelCredential.id == credential_id,
                 ProviderModelCredential.tenant_id == self.tenant_id,
@@ -1222,7 +1223,7 @@ class ProviderConfiguration(BaseModel):
         :param model: model name
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             # get provider model
             provider_model_record = self._get_custom_model_record(model_type=model_type, model=model, session=session)
 
@@ -1260,7 +1261,7 @@ class ProviderConfiguration(BaseModel):
         :param model: model name
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             model_setting = self._get_provider_model_setting(model_type=model_type, model=model, session=session)
 
             if model_setting:
@@ -1287,7 +1288,7 @@ class ProviderConfiguration(BaseModel):
         :param model: model name
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             model_setting = self._get_provider_model_setting(model_type=model_type, model=model, session=session)
 
             if model_setting:
@@ -1313,7 +1314,7 @@ class ProviderConfiguration(BaseModel):
         :param model: model name
         :return:
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             return self._get_provider_model_setting(model_type=model_type, model=model, session=session)
 
     def enable_model_load_balancing(self, model_type: ModelType, model: str) -> ProviderModelSetting:
@@ -1329,7 +1330,7 @@ class ProviderConfiguration(BaseModel):
         if model_provider_id.is_langgenius():
             provider_names.append(model_provider_id.provider_name)
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             stmt = select(func.count(LoadBalancingModelConfig.id)).where(
                 LoadBalancingModelConfig.tenant_id == self.tenant_id,
                 LoadBalancingModelConfig.provider_name.in_(provider_names),
@@ -1366,7 +1367,7 @@ class ProviderConfiguration(BaseModel):
         :return:
         """
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             model_setting = self._get_provider_model_setting(model_type=model_type, model=model, session=session)
 
             if model_setting:
@@ -1441,7 +1442,7 @@ class ProviderConfiguration(BaseModel):
         if session:
             return _switch(session)
         else:
-            with Session(db.engine) as session:
+            with create_sync_session() as session:
                 return _switch(session)
 
     def extract_secret_variables(self, credential_form_schemas: list[CredentialFormSchema]) -> list[str]:

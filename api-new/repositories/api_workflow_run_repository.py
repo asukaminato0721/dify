@@ -21,7 +21,7 @@ Example:
     ```python
     from repositories.dify_api_repository_factory import DifyAPIRepositoryFactory
 
-    session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+    session_maker = get_sync_session_maker()
     repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
     # Get paginated workflow runs
@@ -34,6 +34,7 @@ Example:
     ```
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Protocol, TypedDict

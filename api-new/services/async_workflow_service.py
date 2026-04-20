@@ -5,6 +5,7 @@ This service provides a centralized entry point for triggering workflows asynchr
 with support for different subscription tiers, rate limiting, and execution tracking.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -237,7 +238,7 @@ class AsyncWorkflowService:
         Returns:
             Trigger log as dictionary or None if not found
         """
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             trigger_log_repo = SQLAlchemyWorkflowTriggerLogRepository(session)
             trigger_log = trigger_log_repo.get_by_id(workflow_trigger_log_id, tenant_id)
 
@@ -263,7 +264,7 @@ class AsyncWorkflowService:
         Returns:
             List of trigger logs as dictionaries
         """
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             trigger_log_repo = SQLAlchemyWorkflowTriggerLogRepository(session)
             logs = trigger_log_repo.get_recent_logs(
                 tenant_id=tenant_id, app_id=app_id, hours=hours, limit=limit, offset=offset
@@ -286,7 +287,7 @@ class AsyncWorkflowService:
         Returns:
             List of failed trigger logs as dictionaries
         """
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             trigger_log_repo = SQLAlchemyWorkflowTriggerLogRepository(session)
             logs = trigger_log_repo.get_failed_for_retry(
                 tenant_id=tenant_id, max_retry_count=max_retry_count, limit=limit

@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from flask import abort, jsonify, request
 from flask_restx import Resource
 from pydantic import BaseModel, Field, field_validator
@@ -38,7 +39,7 @@ console_ns.schema_model(
 class WorkflowDailyRunsStatistic(Resource):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         self._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
     @console_ns.doc("get_workflow_daily_runs_statistic")
@@ -78,7 +79,7 @@ class WorkflowDailyRunsStatistic(Resource):
 class WorkflowDailyTerminalsStatistic(Resource):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         self._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
     @console_ns.doc("get_workflow_daily_terminals_statistic")
@@ -118,7 +119,7 @@ class WorkflowDailyTerminalsStatistic(Resource):
 class WorkflowDailyTokenCostStatistic(Resource):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         self._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
     @console_ns.doc("get_workflow_daily_token_cost_statistic")
@@ -158,7 +159,7 @@ class WorkflowDailyTokenCostStatistic(Resource):
 class WorkflowAverageAppInteractionStatistic(Resource):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         self._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
     @console_ns.doc("get_workflow_average_app_interaction_statistic")

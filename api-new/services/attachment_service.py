@@ -1,4 +1,5 @@
 import base64
+from collections.abc import Callable
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import sessionmaker
@@ -11,12 +12,12 @@ PREVIEW_WORDS_LIMIT = 3000
 
 
 class AttachmentService:
-    _session_maker: sessionmaker
+    _session_maker: Callable[..., object]
 
-    def __init__(self, session_factory: sessionmaker | Engine | None = None):
+    def __init__(self, session_factory: sessionmaker | Engine | Callable[..., object] | None = None):
         if isinstance(session_factory, Engine):
             self._session_maker = sessionmaker(bind=session_factory)
-        elif isinstance(session_factory, sessionmaker):
+        elif isinstance(session_factory, sessionmaker) or callable(session_factory):
             self._session_maker = session_factory
         else:
             raise AssertionError("must be a sessionmaker or an Engine.")

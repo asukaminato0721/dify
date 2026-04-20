@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from collections.abc import Sequence
 
@@ -288,7 +289,7 @@ class AliyunDataTrace(BaseTraceInstance):
 
         service_account = self.get_service_account_with_tenant(app_id)
 
-        session_factory = sessionmaker(bind=db.engine)
+        session_factory = get_sync_session_maker()
         workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
             session_factory=session_factory,
             user=service_account,

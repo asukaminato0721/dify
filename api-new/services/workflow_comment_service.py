@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from collections.abc import Sequence
 
@@ -134,7 +135,7 @@ class WorkflowCommentService:
     @staticmethod
     def get_comments(tenant_id: str, app_id: str) -> Sequence[WorkflowComment]:
         """Get all comments for a workflow."""
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             # Get all comments with eager loading
             stmt = (
                 select(WorkflowComment)
@@ -205,7 +206,7 @@ class WorkflowCommentService:
         if session is not None:
             return _get_comment(session)
         else:
-            with Session(db.engine, expire_on_commit=False) as session:
+            with create_sync_session() as session:
                 return _get_comment(session)
 
     @staticmethod
@@ -221,7 +222,7 @@ class WorkflowCommentService:
         """Create a new workflow comment and send mention notification emails."""
         WorkflowCommentService._validate_content(content)
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             comment = WorkflowComment(
                 tenant_id=tenant_id,
                 app_id=app_id,
@@ -281,7 +282,7 @@ class WorkflowCommentService:
         """
         WorkflowCommentService._validate_content(content)
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             # Get comment with validation
             stmt = select(WorkflowComment).where(
                 WorkflowComment.id == comment_id,
@@ -352,7 +353,7 @@ class WorkflowCommentService:
     @staticmethod
     def delete_comment(tenant_id: str, app_id: str, comment_id: str, user_id: str) -> None:
         """Delete a workflow comment."""
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             comment = WorkflowCommentService.get_comment(tenant_id, app_id, comment_id, session)
 
             # Only the creator can delete the comment
@@ -379,7 +380,7 @@ class WorkflowCommentService:
     @staticmethod
     def resolve_comment(tenant_id: str, app_id: str, comment_id: str, user_id: str) -> WorkflowComment:
         """Resolve a workflow comment."""
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             comment = WorkflowCommentService.get_comment(tenant_id, app_id, comment_id, session)
             if comment.resolved:
                 return comment
@@ -398,7 +399,7 @@ class WorkflowCommentService:
         """Add a reply to a workflow comment and notify mentioned users."""
         WorkflowCommentService._validate_content(content)
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             # Check if comment exists
             comment = session.get(WorkflowComment, comment_id)
             if not comment:
@@ -473,7 +474,7 @@ class WorkflowCommentService:
         """Update a comment reply and notify newly mentioned users."""
         WorkflowCommentService._validate_content(content)
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             reply = WorkflowCommentService._get_reply_in_comment_scope(
                 session=session,
                 tenant_id=tenant_id,
@@ -535,7 +536,7 @@ class WorkflowCommentService:
     @staticmethod
     def delete_reply(tenant_id: str, app_id: str, comment_id: str, reply_id: str, user_id: str) -> None:
         """Delete a comment reply."""
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             reply = WorkflowCommentService._get_reply_in_comment_scope(
                 session=session,
                 tenant_id=tenant_id,

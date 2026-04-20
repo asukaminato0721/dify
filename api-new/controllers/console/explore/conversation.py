@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from typing import Any
 
 from flask import request
@@ -63,7 +64,7 @@ class ConversationListApi(InstalledAppResource):
         try:
             if not isinstance(current_user, Account):
                 raise ValueError("current_user must be an Account instance")
-            with sessionmaker(db.engine).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 pagination = WebConversationService.pagination_by_last_id(
                     session=session,
                     app_model=app_model,

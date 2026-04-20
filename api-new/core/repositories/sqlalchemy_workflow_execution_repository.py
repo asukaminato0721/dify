@@ -4,6 +4,7 @@ SQLAlchemy implementation of the WorkflowExecutionRepository.
 
 import json
 import logging
+from collections.abc import Callable
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -38,7 +39,7 @@ class SQLAlchemyWorkflowExecutionRepository(WorkflowExecutionRepository):
 
     def __init__(
         self,
-        session_factory: sessionmaker | Engine,
+        session_factory: sessionmaker | Engine | Callable[..., object],
         user: Account | EndUser,
         app_id: str | None,
         triggered_from: WorkflowRunTriggeredFrom | None,
@@ -55,7 +56,7 @@ class SQLAlchemyWorkflowExecutionRepository(WorkflowExecutionRepository):
         # If an engine is provided, create a sessionmaker from it
         if isinstance(session_factory, Engine):
             self._session_factory = sessionmaker(bind=session_factory, expire_on_commit=False)
-        elif isinstance(session_factory, sessionmaker):
+        elif isinstance(session_factory, sessionmaker) or callable(session_factory):
             self._session_factory = session_factory
         else:
             raise ValueError(

@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 
 from celery import current_app, group, shared_task
@@ -24,7 +25,7 @@ def poll_workflow_schedules() -> None:
     2. Process each batch until all due schedules are handled
     3. Optional: Limit total dispatches per tick as a circuit breaker
     """
-    session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+    session_factory = get_sync_session_maker()
 
     with session_factory() as session:
         total_dispatched = 0

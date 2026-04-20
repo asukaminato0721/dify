@@ -20,7 +20,7 @@ from core.app.entities.app_invoke_entities import InvokeFrom, WorkflowAppGenerat
 from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig, WorkflowResumptionContext
 from core.app.layers.timeslice_layer import TimeSliceLayer
 from core.app.layers.trigger_post_layer import TriggerPostLayer
-from core.db.session_factory import session_factory
+from core.db.session_factory import session_factory, create_sync_session, get_sync_session_maker
 from core.repositories import DifyCoreRepositoryFactory
 from extensions.ext_database import db
 from graphon.runtime import GraphRuntimeState
@@ -204,7 +204,7 @@ def _execute_workflow_common(
 def resume_workflow_execution(task_data_dict: dict[str, Any]) -> None:
     """Resume a paused workflow run via Celery."""
     task_data = WorkflowResumeTaskData.model_validate(task_data_dict)
-    session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+    session_factory = get_sync_session_maker()
     workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_factory)
 
     pause_entity = workflow_run_repo.get_workflow_pause(task_data.workflow_run_id)

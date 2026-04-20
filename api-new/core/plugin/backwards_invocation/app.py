@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import uuid
 from collections.abc import Generator, Mapping
 from typing import Any, cast
@@ -211,7 +212,7 @@ class PluginAppBackwardsInvocation(BaseBackwardsInvocation):
         """
         get the user by user id
         """
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             stmt = select(EndUser).where(EndUser.id == user_id)
             user = session.scalar(stmt)
             if not user:

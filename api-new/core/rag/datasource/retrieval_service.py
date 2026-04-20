@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, load_only
 
 from configs import dify_config
-from core.db.session_factory import session_factory
+from core.db.session_factory import session_factory, create_sync_session, get_sync_session_maker
 from core.model_manager import ModelManager
 from core.rag.data_post_processor.data_post_processor import DataPostProcessor, RerankingModelDict, WeightsDict
 from core.rag.datasource.keyword.keyword_factory import Keyword
@@ -258,7 +258,7 @@ class RetrievalService:
 
     @classmethod
     def _get_dataset(cls, dataset_id: str) -> Dataset | None:
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             return session.scalar(select(Dataset).where(Dataset.id == dataset_id).limit(1))
 
     @classmethod

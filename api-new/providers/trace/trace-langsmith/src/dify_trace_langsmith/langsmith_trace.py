@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 import os
 import uuid
@@ -136,7 +137,7 @@ class LangSmithDataTrace(BaseTraceInstance):
         self.add_run(langsmith_run)
 
         # through workflow_run_id get all_nodes_execution using repository
-        session_factory = sessionmaker(bind=db.engine)
+        session_factory = get_sync_session_maker()
         # Find the app's creator account
         app_id = trace_info.metadata.get("app_id")
         if not app_id:

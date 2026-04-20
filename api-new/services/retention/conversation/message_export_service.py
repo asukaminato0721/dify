@@ -8,6 +8,7 @@ Uses (created_at, id) cursor pagination and batch-loads feedbacks to avoid N+1.
 Does NOT touch Message.inputs / Message.user_feedback properties.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import datetime
 import gzip
 import json
@@ -221,7 +222,7 @@ class AppMessageExportService:
     def _fetch_batch(
         self, cursor: tuple[datetime.datetime, str] | None
     ) -> tuple[list[Any], tuple[datetime.datetime, str] | None]:
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             stmt = (
                 select(
                     Message.id,
@@ -264,7 +265,7 @@ class AppMessageExportService:
         if not message_ids:
             return {}
 
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             stmt = (
                 select(MessageFeedback)
                 .where(

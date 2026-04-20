@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from collections.abc import Mapping
 from datetime import datetime
@@ -234,7 +235,7 @@ class WorkflowRunDetailApi(Resource):
             raise NotWorkflowAppError()
 
         # Use repository to get workflow run
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
         workflow_run = workflow_run_repo.get_workflow_run_by_id(
@@ -428,7 +429,7 @@ class WorkflowAppLogApi(Resource):
 
         # get paginate workflow app logs
         workflow_app_service = WorkflowAppService()
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             workflow_app_log_pagination = workflow_app_service.get_paginate_workflow_app_logs(
                 session=session,
                 app_model=app_model,

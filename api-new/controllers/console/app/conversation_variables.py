@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from datetime import datetime
 from typing import Any
 
@@ -114,7 +115,7 @@ class ConversationVariablesApi(Resource):
         page_size = 100
         stmt = stmt.limit(page_size).offset((page - 1) * page_size)
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             rows = session.scalars(stmt).all()
 
         response = PaginatedConversationVariableResponse.model_validate(

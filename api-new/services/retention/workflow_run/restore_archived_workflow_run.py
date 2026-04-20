@@ -5,6 +5,7 @@ This service restores archived workflow run data from S3-compatible storage
 back to the database.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import io
 import logging
 import time
@@ -247,7 +248,7 @@ class WorkflowRunRestore:
             return self.workflow_run_repo
 
         self.workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(
-            sessionmaker(bind=db.engine, expire_on_commit=False)
+            get_sync_session_maker()
         )
         return self.workflow_run_repo
 
@@ -409,7 +410,7 @@ class WorkflowRunRestore:
         results: list[RestoreResult] = []
         if tenant_ids is not None and not tenant_ids:
             return results
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         repo = self._get_workflow_run_repo()
 
         with session_maker() as session:
@@ -480,7 +481,7 @@ class WorkflowRunRestore:
                 error=f"Workflow run archive {run_id} not found",
             )
 
-        session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+        session_maker = get_sync_session_maker()
         result = self._restore_from_run(archive_log, session_maker=session_maker)
         if self.dry_run and result.success:
             click.echo(

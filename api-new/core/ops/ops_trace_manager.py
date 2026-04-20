@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import collections
 import json
 import logging
@@ -66,7 +67,7 @@ def _lookup_app_and_workspace_names(app_id: str | None, tenant_id: str | None) -
     workspace_name = ""
     if not app_id and not tenant_id:
         return app_name, workspace_name
-    with Session(db.engine) as session:
+    with create_sync_session() as session:
         if app_id:
             name = session.scalar(select(App.name).where(App.id == app_id))
             if name:
@@ -93,7 +94,7 @@ def _lookup_credential_name(credential_id: str | None, provider_type: str | None
     model_cls = _PROVIDER_TYPE_TO_MODEL.get(provider_type or "")
     if not model_cls:
         return ""
-    with Session(db.engine) as session:
+    with create_sync_session() as session:
         name = session.scalar(select(model_cls.name).where(model_cls.id == credential_id))  # type: ignore[attr-defined]
         return str(name) if name else ""
 
@@ -112,7 +113,7 @@ def _lookup_llm_credential_info(
         return None, ""
 
     try:
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             # Try to find provider-level or model-level configuration
             provider_record = session.scalar(
                 select(Provider).where(
@@ -641,7 +642,7 @@ class TraceTask:
                     # Lazy import to avoid circular import during module initialization
                     from repositories.factory import DifyAPIRepositoryFactory
 
-                    session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+                    session_maker = get_sync_session_maker()
                     cls._workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
         return cls._workflow_run_repo
 
@@ -812,7 +813,7 @@ class TraceTask:
         file_list = workflow_run_inputs.get("sys.file") or []
         query = workflow_run_inputs.get("query") or workflow_run_inputs.get("sys.query") or ""
 
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             # get workflow_app_log_id
             workflow_app_log_data_stmt = select(WorkflowAppLog.id).where(
                 WorkflowAppLog.tenant_id == tenant_id,
@@ -911,7 +912,7 @@ class TraceTask:
         streaming_metrics = self._extract_streaming_metrics(message_data)
 
         tenant_id = ""
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             tid = session.scalar(select(App.tenant_id).where(App.id == message_data.app_id))
             if tid:
                 tenant_id = str(tid)
@@ -1070,7 +1071,7 @@ class TraceTask:
             return {}
 
         tenant_id = ""
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             tid = session.scalar(select(App.tenant_id).where(App.id == message_data.app_id))
             if tid:
                 tenant_id = str(tid)
@@ -1092,7 +1093,7 @@ class TraceTask:
 
         embedding_models: dict[str, dict[str, str]] = {}
         if dataset_ids:
-            with Session(db.engine) as session:
+            with create_sync_session() as session:
                 rows = session.execute(
                     select(Dataset.id, Dataset.embedding_model, Dataset.embedding_model_provider).where(
                         Dataset.id.in_(list(dataset_ids))
@@ -1378,7 +1379,7 @@ class TraceTask:
         conversation_id = node_data.get("conversation_id")
         workflow_execution_id = node_data.get("workflow_execution_id")
         if conversation_id and workflow_execution_id and not parent_trace_context:
-            with Session(db.engine) as session:
+            with create_sync_session() as session:
                 msg_id = session.scalar(
                     select(Message.id).where(
                         Message.conversation_id == conversation_id,

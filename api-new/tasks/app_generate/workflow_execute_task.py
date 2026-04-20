@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import contextlib
 import logging
 import uuid
@@ -272,7 +273,7 @@ def workflow_based_app_execution_task(
 def _resume_app_execution(payload: dict[str, Any]) -> None:
     workflow_run_id = payload["workflow_run_id"]
 
-    session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+    session_factory = get_sync_session_maker()
     workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker=session_factory)
 
     pause_entity = workflow_run_repo.get_workflow_pause(workflow_run_id)
@@ -292,7 +293,7 @@ def _resume_app_execution(payload: dict[str, Any]) -> None:
 
     conversation = None
     message = None
-    with Session(db.engine, expire_on_commit=False) as session:
+    with create_sync_session() as session:
         workflow_run = session.get(WorkflowRun, workflow_run_id)
         if workflow_run is None:
             logger.warning("Workflow run %s not found during resume", workflow_run_id)

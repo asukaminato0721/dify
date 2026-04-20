@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import os
 from typing import Literal
 
@@ -68,7 +69,7 @@ def get_init_validate_status() -> bool:
             if session.get("is_init_validated"):
                 return True
 
-            with Session(db.engine) as db_session:
+            with create_sync_session() as db_session:
                 return db_session.execute(select(DifySetup)).scalar_one_or_none() is not None
 
     return True

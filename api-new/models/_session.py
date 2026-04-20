@@ -3,7 +3,7 @@
 The FastAPI port uses `AsyncSession` for request handling, but a number of ORM
 models still expose synchronous convenience properties. Those properties cannot
 `await`, so they need an explicit compatibility path instead of touching
-`db.session` or constructing `Session(db.engine)` directly from the async
+`db.session` or constructing direct SQLAlchemy sync sessions from the async
 engine.
 """
 
@@ -14,15 +14,16 @@ from contextlib import contextmanager
 
 from sqlalchemy import Executable
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
+from core.db.session_factory import SyncSessionAdapter, SyncSessionMakerAdapter
 from core.db.session_factory import session_factory as configured_sync_session_factory
 
 from .engine import db
 
 
 @contextmanager
-def legacy_sync_session() -> Iterator[Session]:
+def legacy_sync_session() -> Iterator[SyncSessionAdapter]:
     """Yield a sync session backed by `AsyncEngine.sync_engine`.
 
     This is a temporary bridge for legacy model helpers that still run in sync
@@ -34,7 +35,7 @@ def legacy_sync_session() -> Iterator[Session]:
         yield session
 
 
-def with_legacy_sync_session[ReturnT](callback: Callable[[Session], ReturnT]) -> ReturnT:
+def with_legacy_sync_session[ReturnT](callback: Callable[[SyncSessionAdapter], ReturnT]) -> ReturnT:
     with legacy_sync_session() as session:
         return callback(session)
 
@@ -60,7 +61,7 @@ def legacy_get[ModelT](model_type: type[ModelT], ident: object) -> ModelT | None
     return with_legacy_sync_session(lambda session: session.get(model_type, ident))
 
 
-def legacy_session_maker() -> sessionmaker[Session]:
+def legacy_session_maker() -> SyncSessionMakerAdapter:
     return configured_sync_session_factory.get_sync_session_maker()
 
 

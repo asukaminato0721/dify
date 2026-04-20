@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from typing import cast
 
 from sqlalchemy import select
@@ -31,7 +32,7 @@ def handle(sender, **kwargs):
     # Extract trigger info from workflow
     trigger_infos = get_trigger_infos_from_workflow(published_workflow)
 
-    with sessionmaker(db.engine).begin() as session:
+    with get_sync_session_maker().begin() as session:
         # Get existing app triggers
         existing_triggers = (
             session.execute(

@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from datetime import datetime
 
@@ -98,7 +99,7 @@ class WebhookTriggerApi(Resource):
 
         node_id = args.node_id
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # Get webhook trigger for this app and node
             webhook_trigger = session.scalar(
                 select(WorkflowWebhookTrigger)
@@ -129,7 +130,7 @@ class AppTriggersApi(Resource):
         assert isinstance(current_user, Account)
         assert current_user.current_tenant_id is not None
 
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # Get all triggers for this app using select API
             triggers = (
                 session.execute(
@@ -173,7 +174,7 @@ class AppTriggerEnableApi(Resource):
         assert current_user.current_tenant_id is not None
 
         trigger_id = args.trigger_id
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # Find the trigger using select
             trigger = session.execute(
                 select(AppTrigger).where(

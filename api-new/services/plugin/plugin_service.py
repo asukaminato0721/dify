@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from collections.abc import Mapping, Sequence
 from mimetypes import guess_type
@@ -530,7 +531,7 @@ class PluginService:
                     plugin_unique_identifier=plugin.plugin_unique_identifier,
                 )
             )
-        with Session(db.engine) as session, session.begin():
+        with create_sync_session() as session, session.begin():
             plugin_id = plugin.plugin_id
             logger.info("Deleting credentials for plugin: %s", plugin_id)
 

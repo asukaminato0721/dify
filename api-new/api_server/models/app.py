@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import enum
 import json
+from collections.abc import Coroutine
+from concurrent.futures import Future
 from decimal import Decimal
 from datetime import datetime
+from threading import Thread
 from typing import Any, cast
 
 import sqlalchemy as sa
@@ -11,10 +15,38 @@ from sqlalchemy import DateTime, String, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api_server.db import Base, EnumText, LongText, StringUUID
-from core.db.session_factory import session_factory as configured_sync_session_factory
+from extensions.ext_database import db
 from factories import variable_factory
 from graphon.file import FileBelongsTo
 from graphon.variables import VariableBase
+
+
+def _run_awaitable_sync[ResultT](awaitable: Coroutine[Any, Any, ResultT]) -> ResultT:
+    """Execute an async loader for sync compatibility callers.
+
+    The active FastAPI runtime should prefer the explicit `aload_*` helpers
+    below. Some copied sync-first workflow code still touches model convenience
+    properties, so those properties bridge into the async engine here instead of
+    reopening the deprecated sync engine/session stack.
+    """
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+
+    future: Future[ResultT] = Future()
+
+    def _runner() -> None:
+        try:
+            future.set_result(asyncio.run(awaitable))
+        except BaseException as exc:  # pragma: no cover - defensive propagation
+            future.set_exception(exc)
+
+    thread = Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    return future.result()
 
 
 class AppMode(enum.StrEnum):
@@ -211,8 +243,19 @@ class App(Base):
             return cached_config
         if self.app_model_config_id is None:
             return None
-        with configured_sync_session_factory.create_sync_session() as session:
-            return session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
+        return _run_awaitable_sync(self.aload_app_model_config())
+
+    async def aload_app_model_config(self) -> "AppModelConfig | None":
+        cached_config = getattr(self, "_cached_app_model_config", None)
+        if isinstance(cached_config, AppModelConfig):
+            return cached_config
+        if self.app_model_config_id is None:
+            return None
+        async with db.session_context() as session:
+            app_model_config = await session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
+        if app_model_config is not None:
+            setattr(self, "_cached_app_model_config", app_model_config)
+        return app_model_config
 
 
 class EndUser(Base):
@@ -586,11 +629,23 @@ class Conversation(Base):
         cached_app = getattr(self, "_cached_app", None)
         if isinstance(cached_app, App):
             return cached_app
-        with configured_sync_session_factory.create_sync_session() as session:
-            return session.scalar(select(App).where(App.id == self.app_id))
+        return _run_awaitable_sync(self.aload_app())
+
+    async def aload_app(self) -> App | None:
+        cached_app = getattr(self, "_cached_app", None)
+        if isinstance(cached_app, App):
+            return cached_app
+        async with db.session_context() as session:
+            app = await session.scalar(select(App).where(App.id == self.app_id))
+        if app is not None:
+            setattr(self, "_cached_app", app)
+        return app
 
     @property
     def model_config(self) -> dict[str, Any]:
+        return _run_awaitable_sync(self.aload_model_config())
+
+    async def aload_model_config(self) -> dict[str, Any]:
         model_config: dict[str, Any] = {}
 
         if self.mode == AppMode.ADVANCED_CHAT.value:
@@ -610,8 +665,12 @@ class Conversation(Base):
             if isinstance(cached_config, AppModelConfig):
                 app_model_config = cached_config
             else:
-                with configured_sync_session_factory.create_sync_session() as session:
-                    app_model_config = session.scalar(select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id))
+                async with db.session_context() as session:
+                    app_model_config = await session.scalar(
+                        select(AppModelConfig).where(AppModelConfig.id == self.app_model_config_id)
+                    )
+                if app_model_config is not None:
+                    setattr(self, "_cached_app_model_config", app_model_config)
             if app_model_config is not None:
                 model_config = app_model_config.to_dict()
 
@@ -692,14 +751,30 @@ class Message(Base):
             return cached_config
         if not self.conversation_id:
             return None
-        with configured_sync_session_factory.create_sync_session() as session:
-            conversation = session.scalar(select(Conversation).where(Conversation.id == self.conversation_id))
+        return _run_awaitable_sync(self.aload_app_model_config())
+
+    async def aload_app_model_config(self) -> AppModelConfig | None:
+        cached_config = getattr(self, "_cached_app_model_config", None)
+        if isinstance(cached_config, AppModelConfig):
+            return cached_config
+        if not self.conversation_id:
+            return None
+        async with db.session_context() as session:
+            conversation = await session.scalar(select(Conversation).where(Conversation.id == self.conversation_id))
             if conversation is None or conversation.app_model_config_id is None:
                 return None
-            return session.scalar(select(AppModelConfig).where(AppModelConfig.id == conversation.app_model_config_id))
+            app_model_config = await session.scalar(
+                select(AppModelConfig).where(AppModelConfig.id == conversation.app_model_config_id)
+            )
+        if app_model_config is not None:
+            setattr(self, "_cached_app_model_config", app_model_config)
+        return app_model_config
 
     @property
     def message_files(self) -> list[dict[str, Any]]:
+        return _run_awaitable_sync(self.aload_message_files())
+
+    async def aload_message_files(self) -> list[dict[str, Any]]:
         from core.app.file_access import DatabaseFileAccessController
         from factories import file_factory
 
@@ -708,9 +783,9 @@ class Message(Base):
             return cast(list[dict[str, Any]], cached_files)
 
         access_controller = DatabaseFileAccessController()
-        with configured_sync_session_factory.create_sync_session() as session:
-            message_files = session.scalars(select(MessageFile).where(MessageFile.message_id == self.id)).all()
-            app = session.scalar(select(App).where(App.id == self.app_id))
+        async with db.session_context() as session:
+            message_files = list((await session.scalars(select(MessageFile).where(MessageFile.message_id == self.id))).all())
+            app = await session.scalar(select(App).where(App.id == self.app_id))
         if app is None:
             return []
 
@@ -730,6 +805,7 @@ class Message(Base):
                 }
             )
 
+        setattr(self, "_cached_message_files", files)
         return files
 
 

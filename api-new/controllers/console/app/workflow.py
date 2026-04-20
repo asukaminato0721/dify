@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 from collections.abc import Sequence
@@ -835,7 +836,7 @@ class PublishedWorkflowApi(Resource):
         args = PublishWorkflowPayload.model_validate(console_ns.payload or {})
 
         workflow_service = WorkflowService()
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             workflow = workflow_service.publish_workflow(
                 session=session,
                 app_model=app_model,
@@ -1000,7 +1001,7 @@ class PublishedAllWorkflowApi(Resource):
                 raise Forbidden()
 
         workflow_service = WorkflowService()
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             workflows, has_more = workflow_service.get_all_published_workflow(
                 session=session,
                 app_model=app_model,
@@ -1091,7 +1092,7 @@ class WorkflowByIdApi(Resource):
         workflow_service = WorkflowService()
 
         # Create a session and manage the transaction
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             workflow = workflow_service.update_workflow(
                 session=session,
                 workflow_id=workflow_id,
@@ -1117,7 +1118,7 @@ class WorkflowByIdApi(Resource):
         workflow_service = WorkflowService()
 
         # Create a session and manage the transaction
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             try:
                 workflow_service.delete_workflow(
                     session=session, workflow_id=workflow_id, tenant_id=app_model.tenant_id

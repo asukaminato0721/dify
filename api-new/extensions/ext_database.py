@@ -7,12 +7,11 @@ from typing import Any
 
 from fastapi import FastAPI
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import relationship
 
 from configs import dify_config
-from core.db.session_factory import configure_session_factory, configure_sync_session_factory
+from core.db.session_factory import configure_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +55,9 @@ def _normalize_async_engine_options(database_uri: str, engine_options: dict[str,
 class AsyncDatabaseManager:
     """Application-scoped async SQLAlchemy engine/session registry.
 
-    The FastAPI runtime uses async SQLAlchemy sessions for new code, but the
-    copied workflow stack still has a few active sync-only seams. Configure a
-    companion sync session factory from `AsyncEngine.sync_engine` so those
-    seams can run while the broader workflow port continues.
+    The FastAPI runtime uses async SQLAlchemy sessions for all database access.
+    Legacy sync callers must proxy through the async session factory rather than
+    opening a separate sync engine/session stack.
     """
 
     engine: AsyncEngine | None
@@ -80,7 +78,6 @@ class AsyncDatabaseManager:
         self.engine = create_async_engine(database_uri, **engine_options)
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
         configure_session_factory(self.session_maker)
-        configure_sync_session_factory(self.engine.sync_engine, expire_on_commit=False)
         app.state.db = self
 
     async def dispose(self) -> None:
@@ -121,12 +118,5 @@ class AsyncDatabaseManager:
     @property
     def session(self) -> AsyncSession:
         raise RuntimeError("Legacy db.session access is not supported in the async port.")
-
-    @property
-    def sync_engine(self) -> Engine:
-        if self.engine is None:
-            raise RuntimeError("Database manager is not initialized.")
-        return self.engine.sync_engine
-
 
 db = AsyncDatabaseManager()

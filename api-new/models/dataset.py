@@ -7,6 +7,8 @@ directly, and async loader methods should be added where callers can `await`
 safely.
 """
 
+from __future__ import annotations
+
 import base64
 import enum
 import hashlib

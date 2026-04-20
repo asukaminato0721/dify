@@ -8,6 +8,8 @@ from tempfile import NamedTemporaryFile
 from typing import Literal
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from collections.abc import Callable
+
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from werkzeug.exceptions import NotFound
@@ -35,12 +37,12 @@ PREVIEW_WORDS_LIMIT = 3000
 
 
 class FileService:
-    _session_maker: sessionmaker[Session]
+    _session_maker: Callable[..., Session]
 
-    def __init__(self, session_factory: sessionmaker | Engine | None = None):
+    def __init__(self, session_factory: sessionmaker | Engine | Callable[..., Session] | None = None):
         if isinstance(session_factory, Engine):
             self._session_maker = sessionmaker(bind=session_factory)
-        elif isinstance(session_factory, sessionmaker):
+        elif isinstance(session_factory, sessionmaker) or callable(session_factory):
             self._session_maker = session_factory
         else:
             raise AssertionError("must be a sessionmaker or an Engine.")

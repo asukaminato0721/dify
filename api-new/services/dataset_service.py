@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from werkzeug.exceptions import Forbidden, NotFound
 
 from configs import dify_config
-from core.db.session_factory import session_factory
+from core.db.session_factory import session_factory, create_sync_session, get_sync_session_maker
 from core.errors.error import LLMBadRequestError, ProviderTokenNotInitError
 from core.helper.name_generator import generate_incremental_name
 from core.model_manager import ModelManager
@@ -553,7 +553,7 @@ class DatasetService:
             external_knowledge_id: External knowledge identifier
             external_knowledge_api_id: External knowledge API identifier
         """
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             external_knowledge_binding = session.scalar(
                 select(ExternalKnowledgeBindings).where(ExternalKnowledgeBindings.dataset_id == dataset_id).limit(1)
             )

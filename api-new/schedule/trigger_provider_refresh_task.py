@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 import math
 import time
@@ -59,7 +60,7 @@ def trigger_provider_refresh() -> None:
     batch_size: int = int(dify_config.TRIGGER_PROVIDER_REFRESH_BATCH_SIZE)
     lock_ttl: int = max(300, int(dify_config.TRIGGER_PROVIDER_SUBSCRIPTION_THRESHOLD_SECONDS))
 
-    with Session(db.engine, expire_on_commit=False) as session:
+    with create_sync_session() as session:
         filter: ColumnElement[bool] = _build_due_filter(now_ts=now)
         total_due: int = int(session.scalar(statement=select(func.count()).where(filter)) or 0)
         logger.info("Trigger refresh scan start: due=%d", total_due)

@@ -5,6 +5,7 @@ This module provides an enhanced MCPClient that automatically handles
 authentication failures and retries operations after refreshing tokens.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -86,7 +87,7 @@ class MCPClientWithAuthRetry(MCPClient):
 
             from services.tools.mcp_tools_manage_service import MCPToolManageService
 
-            with Session(db.engine) as session, session.begin():
+            with create_sync_session() as session, session.begin():
                 mcp_service = MCPToolManageService(session=session)
 
                 # Perform authentication using the service's auth method

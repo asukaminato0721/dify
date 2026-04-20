@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from datetime import datetime
 
 import flask_restx
@@ -48,7 +49,7 @@ register_schema_models(console_ns, ApiKeyItem, ApiKeyList)
 
 
 def _get_resource(resource_id, tenant_id, resource_model):
-    with sessionmaker(db.engine).begin() as session:
+    with get_sync_session_maker().begin() as session:
         resource = session.execute(
             select(resource_model).filter_by(id=resource_id, tenant_id=tenant_id)
         ).scalar_one_or_none()

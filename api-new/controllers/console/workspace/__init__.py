@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from collections.abc import Callable
 from functools import wraps
 
@@ -21,7 +22,7 @@ def plugin_permission_required(
             user = current_user
             tenant_id = current_tenant_id
 
-            with sessionmaker(db.engine).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 permission = session.scalar(
                     select(TenantPluginPermission)
                     .where(

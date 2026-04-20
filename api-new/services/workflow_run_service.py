@@ -1,11 +1,12 @@
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TypedDict
 
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
 import contexts
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from extensions.ext_database import db
 from libs.infinite_scroll_pagination import InfiniteScrollPagination
 from models import (
@@ -29,13 +30,13 @@ class WorkflowRunListArgs(TypedDict, total=False):
 
 
 class WorkflowRunService:
-    _session_factory: sessionmaker
+    _session_factory: sessionmaker | Callable[..., object]
     _workflow_run_repo: APIWorkflowRunRepository
 
-    def __init__(self, session_factory: Engine | sessionmaker | None = None):
+    def __init__(self, session_factory: Engine | sessionmaker | Callable[..., object] | None = None):
         """Initialize WorkflowRunService with repository dependencies."""
         if session_factory is None:
-            session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+            session_factory = get_sync_session_maker()
         elif isinstance(session_factory, Engine):
             session_factory = sessionmaker(bind=session_factory, expire_on_commit=False)
 

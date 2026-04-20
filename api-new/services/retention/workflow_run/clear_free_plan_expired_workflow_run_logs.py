@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import datetime
 import logging
 import random
@@ -225,7 +226,7 @@ class WorkflowRunCleanup:
             # Lazy import to avoid circular dependencies during module import
             from repositories.factory import DifyAPIRepositoryFactory
 
-            session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+            session_maker = get_sync_session_maker()
             self.workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
     def run(self) -> None:

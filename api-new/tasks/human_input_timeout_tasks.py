@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from datetime import timedelta
 
@@ -57,7 +58,7 @@ def _handle_global_timeout(*, form_id: str, workflow_run_id: str, node_id: str, 
 def check_and_handle_human_input_timeouts(limit: int = 100) -> None:
     """Scan for expired human input forms and resume or end workflows."""
 
-    session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+    session_factory = get_sync_session_maker()
     form_repo = HumanInputFormSubmissionRepository()
     service = HumanInputService(session_factory, form_repository=form_repo)
     now = naive_utc_now()

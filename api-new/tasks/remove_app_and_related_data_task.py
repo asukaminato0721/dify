@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from configs import dify_config
-from core.db.session_factory import session_factory
+from core.db.session_factory import session_factory, create_sync_session, get_sync_session_maker
 from extensions.ext_database import db
 from libs.archive_storage import ArchiveStorageNotConfiguredError, get_archive_storage
 from models import (
@@ -249,7 +249,7 @@ def _delete_app_workflows(tenant_id: str, app_id: str):
 
 def _delete_app_workflow_runs(tenant_id: str, app_id: str):
     """Delete all workflow runs for an app using the service repository."""
-    session_maker = sessionmaker(bind=db.engine)
+    session_maker = get_sync_session_maker()
     workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_maker)
 
     deleted_count = workflow_run_repo.delete_runs_by_app(
@@ -263,7 +263,7 @@ def _delete_app_workflow_runs(tenant_id: str, app_id: str):
 
 def _delete_app_workflow_node_executions(tenant_id: str, app_id: str):
     """Delete all workflow node executions for an app using the service repository."""
-    session_maker = sessionmaker(bind=db.engine)
+    session_maker = get_sync_session_maker()
     node_execution_repo = DifyAPIRepositoryFactory.create_api_workflow_node_execution_repository(session_maker)
 
     deleted_count = node_execution_repo.delete_executions_by_app(

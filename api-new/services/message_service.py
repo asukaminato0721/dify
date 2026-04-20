@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from collections.abc import Sequence
 
 from pydantic import TypeAdapter
@@ -35,7 +36,7 @@ _app_model_config_adapter: TypeAdapter[AppModelConfigDict] = TypeAdapter(AppMode
 
 
 def _create_execution_extra_content_repository() -> ExecutionExtraContentRepository:
-    session_maker = sessionmaker(bind=db.engine, expire_on_commit=False)
+    session_maker = get_sync_session_maker()
     return SQLAlchemyExecutionExtraContentRepository(session_maker=session_maker)
 
 

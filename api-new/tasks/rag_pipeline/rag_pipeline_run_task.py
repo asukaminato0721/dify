@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import contextvars
 import json
 import logging
@@ -131,7 +132,7 @@ def run_single_rag_pipeline_task(rag_pipeline_invoke_entity: Mapping[str, Any], 
             workflow_thread_pool_id = rag_pipeline_invoke_entity_model.workflow_thread_pool_id
             application_generate_entity = rag_pipeline_invoke_entity_model.application_generate_entity
 
-            with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 # Load required entities
                 account = session.scalar(select(Account).where(Account.id == user_id).limit(1))
                 if not account:
@@ -157,7 +158,7 @@ def run_single_rag_pipeline_task(rag_pipeline_invoke_entity: Mapping[str, Any], 
                 entity = RagPipelineGenerateEntity.model_validate(application_generate_entity)
 
                 # Create workflow repositories
-                session_factory = sessionmaker(bind=db.engine, expire_on_commit=False)
+                session_factory = get_sync_session_maker()
                 workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
                     session_factory=session_factory,
                     user=account,

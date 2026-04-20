@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 import time as _time
@@ -71,7 +72,7 @@ class TriggerProviderService:
         """List all trigger subscriptions for the current tenant"""
         subscriptions: list[TriggerProviderSubscriptionApiEntity] = []
         workflows_in_use_map: dict[str, int] = {}
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             # Get all subscriptions
             subscriptions_db = session.scalars(
                 select(TriggerSubscription)
@@ -151,7 +152,7 @@ class TriggerProviderService:
         """
         try:
             provider_controller = TriggerManager.get_trigger_provider(tenant_id, provider_id)
-            with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 # Use distributed lock to prevent race conditions
                 lock_key = f"trigger_provider_create_lock:{tenant_id}_{provider_id}"
                 with redis_client.lock(lock_key, timeout=20):
@@ -253,7 +254,7 @@ class TriggerProviderService:
         :param expires_at: Optional new expiration timestamp
         :return: Success response with updated subscription info
         """
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # Use distributed lock to prevent race conditions on the same subscription
             lock_key = f"trigger_subscription_update_lock:{tenant_id}_{subscription_id}"
             with redis_client.lock(lock_key, timeout=20):
@@ -335,7 +336,7 @@ class TriggerProviderService:
         """
         Get a trigger subscription by the ID.
         """
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             subscription: TriggerSubscription | None = None
             if subscription_id:
                 subscription = session.scalar(
@@ -435,7 +436,7 @@ class TriggerProviderService:
         :param subscription_id: Subscription instance ID
         :return: New token info
         """
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             subscription = session.scalar(
                 select(TriggerSubscription)
                 .where(
@@ -515,7 +516,7 @@ class TriggerProviderService:
         """
         now_ts: int = int(now if now is not None else _time.time())
 
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             subscription = session.scalar(
                 select(TriggerSubscription)
                 .where(
@@ -597,7 +598,7 @@ class TriggerProviderService:
         provider_controller: PluginTriggerProviderController = TriggerManager.get_trigger_provider(
             tenant_id=tenant_id, provider_id=provider_id
         )
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             tenant_client = session.scalar(
                 select(TriggerOAuthTenantClient)
                 .where(
@@ -650,7 +651,7 @@ class TriggerProviderService:
         is_verified = PluginService.is_plugin_verified(tenant_id, provider_controller.plugin_unique_identifier)
         if not is_verified:
             return False
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             system_client = session.scalar(
                 select(TriggerOAuthSystemClient)
                 .where(
@@ -686,7 +687,7 @@ class TriggerProviderService:
             tenant_id=tenant_id, provider_id=provider_id
         )
 
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # Find existing custom client params
             custom_client = session.scalar(
                 select(TriggerOAuthTenantClient)
@@ -741,7 +742,7 @@ class TriggerProviderService:
         :param provider_id: Provider identifier
         :return: Masked OAuth client parameters
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             custom_client = session.scalar(
                 select(TriggerOAuthTenantClient)
                 .where(
@@ -778,7 +779,7 @@ class TriggerProviderService:
         :param provider_id: Provider identifier
         :return: Success response
         """
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             session.execute(
                 delete(TriggerOAuthTenantClient)
                 .where(
@@ -800,7 +801,7 @@ class TriggerProviderService:
         :param provider_id: Provider identifier
         :return: True if enabled, False otherwise
         """
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             custom_client = session.scalar(
                 select(TriggerOAuthTenantClient)
                 .where(
@@ -818,7 +819,7 @@ class TriggerProviderService:
         """
         Get a trigger subscription by the endpoint ID.
         """
-        with Session(db.engine, expire_on_commit=False) as session:
+        with create_sync_session() as session:
             subscription = session.scalar(
                 select(TriggerSubscription).where(TriggerSubscription.endpoint_id == endpoint_id).limit(1)
             )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import json
 from typing import Any, cast
 
@@ -7,7 +8,25 @@ import api_server.models.app as app_models
 from api_server.models.app import AppMode, AppModelConfig, Conversation, Message, MessageAgentThought
 
 
-def test_local_conversation_model_config_uses_app_model_config_when_no_override() -> None:
+class _AsyncSessionStub:
+    def __init__(self, scalar_results: list[object | None]) -> None:
+        self._scalar_results = list(scalar_results)
+
+    async def scalar(self, _stmt: object) -> object | None:
+        if self._scalar_results:
+            return self._scalar_results.pop(0)
+        return None
+
+
+def _session_context(session: _AsyncSessionStub):
+    @asynccontextmanager
+    async def _manager():
+        yield session
+
+    return _manager()
+
+
+async def test_local_conversation_model_config_uses_app_model_config_when_no_override() -> None:
     app_model_config = AppModelConfig(
         id="config-1",
         app_id="app-1",
@@ -46,24 +65,12 @@ def test_local_conversation_model_config_uses_app_model_config_when_no_override(
         dialogue_count=0,
         is_deleted=False,
     )
-
-    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
-
-    class _SessionStub:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def scalar(self, _stmt):
-            return app_model_config
-
-    app_models.configured_sync_session_factory.create_sync_session = cast(Any, lambda: _SessionStub())
+    original_session_context = app_models.db.session_context
+    app_models.db.session_context = cast(Any, lambda: _session_context(_AsyncSessionStub([app_model_config])))
     try:
-        result = conversation.model_config
+        result = await conversation.aload_model_config()
     finally:
-        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
+        app_models.db.session_context = original_session_context
 
     assert result["provider"] == "openai"
     assert result["model_id"] == "gpt-4o-mini"
@@ -219,12 +226,7 @@ def test_local_conversation_app_prefers_prefetched_app() -> None:
 
     setattr(conversation, "_cached_app", app)
 
-    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
-    app_models.configured_sync_session_factory.create_sync_session = cast(Any, lambda: (_ for _ in ()).throw(AssertionError))
-    try:
-        result = conversation.app
-    finally:
-        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
+    result = conversation.app
 
     assert result is app
 
@@ -271,12 +273,7 @@ def test_local_conversation_model_config_prefers_prefetched_config() -> None:
 
     setattr(conversation, "_cached_app_model_config", app_model_config)
 
-    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
-    app_models.configured_sync_session_factory.create_sync_session = cast(Any, lambda: (_ for _ in ()).throw(AssertionError))
-    try:
-        result = conversation.model_config
-    finally:
-        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
+    result = conversation.model_config
 
     assert result["provider"] == "openai"
     assert result["model_id"] == "gpt-4o-mini"

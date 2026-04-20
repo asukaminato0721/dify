@@ -60,6 +60,7 @@ from core.app.entities.task_entities import (
 )
 from core.app.task_pipeline.based_generate_task_pipeline import BasedGenerateTaskPipeline
 from core.base.tts import AppGeneratorTTSPublisher, AudioTrunk
+from core.db.session_factory import SyncSessionMakerAdapter
 from core.db.session_factory import session_factory as sync_session_factory
 from core.ops.ops_trace_manager import TraceQueueManager
 from core.workflow.system_variables import build_system_variables
@@ -90,7 +91,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
         user: Union[Account, EndUser],
         stream: bool,
         draft_var_saver_factory: DraftVariableSaverFactory,
-        session_factory: sessionmaker[Session] | Engine | None = None,
+        session_factory: sessionmaker[Session] | Engine | SyncSessionMakerAdapter | None = None,
     ):
         self._base_task_pipeline = BasedGenerateTaskPipeline(
             application_generate_entity=application_generate_entity,
@@ -264,7 +265,7 @@ class WorkflowAppGenerateTaskPipeline(GraphRuntimeStateSupport):
     def _database_session(self):
         """Context manager for database sessions."""
         session_factory = self._session_factory
-        if isinstance(session_factory, sessionmaker):
+        if isinstance(session_factory, sessionmaker) or callable(session_factory):
             with session_factory.begin() as session:
                 yield session
             return

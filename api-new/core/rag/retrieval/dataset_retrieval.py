@@ -20,7 +20,7 @@ from core.app.app_config.entities import (
 )
 from core.app.entities.app_invoke_entities import InvokeFrom, ModelConfigWithCredentialsEntity
 from core.callback_handler.index_tool_callback_handler import DatasetIndexToolCallbackHandler
-from core.db.session_factory import session_factory
+from core.db.session_factory import session_factory, create_sync_session, get_sync_session_maker
 from core.entities.agent_entities import PlanningStrategy
 from core.entities.model_entities import ModelStatus
 from core.memory.token_buffer_memory import TokenBufferMemory
@@ -888,7 +888,7 @@ class DatasetRetrieval:
                 self._send_trace_task(message_id, documents, timer)
                 return
 
-            with sessionmaker(bind=db.engine).begin() as session:
+            with get_sync_session_maker().begin() as session:
                 # Collect all document_ids and batch fetch DatasetDocuments
                 document_ids = {
                     doc.metadata["document_id"]

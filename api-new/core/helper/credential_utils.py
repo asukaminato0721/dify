@@ -2,6 +2,7 @@
 Credential utility functions for checking credential existence and policy compliance.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from core.entities import PluginCredentialType
 
 
@@ -20,7 +21,7 @@ def is_credential_exists(credential_id: str, credential_type: "PluginCredentialT
     from models.provider import ProviderCredential, ProviderModelCredential
     from models.tools import BuiltinToolProvider
 
-    with Session(db.engine) as session:
+    with create_sync_session() as session:
         if credential_type == PluginCredentialType.MODEL:
             # Check both pre-defined and custom model credentials using a single UNION query
             stmt = (

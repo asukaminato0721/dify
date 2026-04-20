@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field
+from collections.abc import Callable
+
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -57,14 +59,14 @@ class WorkflowResumptionContext(BaseModel):
 class PauseStateLayerConfig:
     """Configuration container for instantiating pause persistence layers."""
 
-    session_factory: Engine | sessionmaker[Session]
+    session_factory: Engine | sessionmaker[Session] | Callable[..., object]
     state_owner_user_id: str
 
 
 class PauseStatePersistenceLayer(GraphEngineLayer):
     def __init__(
         self,
-        session_factory: Engine | sessionmaker[Session],
+        session_factory: Engine | sessionmaker[Session] | Callable[..., object],
         generate_entity: WorkflowAppGenerateEntity | AdvancedChatAppGenerateEntity,
         state_owner_user_id: str,
     ):

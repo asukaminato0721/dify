@@ -1,2 +1,6 @@
 source_file | todo_file
 core/db/session_factory.py | done: default factory now returns AsyncSession; legacy sync callers use explicit sync helpers
+api_server/models/app.py | done: FastAPI-local lazy loaders now query through async sessions; sync properties use async compatibility bridge
+models/dataset.py | done: restore postponed annotation evaluation so async-port test collection stays green
+repo-wide Session/sessionmaker(db.engine) usage | done: direct sync SQLAlchemy constructor sites now route through async-backed session adapters
+services/workflow_draft_variable_service.py | done: draft variable loading/persistence now accepts async-backed session adapters instead of requiring a real sync Engine

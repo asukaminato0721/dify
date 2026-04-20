@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from collections.abc import Callable
 from functools import wraps
@@ -268,7 +269,7 @@ class WorkflowVariableCollectionApi(Resource):
             raise DraftWorkflowNotExist()
 
         # fetch draft workflow by app_model
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             draft_var_srv = WorkflowDraftVariableService(
                 session=session,
             )
@@ -321,7 +322,7 @@ class NodeVariableCollectionApi(Resource):
     @marshal_with(workflow_draft_variable_list_model)
     def get(self, app_model: App, node_id: str):
         validate_node_id(node_id)
-        with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             draft_var_srv = WorkflowDraftVariableService(
                 session=session,
             )
@@ -491,7 +492,7 @@ class VariableResetApi(Resource):
 
 
 def _get_variable_list(app_model: App, node_id) -> WorkflowDraftVariableList:
-    with sessionmaker(bind=db.engine, expire_on_commit=False).begin() as session:
+    with get_sync_session_maker().begin() as session:
         draft_var_srv = WorkflowDraftVariableService(
             session=session,
         )

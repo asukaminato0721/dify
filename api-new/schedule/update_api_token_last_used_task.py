@@ -7,6 +7,7 @@ This task runs periodically (default every 30 minutes) to flush those
 records into the database in a single batch operation.
 """
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 import time
 from datetime import datetime
@@ -82,7 +83,7 @@ def batch_update_api_token_last_used():
 
         # Update each token in its own short transaction to avoid long transactions
         for token, scope, usage_time in token_entries:
-            with Session(db.engine, expire_on_commit=False) as session, session.begin():
+            with create_sync_session() as session, session.begin():
                 stmt = (
                     update(ApiToken)
                     .where(

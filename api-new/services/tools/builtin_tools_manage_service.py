@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 from collections.abc import Mapping
@@ -46,7 +47,7 @@ class BuiltinToolManageService:
         delete custom oauth client params
         """
         tool_provider = ToolProviderID(provider)
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             session.execute(
                 delete(ToolOAuthTenantClient)
                 .where(
@@ -153,7 +154,7 @@ class BuiltinToolManageService:
         """
         update builtin tool provider
         """
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # get if the provider exists
             db_provider = session.scalar(
                 select(BuiltinToolProvider)
@@ -223,7 +224,7 @@ class BuiltinToolManageService:
         """
         add builtin tool provider
         """
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             try:
                 lock = f"builtin_tool_provider_create_lock:{tenant_id}_{provider}"
                 with redis_client.lock(lock, timeout=20):
@@ -383,7 +384,7 @@ class BuiltinToolManageService:
         """
         delete tool provider
         """
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             db_provider = session.scalar(
                 select(BuiltinToolProvider)
                 .where(
@@ -412,7 +413,7 @@ class BuiltinToolManageService:
         """
         set default provider
         """
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             # get provider
             target_provider = session.scalar(
                 select(BuiltinToolProvider)
@@ -446,7 +447,7 @@ class BuiltinToolManageService:
         check if oauth system client exists
         """
         tool_provider = ToolProviderID(provider_name)
-        with Session(db.engine, autoflush=False) as session:
+        with create_sync_session() as session:
             system_client = session.scalar(
                 select(ToolOAuthSystemClient)
                 .where(
@@ -463,7 +464,7 @@ class BuiltinToolManageService:
         check if oauth custom client is enabled
         """
         tool_provider = ToolProviderID(provider)
-        with Session(db.engine, autoflush=False) as session:
+        with create_sync_session() as session:
             user_client = session.scalar(
                 select(ToolOAuthTenantClient)
                 .where(
@@ -488,7 +489,7 @@ class BuiltinToolManageService:
             config=[x.to_basic_provider_config() for x in provider_controller.get_oauth_client_schema()],
             cache=NoOpProviderCredentialCache(),
         )
-        with Session(db.engine, autoflush=False) as session:
+        with create_sync_session() as session:
             user_client = session.scalar(
                 select(ToolOAuthTenantClient)
                 .where(
@@ -602,7 +603,7 @@ class BuiltinToolManageService:
         1.if the default provider exists, return the default provider
         2.if the default provider does not exist, return the oldest provider
         """
-        with Session(db.engine, autoflush=False) as session:
+        with create_sync_session() as session:
             try:
                 full_provider_name = provider_name
                 provider_id_entity = ToolProviderID(provider_name)
@@ -674,7 +675,7 @@ class BuiltinToolManageService:
         if not isinstance(provider_controller, (BuiltinToolProviderController, PluginToolProviderController)):
             raise ValueError(f"Provider {provider} is not a builtin or plugin provider")
 
-        with sessionmaker(bind=db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             custom_client_params = session.scalar(
                 select(ToolOAuthTenantClient)
                 .where(
@@ -717,7 +718,7 @@ class BuiltinToolManageService:
         """
         get custom oauth client params
         """
-        with Session(db.engine) as session:
+        with create_sync_session() as session:
             tool_provider = ToolProviderID(provider)
             custom_oauth_client_params = session.scalar(
                 select(ToolOAuthTenantClient)

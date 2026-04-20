@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import logging
 from typing import cast
 
@@ -45,7 +46,7 @@ def sync_schedule_from_workflow(tenant_id: str, app_id: str, workflow: Workflow)
     Returns:
         Updated or created WorkflowSchedulePlan, or None if no schedule node
     """
-    with sessionmaker(db.engine).begin() as session:
+    with get_sync_session_maker().begin() as session:
         schedule_config = ScheduleService.extract_schedule_config(workflow)
 
         existing_plan = session.scalar(

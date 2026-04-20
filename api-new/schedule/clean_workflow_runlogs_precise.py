@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import datetime
 import logging
 import time
@@ -49,7 +50,7 @@ def clean_workflow_runlogs_precise() -> None:
 
     retention_days = dify_config.WORKFLOW_LOG_RETENTION_DAYS
     cutoff_date = datetime.datetime.now() - datetime.timedelta(days=retention_days)
-    session_factory = sessionmaker(db.engine, expire_on_commit=False)
+    session_factory = get_sync_session_maker()
     workflow_run_repo = DifyAPIRepositoryFactory.create_api_workflow_run_repository(session_factory)
     workflow_ids = _get_specific_workflow_ids()
     workflow_ids_filter = workflow_ids or None

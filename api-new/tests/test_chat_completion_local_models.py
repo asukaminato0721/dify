@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import json
-from typing import Any
+from typing import Any, cast
 
 import api_server.models.app as app_models
 from api_server.models.app import App, AppMode, AppModelConfig
@@ -29,18 +30,20 @@ def _build_app_model_config() -> AppModelConfig:
     )
 
 
-class _SessionStub:
+class _AsyncSessionStub:
     def __init__(self, scalar_result: object | None) -> None:
         self._scalar_result = scalar_result
 
-    def __enter__(self) -> "_SessionStub":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> bool:
-        return False
-
-    def scalar(self, _stmt: object) -> object | None:
+    async def scalar(self, _stmt: object) -> object | None:
         return self._scalar_result
+
+
+def _session_context(session: _AsyncSessionStub):
+    @asynccontextmanager
+    async def _manager():
+        yield session
+
+    return _manager()
 
 
 def test_chat_config_manager_accepts_local_fastapi_models() -> None:
@@ -95,7 +98,7 @@ def test_completion_config_manager_accepts_local_fastapi_models() -> None:
     assert app_config.app_mode == AppMode.COMPLETION
 
 
-def test_local_app_exposes_app_model_config_property() -> None:
+async def test_local_app_exposes_async_app_model_config_loader() -> None:
     app = App(
         id="app-1",
         tenant_id="tenant-1",
@@ -114,12 +117,12 @@ def test_local_app_exposes_app_model_config_property() -> None:
         use_icon_as_answer_icon=False,
     )
     config = _build_app_model_config()
-    original_create_sync_session = app_models.configured_sync_session_factory.create_sync_session
-    app_models.configured_sync_session_factory.create_sync_session = lambda: _SessionStub(config)  # type: ignore[assignment]
+    original_session_context = app_models.db.session_context
+    app_models.db.session_context = cast(Any, lambda: _session_context(_AsyncSessionStub(config)))
     try:
-        result = app.app_model_config
+        result = await app.aload_app_model_config()
     finally:
-        app_models.configured_sync_session_factory.create_sync_session = original_create_sync_session
+        app_models.db.session_context = original_session_context
 
     assert result is config
 

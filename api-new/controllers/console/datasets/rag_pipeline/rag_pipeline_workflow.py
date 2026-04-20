@@ -1,3 +1,4 @@
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 import json
 import logging
 from typing import Any, Literal, cast
@@ -578,7 +579,7 @@ class PublishedAllRagPipelineApi(Resource):
                 raise Forbidden()
 
         rag_pipeline_service = RagPipelineService()
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             workflows, has_more = rag_pipeline_service.get_all_published_workflow(
                 session=session,
                 pipeline=pipeline,
@@ -650,7 +651,7 @@ class RagPipelineByIdApi(Resource):
         rag_pipeline_service = RagPipelineService()
 
         # Create a session and manage the transaction
-        with sessionmaker(db.engine, expire_on_commit=False).begin() as session:
+        with get_sync_session_maker().begin() as session:
             workflow = rag_pipeline_service.update_workflow(
                 session=session,
                 workflow_id=workflow_id,
@@ -678,7 +679,7 @@ class RagPipelineByIdApi(Resource):
 
         workflow_service = WorkflowService()
 
-        with sessionmaker(db.engine).begin() as session:
+        with get_sync_session_maker().begin() as session:
             try:
                 workflow_service.delete_workflow(
                     session=session,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.db.session_factory import create_sync_session, get_sync_session_maker
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
@@ -120,7 +121,7 @@ class HumanInputDeliveryTestService:
 class EmailDeliveryTestHandler:
     def __init__(self, session_factory: sessionmaker | Engine | None = None) -> None:
         if session_factory is None:
-            session_factory = sessionmaker(bind=db.engine)
+            session_factory = get_sync_session_maker()
         elif isinstance(session_factory, Engine):
             session_factory = sessionmaker(bind=session_factory)
         self._session_factory = session_factory
