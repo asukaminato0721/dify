@@ -1,7 +1,7 @@
 FastAPI Port Roadmap
 ====================
 
-Last updated: 2026-04-18
+Last updated: 2026-04-20
 
 Done
 ----
@@ -205,8 +205,8 @@ Done
   - `GET /v1/datasets/{dataset_id}/documents/{document_id}`
 - Ported dataset-token service API document download endpoint:
   - `GET /v1/datasets/{dataset_id}/documents/{document_id}/download`
-- Ported dataset-token service API document download endpoint:
-  - `GET /v1/datasets/{dataset_id}/documents/{document_id}/download`
+- Ported dataset-token service API document batch download endpoint:
+  - `POST /v1/datasets/{dataset_id}/documents/download-zip`
 - Added a minimal FastAPI test file in `tests/test_app_routes.py`.
 - Added focused auth extractor tests in `tests/test_auth_security.py`.
 - Added focused service API route tests in `tests/test_service_api_routes.py`.
@@ -338,9 +338,17 @@ Done
 - Removed the active easy-ui save path’s redundant sync reload of `Message` and `Conversation`; it now updates the cached local message object and persists it with a direct `UPDATE` statement.
 - Expanded focused easy-ui/message-cycle verification now also passes: `25 passed` for `tests/test_easy_ui_generate_task_pipeline.py`, `tests/test_message_cycle_manager.py`, `tests/test_base_agent_runner.py`, `tests/test_token_buffer_memory.py`, `tests/test_agent_chat_local_models.py`, and `tests/test_generation_service.py`.
 - Targeted `pyrefly` is clean for the active easy-ui save-message slice.
+- Refreshed the FastAPI route inventory on 2026-04-20 and re-ran the current route verification slice: `81 passed` for `tests/test_app_routes.py` and `tests/test_service_api_routes.py`.
 
 Current status
 --------------
+- A fresh route inventory on 2026-04-20 shows `api-new` currently registers 110 FastAPI handlers across 11 route modules under `api_server/routes/`.
+- Compared with the legacy Flask top-level controller families:
+  - The public `web` surface is represented on the active FastAPI route set.
+  - The `files` blueprint is only partially ported; preview/logo routes are active, while `/files/upload/for-plugin` and `/files/tools/{file_id}.{extension}` are still legacy-only.
+  - The `/v1` service API is mostly ported at the route layer (56 FastAPI handlers vs. 63 legacy `@service_api_ns.route` declarations), but dataset hit-testing/retrieve, document segment and child-chunk management, and service API rag-pipeline workflow routes still only exist in the Flask controllers.
+  - Only the console bootstrap/setup/version/system-feature/init endpoints are active on FastAPI; the authenticated console management surface is still legacy-only.
+  - No FastAPI equivalents are registered yet for the legacy `inner_api`, `mcp`, or `trigger` blueprints.
 - The active FastAPI runtime slice is type-clean under targeted `pyrefly` checks.
 - The current verified FastAPI route surface is:
   - `/health`
@@ -427,6 +435,7 @@ Current status
   - `/v1/datasets/{dataset_id}/metadata/built-in/{action}`
   - `/v1/datasets/{dataset_id}/documents/metadata`
   - `/v1/datasets/{dataset_id}/documents`
+  - `/v1/datasets/{dataset_id}/documents/download-zip`
   - `/v1/datasets/{dataset_id}/documents/{batch}/indexing-status`
   - `/v1/datasets/{dataset_id}/documents/{document_id}`
   - `/v1/datasets/{dataset_id}/documents/{document_id}/download`
@@ -499,6 +508,13 @@ Current status
 
 Immediate blockers
 ------------------
+- Large controller families are still Flask-only:
+  - most of `controllers/console`
+  - all of `controllers/inner_api`
+  - all of `controllers/mcp`
+  - all of `controllers/trigger`
+  - the remaining `controllers/files` plugin/tool download endpoints
+  - the remaining `controllers/service_api` dataset hit-testing, segment, child-chunk, and rag-pipeline routes
 - Large parts of the copied code still assume:
   - Flask request/session globals
   - Flask-Login
@@ -510,32 +526,24 @@ Immediate blockers
 
 Next steps
 ----------
-1. Continue porting the next public route family.
-   - Candidate next slice: move the public workflow-backed generation persistence/response flow from sync companion helpers to async-native execution/persistence services.
-   - Prefer local async models/services under `api_server/` rather than extending Flask-era services.
+1. Finish the remaining `/v1` dataset slice.
+   - Port dataset hit-testing/retrieve.
+   - Port document segment and child-chunk CRUD.
+   - Port service API rag-pipeline workflow routes.
 
-2. Expand the FastAPI-native domain layer.
-   - Continue extracting minimal async models/services for features actually exposed by routes.
+2. Finish the remaining `files` blueprint gap.
+   - Port `/files/upload/for-plugin`.
+   - Port `/files/tools/{file_id}.{extension}`.
+
+3. Continue shrinking sync generation seams.
+   - Move the public workflow-backed generation persistence/response flow from sync companion helpers to async-native execution/persistence services.
+   - Eliminate the remaining sync companion-engine dependencies from active FastAPI code paths after the copied workflow runtime is ported end to end.
+
+4. Pick the next full legacy blueprint family after `/v1`.
+   - Prioritize by runtime need between `inner_api`, `trigger`, and the authenticated `console` surface.
    - Keep new runtime code under `api_server/` instead of extending Flask-era modules.
 
-3. Port controller groups incrementally.
-   - Bootstrap/authentication
-   - Console public endpoints
-   - Web public endpoints
-   - Console authenticated endpoints
-   - Service API endpoints
-
-4. Replace sync DB access.
-   - Eliminate the remaining sync companion-engine dependencies from active FastAPI code paths after the copied workflow runtime is ported end to end.
-   - Move active repositories/services to `AsyncSession`.
-
-5. Replace Flask-specific infrastructure.
-   - Auth/session wrappers
-   - Error translation
-   - request-context helpers
-   - extension bootstrapping
-
-6. Widen verification after each slice.
+5. Widen verification after each slice.
    - `pyrefly` on the active FastAPI package
    - pytest on newly ported routes/services
    - only after a package is active, run broader type coverage on it
