@@ -7,8 +7,10 @@ import logging
 from collections.abc import Callable
 
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 
+from core.db.session_factory import SyncSessionMakerAdapter
 from core.repositories.factory import WorkflowExecutionRepository
 from graphon.entities import WorkflowExecution
 from graphon.enums import WorkflowExecutionStatus, WorkflowType
@@ -39,7 +41,7 @@ class SQLAlchemyWorkflowExecutionRepository(WorkflowExecutionRepository):
 
     def __init__(
         self,
-        session_factory: sessionmaker | Engine | Callable[..., object],
+        session_factory: sessionmaker | async_sessionmaker[AsyncSession] | Engine | Callable[..., object],
         user: Account | EndUser,
         app_id: str | None,
         triggered_from: WorkflowRunTriggeredFrom | None,
@@ -54,7 +56,9 @@ class SQLAlchemyWorkflowExecutionRepository(WorkflowExecutionRepository):
             triggered_from: Source of the execution trigger (DEBUGGING or APP_RUN)
         """
         # If an engine is provided, create a sessionmaker from it
-        if isinstance(session_factory, Engine):
+        if isinstance(session_factory, async_sessionmaker):
+            self._session_factory = SyncSessionMakerAdapter(session_factory)
+        elif isinstance(session_factory, Engine):
             self._session_factory = sessionmaker(bind=session_factory, expire_on_commit=False)
         elif isinstance(session_factory, sessionmaker) or callable(session_factory):
             self._session_factory = session_factory

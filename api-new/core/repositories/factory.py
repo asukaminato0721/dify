@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 
 from configs import dify_config
@@ -62,7 +63,7 @@ class DifyCoreRepositoryFactory:
     @classmethod
     def create_workflow_execution_repository(
         cls,
-        session_factory: sessionmaker | Engine | SyncSessionMakerAdapter,
+        session_factory: sessionmaker | async_sessionmaker[AsyncSession] | Engine | SyncSessionMakerAdapter,
         user: Account | EndUser,
         app_id: str,
         triggered_from: WorkflowRunTriggeredFrom,
@@ -98,7 +99,7 @@ class DifyCoreRepositoryFactory:
     @classmethod
     def create_workflow_node_execution_repository(
         cls,
-        session_factory: sessionmaker | Engine | SyncSessionMakerAdapter,
+        session_factory: sessionmaker | async_sessionmaker[AsyncSession] | Engine | SyncSessionMakerAdapter,
         user: Account | EndUser,
         app_id: str,
         triggered_from: WorkflowNodeExecutionTriggeredFrom,

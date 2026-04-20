@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from collections.abc import Callable
 
 from sqlalchemy import Engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.app.entities.app_invoke_entities import AdvancedChatAppGenerateEntity, WorkflowAppGenerateEntity
@@ -59,14 +60,14 @@ class WorkflowResumptionContext(BaseModel):
 class PauseStateLayerConfig:
     """Configuration container for instantiating pause persistence layers."""
 
-    session_factory: Engine | sessionmaker[Session] | Callable[..., object]
+    session_factory: Engine | sessionmaker[Session] | async_sessionmaker[AsyncSession] | Callable[..., object]
     state_owner_user_id: str
 
 
 class PauseStatePersistenceLayer(GraphEngineLayer):
     def __init__(
         self,
-        session_factory: Engine | sessionmaker[Session] | Callable[..., object],
+        session_factory: Engine | sessionmaker[Session] | async_sessionmaker[AsyncSession] | Callable[..., object],
         generate_entity: WorkflowAppGenerateEntity | AdvancedChatAppGenerateEntity,
         state_owner_user_id: str,
     ):

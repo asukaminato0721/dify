@@ -13,10 +13,12 @@ import psycopg2.errors
 from sqlalchemy import UnaryExpression, asc, desc, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 from tenacity import before_sleep_log, retry, retry_if_exception, stop_after_attempt
 
 from configs import dify_config
+from core.db.session_factory import SyncSessionMakerAdapter
 from core.repositories.factory import OrderConfig, WorkflowNodeExecutionRepository
 from extensions.ext_storage import storage
 from graphon.entities import WorkflowNodeExecution
@@ -62,7 +64,7 @@ class SQLAlchemyWorkflowNodeExecutionRepository(WorkflowNodeExecutionRepository)
 
     def __init__(
         self,
-        session_factory: sessionmaker | Engine | Callable[..., object],
+        session_factory: sessionmaker | async_sessionmaker[AsyncSession] | Engine | Callable[..., object],
         user: Account | EndUser,
         app_id: str | None,
         triggered_from: WorkflowNodeExecutionTriggeredFrom | None,
@@ -77,14 +79,17 @@ class SQLAlchemyWorkflowNodeExecutionRepository(WorkflowNodeExecutionRepository)
             triggered_from: Source of the execution trigger (SINGLE_STEP or WORKFLOW_RUN)
         """
         # If an engine is provided, create a sessionmaker from it
-        if isinstance(session_factory, Engine):
-            self._session_factory = sessionmaker(bind=session_factory, expire_on_commit=False)
+        if isinstance(session_factory, async_sessionmaker):
+            normalized_session_factory = SyncSessionMakerAdapter(session_factory)
+        elif isinstance(session_factory, Engine):
+            normalized_session_factory = sessionmaker(bind=session_factory, expire_on_commit=False)
         elif isinstance(session_factory, sessionmaker) or callable(session_factory):
-            self._session_factory = session_factory
+            normalized_session_factory = session_factory
         else:
             raise ValueError(
                 f"Invalid session_factory type {type(session_factory).__name__}; expected sessionmaker or Engine"
             )
+        self._session_factory = normalized_session_factory
 
         # Extract tenant_id from user
         tenant_id = extract_tenant_id(user)
@@ -107,7 +112,7 @@ class SQLAlchemyWorkflowNodeExecutionRepository(WorkflowNodeExecutionRepository)
         self._node_execution_cache: dict[str, WorkflowNodeExecutionModel] = {}
 
         # Initialize FileService for handling offloaded data
-        self._file_service = FileService(session_factory)
+        self._file_service = FileService(normalized_session_factory)
 
     def _create_truncator(self) -> VariableTruncator:
         return VariableTruncator(

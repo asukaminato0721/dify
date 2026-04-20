@@ -96,7 +96,6 @@ from core.app.entities.task_entities import (
 from core.app.layers.pause_state_persist_layer import PauseStateLayerConfig, PauseStatePersistenceLayer
 from core.app.task_pipeline.easy_ui_based_generate_task_pipeline import EasyUIBasedGenerateTaskPipeline
 from core.app.task_pipeline.message_file_utils import MessageFileInfoDict, prepare_file_dict
-from core.db.session_factory import SyncSessionMakerAdapter
 from core.db.session_factory import session_factory as configured_sync_session_factory
 from core.model_manager import ModelInstance
 from core.ops.ops_trace_manager import TraceQueueManager
@@ -347,17 +346,6 @@ def _ensure_supported_features(
             "external_data_tools_unavailable",
             "External data tool generation is not ported to the FastAPI runtime yet.",
         )
-
-
-def _get_legacy_sync_session_maker() -> SyncSessionMakerAdapter:
-    """Return the configured sync session maker for copied workflow seams.
-
-    The active FastAPI slice still drives a copied sync-first workflow runtime.
-    That runtime should consume the companion session factory configured during
-    async database bootstrap instead of probing `db.engine.sync_engine` ad hoc.
-    """
-
-    return configured_sync_session_factory.get_sync_session_maker()
 
 
 def _prepare_workflow_generation_entity(
@@ -1080,16 +1068,16 @@ def _start_native_public_advanced_chat(
     message = prepared.message
     application_generate_entity = prepared.application_generate_entity
     dialogue_count = prepared.dialogue_count
-    sync_session_factory = _get_legacy_sync_session_maker()
+    runtime_session_maker = configured_sync_session_factory.get_session_maker()
 
     workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-        session_factory=sync_session_factory,
+        session_factory=runtime_session_maker,
         user=end_user,
         app_id=application_generate_entity.app_config.app_id,
         triggered_from=WorkflowRunTriggeredFrom.APP_RUN,
     )
     workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-        session_factory=sync_session_factory,
+        session_factory=runtime_session_maker,
         user=end_user,
         app_id=application_generate_entity.app_config.app_id,
         triggered_from=WorkflowNodeExecutionTriggeredFrom.WORKFLOW_RUN,
@@ -1103,7 +1091,7 @@ def _start_native_public_advanced_chat(
         message_id=message.id,
     )
     pause_state_config = PauseStateLayerConfig(
-        session_factory=sync_session_factory,
+        session_factory=runtime_session_maker,
         state_owner_user_id=workflow.created_by or end_user.id,
     )
 
@@ -1388,16 +1376,16 @@ def _start_native_public_workflow(
     workflow = prepared.workflow
     end_user = prepared.end_user
     application_generate_entity = prepared.application_generate_entity
-    sync_session_factory = _get_legacy_sync_session_maker()
+    runtime_session_maker = configured_sync_session_factory.get_session_maker()
 
     workflow_execution_repository = DifyCoreRepositoryFactory.create_workflow_execution_repository(
-        session_factory=sync_session_factory,
+        session_factory=runtime_session_maker,
         user=end_user,
         app_id=application_generate_entity.app_config.app_id,
         triggered_from=WorkflowRunTriggeredFrom.APP_RUN,
     )
     workflow_node_execution_repository = DifyCoreRepositoryFactory.create_workflow_node_execution_repository(
-        session_factory=sync_session_factory,
+        session_factory=runtime_session_maker,
         user=end_user,
         app_id=application_generate_entity.app_config.app_id,
         triggered_from=WorkflowNodeExecutionTriggeredFrom.WORKFLOW_RUN,
@@ -1413,7 +1401,7 @@ def _start_native_public_workflow(
     if workflow_owner_id is None:
         raise bad_request("app_unavailable", "App unavailable, please refresh and try again.")
     pause_state_config = PauseStateLayerConfig(
-        session_factory=sync_session_factory,
+        session_factory=runtime_session_maker,
         state_owner_user_id=workflow_owner_id,
     )
 

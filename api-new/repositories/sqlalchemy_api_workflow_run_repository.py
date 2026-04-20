@@ -31,8 +31,10 @@ import sqlalchemy as sa
 from pydantic import ValidationError
 from sqlalchemy import and_, delete, func, null, or_, select, tuple_
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from core.db.session_factory import SyncSessionMakerAdapter
 from extensions.ext_storage import storage
 from graphon.entities.pause_reason import HumanInputRequired, PauseReason, PauseReasonType, SchedulingPause
 from graphon.enums import WorkflowExecutionStatus, WorkflowType
@@ -112,14 +114,17 @@ class DifyAPISQLAlchemyWorkflowRunRepository(APIWorkflowRunRepository):
         session_maker: SQLAlchemy sessionmaker instance for database connections
     """
 
-    def __init__(self, session_maker: sessionmaker[Session]):
+    def __init__(self, session_maker: sessionmaker[Session] | async_sessionmaker[AsyncSession]):
         """
         Initialize the repository with a sessionmaker.
 
         Args:
             session_maker: SQLAlchemy sessionmaker for database connections
         """
-        self._session_maker = session_maker
+        if isinstance(session_maker, async_sessionmaker):
+            self._session_maker = SyncSessionMakerAdapter(session_maker)
+        else:
+            self._session_maker = session_maker
 
     def get_paginated_workflow_runs(
         self,

@@ -19,8 +19,8 @@ from api_server.errors import ApiError
 from api_server.models.app import AppMode
 from api_server.services.generation import (
     AsyncWebGenerationService,
+    _start_native_public_workflow,
     _create_completion_message,
-    _get_legacy_sync_session_maker,
     _prepare_native_public_agent_chat,
     _prefetch_agent_chat_memory_async,
     _run_advanced_chat_runner,
@@ -180,17 +180,49 @@ async def test_run_workflow_passes_workflow_id_override() -> None:
     )
 
 
-def test_get_legacy_sync_session_maker_uses_configured_factory() -> None:
+def test_start_native_public_workflow_uses_async_session_maker_factory() -> None:
     expected = object()
+    prepared = SimpleNamespace(
+        app_model=SimpleNamespace(mode="workflow"),
+        workflow=SimpleNamespace(id="workflow-1", created_by="owner"),
+        end_user=SimpleNamespace(id="end-user-1"),
+        application_generate_entity=SimpleNamespace(
+            app_config=SimpleNamespace(app_id="app-1", sensitive_word_avoidance=None),
+            task_id="task-1",
+        ),
+    )
+    worker_stub = SimpleNamespace(start=MagicMock())
+    pipeline_stub = SimpleNamespace(process=MagicMock(return_value={"workflow_run_id": "run-1"}))
 
     with patch(
-        "api_server.services.generation.configured_sync_session_factory.get_sync_session_maker",
+        "api_server.services.generation.configured_sync_session_factory.get_session_maker",
         return_value=expected,
-    ) as factory_mock:
-        session_maker = _get_legacy_sync_session_maker()
+    ) as factory_mock, patch(
+        "api_server.services.generation.DifyCoreRepositoryFactory.create_workflow_execution_repository",
+        return_value=object(),
+    ), patch(
+        "api_server.services.generation.DifyCoreRepositoryFactory.create_workflow_node_execution_repository",
+        return_value=object(),
+    ), patch(
+        "api_server.services.generation.threading.Thread",
+        return_value=worker_stub,
+    ), patch(
+        "api_server.services.generation.WorkflowAppGenerateTaskPipeline",
+        return_value=pipeline_stub,
+    ), patch(
+        "api_server.services.generation.WorkflowAppGenerateResponseConverter.convert",
+        side_effect=lambda *, response, invoke_from: response,
+    ), patch(
+        "api_server.services.generation.BaseAppGenerator.convert_to_event_stream",
+        side_effect=lambda response: response,
+    ), patch(
+        "core.app.apps.base_app_queue_manager.redis_client.setex",
+    ):
+        response = _start_native_public_workflow(prepared=cast(Any, prepared), streaming=False)
 
-    assert session_maker is expected
+    assert response == {"workflow_run_id": "run-1"}
     factory_mock.assert_called_once_with()
+    worker_stub.start.assert_called_once_with()
 
 
 async def test_create_completion_message_commits_async_session() -> None:
