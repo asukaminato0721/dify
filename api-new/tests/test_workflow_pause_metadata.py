@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
+from core.app.apps.advanced_chat.generate_task_pipeline import AdvancedChatAppGenerateTaskPipeline
 from api_server.models.app import EndUser
 from core.app.apps.common.workflow_response_converter import WorkflowResponseConverter
 from core.app.entities.app_invoke_entities import WorkflowAppGenerateEntity
 from core.app.entities.app_invoke_entities import InvokeFrom
+from core.app.entities.queue_entities import QueueHumanInputFormFilledEvent
 from core.app.entities.queue_entities import QueueWorkflowPausedEvent
 from core.app.entities.task_entities import HumanInputRequiredResponse, WorkflowPauseStreamResponse
 from graphon.entities import WorkflowStartReason
@@ -132,3 +134,41 @@ def test_workflow_pause_to_stream_response_uses_reason_metadata() -> None:
     assert pause_response.data.paused_nodes == ["node-1"]
     assert pause_response.data.total_tokens == 12
     assert pause_response.data.total_steps == 3
+
+
+def test_advanced_chat_human_input_filled_event_uses_event_form_id() -> None:
+    pipeline = cast(AdvancedChatAppGenerateTaskPipeline, AdvancedChatAppGenerateTaskPipeline.__new__(AdvancedChatAppGenerateTaskPipeline))
+    pipeline._application_generate_entity = cast(Any, _GenerateEntityStub(inputs={}, invoke_from=InvokeFrom.WEB_APP))
+    setattr(pipeline._application_generate_entity, "task_id", "task-1")
+    calls: list[tuple[str | None, str | None]] = []
+    pipeline._persist_human_input_extra_content = lambda *, node_id=None, form_id=None: calls.append((node_id, form_id))  # type: ignore[method-assign]
+    pipeline._workflow_response_converter = cast(
+        Any,
+        type(
+            "_ConverterStub",
+            (),
+            {
+                "human_input_form_filled_to_stream_response": staticmethod(
+                    lambda *, event, task_id: {"event_form_id": event.form_id, "task_id": task_id}
+                )
+            },
+        )(),
+    )
+
+    responses = list(
+        pipeline._handle_human_input_form_filled_event(
+            QueueHumanInputFormFilledEvent(
+                node_execution_id="node-exec-1",
+                form_id="form-1",
+                node_id="node-1",
+                node_type="human_input",
+                node_title="Review request",
+                rendered_content="Approved",
+                action_id="approve",
+                action_text="Approve",
+            )
+        )
+    )
+
+    assert calls == [("node-1", "form-1")]
+    assert responses == [{"event_form_id": "form-1", "task_id": "task-1"}]

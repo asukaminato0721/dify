@@ -427,6 +427,7 @@ class WorkflowBasedAppRunner:
             self._publish_event(
                 QueueHumanInputFormFilledEvent(
                     node_execution_id=event.id,
+                    form_id=event.form_id,
                     node_id=event.node_id,
                     node_type=event.node_type,
                     node_title=event.node_title,

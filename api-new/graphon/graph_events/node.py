@@ -76,6 +76,7 @@ class NodeRunRetryEvent(NodeRunStartedEvent):
 class NodeRunHumanInputFormFilledEvent(GraphNodeEventBase):
     """Emitted when a HumanInput form is submitted and before the node finishes."""
 
+    form_id: str = Field(..., description="HumanInput form id")
     node_title: str = Field(..., description="HumanInput node title")
     rendered_content: str = Field(
         ..., description="Markdown content rendered with user inputs."

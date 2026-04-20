@@ -73,7 +73,6 @@ from core.app.task_pipeline.message_cycle_manager import MessageCycleManager
 from core.base.tts import AppGeneratorTTSPublisher, AudioTrunk
 from core.db.session_factory import session_factory
 from core.ops.ops_trace_manager import TraceQueueManager
-from core.repositories.human_input_repository import HumanInputFormRepositoryImpl
 from core.workflow.file_reference import resolve_file_record_id
 from core.workflow.system_variables import build_system_variables
 from graphon.entities.pause_reason import HumanInputRequired
@@ -747,7 +746,7 @@ class AdvancedChatAppGenerateTaskPipeline(GraphRuntimeStateSupport):
         self, event: QueueHumanInputFormFilledEvent, **kwargs
     ) -> Generator[StreamResponse, None, None]:
         """Handle human input form filled events."""
-        self._persist_human_input_extra_content(node_id=event.node_id)
+        self._persist_human_input_extra_content(form_id=event.form_id, node_id=event.node_id)
         yield self._workflow_response_converter.human_input_form_filled_to_stream_response(
             event=event, task_id=self._application_generate_entity.task_id
         )
@@ -765,16 +764,12 @@ class AdvancedChatAppGenerateTaskPipeline(GraphRuntimeStateSupport):
             return
 
         if form_id is None:
-            if node_id is None:
-                return
-            form_id = self._load_human_input_form_id(node_id=node_id)
-            if form_id is None:
-                logger.warning(
-                    "HumanInput form not found for workflow run %s node %s",
-                    self._workflow_run_id,
-                    node_id,
-                )
-                return
+            logger.warning(
+                "HumanInput form id missing for workflow run %s node %s",
+                self._workflow_run_id,
+                node_id,
+            )
+            return
 
         with self._database_session() as session:
             exists_stmt = select(HumanInputContent).where(
@@ -791,16 +786,6 @@ class AdvancedChatAppGenerateTaskPipeline(GraphRuntimeStateSupport):
                 form_id=form_id,
             )
             session.add(content)
-
-    def _load_human_input_form_id(self, *, node_id: str) -> str | None:
-        form_repository = HumanInputFormRepositoryImpl(
-            tenant_id=self._workflow_tenant_id,
-            workflow_execution_id=self._workflow_run_id,
-        )
-        form = form_repository.get_form(node_id)
-        if form is None:
-            return None
-        return form.id
 
     def _handle_agent_log_event(self, event: QueueAgentLogEvent, **kwargs) -> Generator[StreamResponse, None, None]:
         """Handle agent log events."""
