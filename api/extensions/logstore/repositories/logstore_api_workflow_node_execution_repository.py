@@ -9,7 +9,7 @@ import logging
 import time
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, override
 
 from sqlalchemy.orm import sessionmaker
 
@@ -130,6 +130,7 @@ class LogstoreAPIWorkflowNodeExecutionRepository(DifyAPIWorkflowNodeExecutionRep
         logger.debug("LogstoreAPIWorkflowNodeExecutionRepository.__init__: initializing")
         self.logstore_client = AliyunLogStore()
 
+    @override
     def get_node_last_execution(
         self,
         tenant_id: str,
@@ -162,12 +163,12 @@ class LogstoreAPIWorkflowNodeExecutionRepository(DifyAPIWorkflowNodeExecutionRep
                 # Use PG protocol with SQL query (get latest version of each record)
                 sql_query = f"""
                     SELECT * FROM (
-                        SELECT *, 
+                        SELECT *,
                             ROW_NUMBER() OVER (PARTITION BY id ORDER BY log_version DESC) as rn
                         FROM "{AliyunLogStore.workflow_node_execution_logstore}"
-                        WHERE tenant_id = '{escaped_tenant_id}' 
-                          AND app_id = '{escaped_app_id}' 
-                          AND workflow_id = '{escaped_workflow_id}' 
+                        WHERE tenant_id = '{escaped_tenant_id}'
+                          AND app_id = '{escaped_app_id}'
+                          AND workflow_id = '{escaped_workflow_id}'
                           AND node_id = '{escaped_node_id}'
                           AND __time__ > 0
                     ) AS subquery WHERE rn = 1
@@ -238,6 +239,7 @@ class LogstoreAPIWorkflowNodeExecutionRepository(DifyAPIWorkflowNodeExecutionRep
             logger.exception("Failed to get node last execution from LogStore")
             raise
 
+    @override
     def get_executions_by_workflow_run(
         self,
         tenant_id: str,
@@ -267,11 +269,11 @@ class LogstoreAPIWorkflowNodeExecutionRepository(DifyAPIWorkflowNodeExecutionRep
                 # Use PG protocol with SQL query (get latest version of each record)
                 sql_query = f"""
                     SELECT * FROM (
-                        SELECT *, 
+                        SELECT *,
                             ROW_NUMBER() OVER (PARTITION BY id ORDER BY log_version DESC) as rn
                         FROM "{AliyunLogStore.workflow_node_execution_logstore}"
-                        WHERE tenant_id = '{escaped_tenant_id}' 
-                          AND app_id = '{escaped_app_id}' 
+                        WHERE tenant_id = '{escaped_tenant_id}'
+                          AND app_id = '{escaped_app_id}'
                           AND workflow_run_id = '{escaped_workflow_run_id}'
                           AND __time__ > 0
                     ) AS subquery WHERE rn = 1
@@ -342,6 +344,7 @@ class LogstoreAPIWorkflowNodeExecutionRepository(DifyAPIWorkflowNodeExecutionRep
             logger.exception("Failed to get executions by workflow run from LogStore")
             raise
 
+    @override
     def get_execution_by_id(
         self,
         execution_id: str,
@@ -367,7 +370,7 @@ class LogstoreAPIWorkflowNodeExecutionRepository(DifyAPIWorkflowNodeExecutionRep
 
                 sql_query = f"""
                     SELECT * FROM (
-                        SELECT *, 
+                        SELECT *,
                             ROW_NUMBER() OVER (PARTITION BY id ORDER BY log_version DESC) as rn
                         FROM "{AliyunLogStore.workflow_node_execution_logstore}"
                         WHERE id = '{escaped_execution_id}' {tenant_filter} AND __time__ > 0
