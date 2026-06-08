@@ -1,3 +1,4 @@
+from graphon.model_runtime.entities.model_entities import ModelType
 import json
 import logging
 import time
@@ -781,12 +782,12 @@ class WorkflowService:
                 tenant_id=tenant_id,
                 provider=provider,
                 model=model_name,
-                model_type="llm",  # Load balancing is primarily used for LLM models
+                model_type=ModelType.LLM,  # Load balancing is primarily used for LLM models
                 config_from="predefined-model",  # Check both predefined and custom models
             )
 
             _, custom_configs = model_load_balancing_service.get_load_balancing_configs(
-                tenant_id=tenant_id, provider=provider, model=model_name, model_type="llm", config_from="custom-model"
+                tenant_id=tenant_id, provider=provider, model=model_name, model_type=ModelType.LLM, config_from="custom-model"
             )
             all_configs = cast(list[dict[str, Any]], configs) + cast(list[dict[str, Any]], custom_configs)
 

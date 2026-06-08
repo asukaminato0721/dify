@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock, patch
-
+from graphon.model_runtime.entities.model_entities import ModelType
 import pytest
 from faker import Faker
 from sqlalchemy import select
@@ -141,7 +141,7 @@ class TestModelLoadBalancingService:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-3.5-turbo",
-            model_type="llm",
+            model_type=ModelType.LLM,
             enabled=True,
             load_balancing_enabled=False,
         )
@@ -298,7 +298,7 @@ class TestModelLoadBalancingService:
             tenant_id=tenant.id,
             provider_name="openai",
             model_name="gpt-3.5-turbo",
-            model_type="llm",
+            model_type=ModelType.LLM,
             name="config1",
             encrypted_config='{"api_key": "test_key"}',
             enabled=True,
@@ -417,7 +417,7 @@ class TestModelLoadBalancingService:
             tenant_id=tenant.id,
             provider_name="openai",
             model_name="gpt-3.5-turbo",
-            model_type="llm",
+            model_type=ModelType.LLM,
             name="config1",
             encrypted_config='{"api_key": "test_key"}',
             enabled=True,

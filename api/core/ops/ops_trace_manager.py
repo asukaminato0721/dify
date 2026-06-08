@@ -1,3 +1,4 @@
+from graphon.model_runtime.entities.model_entities import ModelType
 import collections
 import json
 import logging
@@ -1377,7 +1378,7 @@ class TraceTask:
                     tenant_id=node_data.get("tenant_id"),
                     provider=node_data.get("model_provider"),
                     model=node_data.get("model_name"),
-                    model_type="llm",
+                    model_type=ModelType.LLM,
                 )
                 if llm_cred_id:
                     credential_id = llm_cred_id

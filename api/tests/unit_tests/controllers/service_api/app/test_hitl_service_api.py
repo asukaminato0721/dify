@@ -1,6 +1,7 @@
 """Dedicated tests for HITL behavior exposed through the Service API."""
 
 from __future__ import annotations
+from typing import override
 
 import json
 import sys

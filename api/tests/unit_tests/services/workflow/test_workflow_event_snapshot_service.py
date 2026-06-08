@@ -1,3 +1,4 @@
+from typing import override
 import json
 import queue
 from collections.abc import Mapping, Sequence

@@ -14,6 +14,7 @@ This test suite covers:
 - ProviderModelCredential storage
 """
 
+from graphon.model_runtime.entities.model_entities import ModelType
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -293,7 +294,7 @@ class TestProviderModelEntity:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
         )
 
         # Assert
@@ -313,7 +314,7 @@ class TestProviderModelEntity:
             tenant_id=str(uuid4()),
             provider_name="anthropic",
             model_name="claude-3",
-            model_type="llm",
+            model_type=ModelType.LLM,
             credential_id=credential_id,
             is_valid=True,
         )
@@ -329,7 +330,7 @@ class TestProviderModelEntity:
             tenant_id=str(uuid4()),
             provider_name="openai",
             model_name="gpt-3.5-turbo",
-            model_type="llm",
+            model_type=ModelType.LLM,
         )
 
         # Assert
@@ -346,7 +347,7 @@ class TestProviderModelEntity:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
         )
 
         # Act - Embedding type
@@ -354,7 +355,7 @@ class TestProviderModelEntity:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="text-embedding-ada-002",
-            model_type="text-embedding",
+            model_type=ModelType.TEXT_EMBEDDING,
         )
 
         # Act - Speech2Text type
@@ -362,7 +363,7 @@ class TestProviderModelEntity:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="whisper-1",
-            model_type="speech2text",
+            model_type=ModelType.SPEECH2TEXT,
         )
 
         # Assert
@@ -384,7 +385,7 @@ class TestTenantDefaultModel:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
         )
 
         # Assert
@@ -403,14 +404,14 @@ class TestTenantDefaultModel:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
         )
 
         embedding_default = TenantDefaultModel(
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="text-embedding-3-small",
-            model_type="text-embedding",
+            model_type=ModelType.TEXT_EMBEDDING,
         )
 
         # Assert
@@ -570,7 +571,7 @@ class TestProviderModelSetting:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
         )
 
         # Assert
@@ -588,7 +589,7 @@ class TestProviderModelSetting:
             tenant_id=str(uuid4()),
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
             enabled=True,
             load_balancing_enabled=True,
         )
@@ -604,7 +605,7 @@ class TestProviderModelSetting:
             tenant_id=str(uuid4()),
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
             enabled=False,
         )
 
@@ -625,7 +626,7 @@ class TestLoadBalancingModelConfig:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
             name="Primary API Key",
         )
 
@@ -647,7 +648,7 @@ class TestLoadBalancingModelConfig:
             tenant_id=str(uuid4()),
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
             name="Secondary API Key",
             encrypted_config='{"api_key": "encrypted_value"}',
             credential_id=credential_id,
@@ -666,7 +667,7 @@ class TestLoadBalancingModelConfig:
             tenant_id=str(uuid4()),
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
             name="Disabled Config",
             enabled=False,
         )
@@ -682,7 +683,7 @@ class TestLoadBalancingModelConfig:
             "tenant_id": tenant_id,
             "provider_name": "openai",
             "model_name": "gpt-4",
-            "model_type": "llm",
+            "model_type": ModelType.LLM,
         }
 
         # Act
@@ -760,7 +761,7 @@ class TestProviderModelCredential:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
             credential_name="GPT-4 API Key",
             encrypted_config='{"api_key": "sk-model-specific..."}',
         )
@@ -782,7 +783,7 @@ class TestProviderModelCredential:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="gpt-4",
-            model_type="llm",
+            model_type=ModelType.LLM,
             credential_name="GPT-4 Key",
             encrypted_config='{"api_key": "gpt4_key"}',
         )
@@ -791,7 +792,7 @@ class TestProviderModelCredential:
             tenant_id=tenant_id,
             provider_name="openai",
             model_name="text-embedding-3-large",
-            model_type="text-embedding",
+            model_type=ModelType.TEXT_EMBEDDING,
             credential_name="Embedding Key",
             encrypted_config='{"api_key": "embedding_key"}',
         )
@@ -815,7 +816,7 @@ class TestProviderModelCredential:
             tenant_id=str(uuid4()),
             provider_name="openai",
             model_name="gpt-4-turbo",
-            model_type="llm",
+            model_type=ModelType.LLM,
             credential_name="Custom Config",
             encrypted_config=complex_config,
         )

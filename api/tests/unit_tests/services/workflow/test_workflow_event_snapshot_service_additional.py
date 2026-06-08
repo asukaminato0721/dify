@@ -1,3 +1,4 @@
+from typing import override
 import json
 import queue
 from collections.abc import Mapping
@@ -124,18 +125,22 @@ class _PauseEntity(WorkflowPauseEntity):
     state: bytes
 
     @property
+    @override
     def id(self) -> str:
         return "pause-1"
 
     @property
+    @override
     def workflow_execution_id(self) -> str:
         return "run-1"
 
     @property
+    @override
     def resumed_at(self) -> datetime | None:
         return None
 
     @property
+    @override
     def paused_at(self) -> datetime:
         return datetime(2024, 1, 1, tzinfo=UTC)
 

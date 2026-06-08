@@ -1,4 +1,5 @@
 from __future__ import annotations
+from graphon.model_runtime.entities.model_entities import ModelType
 
 import io
 from types import SimpleNamespace
@@ -38,7 +39,7 @@ class TestPluginModelClient:
             user_id="user-1",
             plugin_id="org/plugin:1",
             provider="provider-a",
-            model_type="llm",
+            model_type=ModelType.LLM,
             model="gpt-test",
             credentials={"api_key": "key"},
         )
@@ -112,7 +113,7 @@ class TestPluginModelClient:
             user_id="user-1",
             plugin_id="org/plugin:1",
             provider="provider-a",
-            model_type="llm",
+            model_type=ModelType.LLM,
             model="gpt-test",
             credentials=credentials,
         )
@@ -196,7 +197,7 @@ class TestPluginModelClient:
             user_id="user-1",
             plugin_id="org/plugin:1",
             provider="provider-a",
-            model_type="llm",
+            model_type=ModelType.LLM,
             model="gpt-test",
             credentials={},
             prompt_messages=[],

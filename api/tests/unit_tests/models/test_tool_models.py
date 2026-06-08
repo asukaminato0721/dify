@@ -9,6 +9,7 @@ This test suite covers:
 - ToolLabelBinding relationships
 """
 
+from core.plugin.entities.plugin_daemon import CredentialType
 import json
 from uuid import uuid4
 
@@ -138,7 +139,7 @@ class TestBuiltinToolProviderValidation:
             provider="google",
             name="Google OAuth",
             encrypted_credentials=json.dumps(credentials),
-            credential_type="oauth2",
+            credential_type=CredentialType.OAUTH2,
             expires_at=1735689600,
         )
 

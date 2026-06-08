@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from graphon.model_runtime.entities.model_entities import ModelType
 import importlib
 import io
 import json
@@ -245,7 +245,7 @@ def test_load_balancing_inherit_deduplication_is_applied_consistently_across_sup
         tenant_id=tenant_id,
         provider_name="openai",
         model_name="gpt-4o-mini",
-        model_type="llm",
+        model_type=ModelType.LLM,
         name="__inherit__",
         encrypted_config='{"api_key":"older-inherit"}',
         credential_id=fixture.primary.winner_credential_id,
@@ -273,7 +273,7 @@ def test_load_balancing_inherit_deduplication_is_applied_consistently_across_sup
         tenant_id=tenant_id,
         provider_name="openai",
         model_name="gpt-4o-mini",
-        model_type="llm",
+        model_type=ModelType.LLM,
         name=f"{tenant_id}-second-shared",
         encrypted_config='{"api_key":"non-inherit-canonical"}',
         credential_id=fixture.primary.distinct_credential_id,
