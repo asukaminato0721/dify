@@ -446,6 +446,11 @@ class FileUploadConfig(BaseSettings):
     Configuration for file upload limitations
     """
 
+    ETL_TYPE: str = Field(
+        description="RAG ETL type ('dify' or 'Unstructured'), default to 'dify'",
+        default="dify",
+    )
+
     UPLOAD_FILE_SIZE_LIMIT: NonNegativeInt = Field(
         description="Maximum allowed file size for uploads in megabytes",
         default=15,
@@ -1226,12 +1231,6 @@ class RagEtlConfig(BaseSettings):
     """
     Configuration for RAG ETL processes
     """
-
-    # TODO: This config is not only for rag etl, it is also for file upload, we should move it to file upload config
-    ETL_TYPE: str = Field(
-        description="RAG ETL type ('dify' or 'Unstructured'), default to 'dify'",
-        default="dify",
-    )
 
     KEYWORD_DATA_SOURCE_TYPE: str = Field(
         description="Data source type for keyword extraction"
